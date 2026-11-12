@@ -137,3 +137,18 @@ Upshot status uses three values. Present means the Upshot source implements it. 
 - Restart: present.
 - Delete: present, as Discard recording.
 - Drag handle: partial. The Upshot bar moves when dragged by its background and has no separate handle.
+
+## Video Editor
+
+The CleanShot X video editor is one window with a tool rail on the left, an inspector panel for the selected tool, a preview, transport controls, and a timeline with a zoom lane above a thumbnail lane. Export and cloud upload buttons sit in the title bar.
+
+- Keystrokes inspector, with size, dark or light style, a nine-position grid, and a choice between command keys only and all keys: partial. Upshot draws keystrokes on export with a placement setting and records only special keys and modifier shortcuts, so typed text never appears.
+- Audio inspector, with the recorded microphone and an Include system audio toggle: partial. Upshot has an audio toggle on export and supports imported audio clips.
+- Camera inspector: present. Upshot has camera layouts, shapes, cutout, and face touch-up.
+- Background inspector, with gradients, wallpapers, custom wallpapers, plain colors, aspect ratio, padding, shadow, and corners: present. The Studio uses the annotation background system.
+- Motion blur level, Low to High: partial. Upshot has a motion blur on or off toggle in the export options.
+- Zoom animation style, Smooth or Dynamic: not found. Upshot uses one spring profile for every zoom.
+- Zoom segments on their own timeline lane, labeled with the zoom level: present.
+- Cut tool: present, as split, trim, and delete on the clip timeline.
+- Timeline zoom slider: present, with zoom in and zoom out buttons.
+- Export and cloud upload buttons in the title bar: present, through the Studio export options and upload actions.
