@@ -69,6 +69,8 @@ const (
 	tapDirEnvVar = "UPSHOT_TAP_DIR"
 	bundleID     = "co.chrisyork.upshot"
 
+	sparkleKeyAccount = "upshot"
+
 	// Build/notarize configuration (used with -build).
 	projectName     = "Upshot.xcodeproj"
 	releaseScheme   = "Upshot"
@@ -256,7 +258,7 @@ func main() {
 
 	step("Signing DMG with Sparkle...")
 
-	signOut, err := runCmd(signUpdate, dmgPath)
+	signOut, err := runCmd(signUpdate, "--account", sparkleKeyAccount, dmgPath)
 	if err != nil {
 		fail(fmt.Sprintf("sign_update failed: %s\n%s", err, signOut))
 	}

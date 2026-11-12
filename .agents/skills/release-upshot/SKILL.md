@@ -122,7 +122,7 @@ active developer dir is the Command Line Tools.
 ## Sparkle Configuration
 
 - **SUFeedURL**: `https://raw.githubusercontent.com/chriswinsatlife/upshot/main/appcast.xml`
-- **SUPublicEDKey**: `MA/6n0fqT0T2updDlkXr8BjhJKoHWik9uf6Lh5pUG7U=`
+- **SUPublicEDKey**: `RaO/lTrfeovOFuVIRMmG6yiZso9cEUM/DcOfwn6wnmY=` (private key in the login keychain under Sparkle account `upshot`)`
 - **UpdaterManager.swift**: Singleton, starts at launch (Release builds only), menu bar + Settings UI integration.
 
 ## After releasing
