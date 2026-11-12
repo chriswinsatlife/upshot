@@ -34,7 +34,7 @@ The exporter only takes a snapshot when the next tick can reuse it. This avoids 
 
 ## Quality-preserving reuse and overlap (October 13, 2026)
 
-Screendrop uses the reuse and overlap principles within its native pipeline:
+Upshot uses the reuse and overlap principles within its native pipeline:
 
 - **Composed-frame reuse:** `StudioComposedFrameCache` retains one immutable output buffer. Reuse requires exact equality of the screen/camera buffer identities, actual layout and viewport geometry, pointer and press state, keystroke animation, speed badge, subtitle text, and karaoke word state. Only settled, single-screen-sample frames qualify. A repeated frame avoids allocation, screen copying, and all overlay drawing. Every timestamp is still submitted to the encoder at the selected 30/60 fps; this does not introduce variable-frame-rate output.
 - **Prefilter reuse during pans:** a renderer keeps its existing reduced source texture when the source buffer and reduction dimensions match. Translation and shutter reconstruction still run for each frame. The same Lanczos prefilter is used; a source or size change regenerates it. Queue ordering protects a prefilter still in flight, and retaining its source prevents decoder-pool recycling from causing a false match.
@@ -51,23 +51,23 @@ Measured on an Apple M4 Pro with optimized standalone code and synthetic images,
 
 The second row times only the copy and cache lookup; it excludes state evaluation and overlay drawing. These are **stage measurements**, not complete-export speedups. The camera overlap has not been timed on a complete export. Decoding, changing source content, timeline evaluation, encoding, audio, and file finalization can limit the overall gain.
 
-The standalone regression benchmark compares pre-change and current screen/camera pixels exactly, including reduction-size/source invalidation and multiple in-flight shutter/camera passes. It checks the camera pool bound, frame-cache invalidation, and H.264/HEVC encoding of the same immutable buffer at all 60 timestamps with one-second output duration. It does not launch Screendrop or read user recordings.
+The standalone regression benchmark compares pre-change and current screen/camera pixels exactly, including reduction-size/source invalidation and multiple in-flight shutter/camera passes. It checks the camera pool bound, frame-cache invalidation, and H.264/HEVC encoding of the same immutable buffer at all 60 timestamps with one-second output duration. It does not launch Upshot or read user recordings.
 
 Reproduce from the repository root, using the pre-change commit as the baseline:
 
 ```bash
-mkdir -p /tmp/screendrop-export-baseline
-git show 4eb4a4fa:Screendrop/StudioMetalScreenRenderer.swift | sed 's/StudioMetalScreenRenderer/BaselineMetalScreenRenderer/g' > /tmp/screendrop-export-baseline/BaselineMetalScreenRenderer.swift
-git show 4eb4a4fa:Screendrop/StudioCameraBubbleScaler.swift | sed 's/StudioCameraBubbleScaler/BaselineCameraBubbleScaler/g' > /tmp/screendrop-export-baseline/BaselineCameraBubbleScaler.swift
+mkdir -p /tmp/upshot-export-baseline
+git show 4eb4a4fa:Upshot/StudioMetalScreenRenderer.swift | sed 's/StudioMetalScreenRenderer/BaselineMetalScreenRenderer/g' > /tmp/upshot-export-baseline/BaselineMetalScreenRenderer.swift
+git show 4eb4a4fa:Upshot/StudioCameraBubbleScaler.swift | sed 's/StudioCameraBubbleScaler/BaselineCameraBubbleScaler/g' > /tmp/upshot-export-baseline/BaselineCameraBubbleScaler.swift
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc \
   -O -swift-version 6 -strict-concurrency=complete -default-isolation MainActor \
-  -module-cache-path /tmp/screendrop-metal-module-cache -parse-as-library \
-  Screendrop/StudioMetalScreenRenderer.swift Screendrop/StudioScreenLayerCache.swift \
-  Screendrop/StudioComposedFrameCache.swift Screendrop/StudioCameraBubbleScaler.swift \
-  /tmp/screendrop-export-baseline/BaselineMetalScreenRenderer.swift \
-  /tmp/screendrop-export-baseline/BaselineCameraBubbleScaler.swift \
-  scripts/benchmark-studio-export-reuse.swift -o /tmp/screendrop-export-reuse-benchmark
-/tmp/screendrop-export-reuse-benchmark
+  -module-cache-path /tmp/upshot-metal-module-cache -parse-as-library \
+  Upshot/StudioMetalScreenRenderer.swift Upshot/StudioScreenLayerCache.swift \
+  Upshot/StudioComposedFrameCache.swift Upshot/StudioCameraBubbleScaler.swift \
+  /tmp/upshot-export-baseline/BaselineMetalScreenRenderer.swift \
+  /tmp/upshot-export-baseline/BaselineCameraBubbleScaler.swift \
+  scripts/benchmark-studio-export-reuse.swift -o /tmp/upshot-export-reuse-benchmark
+/tmp/upshot-export-reuse-benchmark
 ```
 
 ## Camera cutout (October 14, 2026)
@@ -92,7 +92,7 @@ The 51-second sample recording, exported at 1080p, 60 fps, with motion blur (Deb
 | Cutout, segmenting live | 17.4 |
 | Cutout, reading the matte cache | 13.4 |
 
-Building the cache took 12.5 s (about 123 fps) and produced 1.2 MB. Exports from the cache and from live segmentation average 0.14/255 apart. To reproduce, run the Debug binary with `-benchmarkMatteCache <path to .screendroprec>`, then `-benchmarkExport` on the same package. Delete `camera-matte-v1.mov` to time the live path. The log's `cutoutWaitSeconds` is the time finishing frames spent waiting for mattes.
+Building the cache took 12.5 s (about 123 fps) and produced 1.2 MB. Exports from the cache and from live segmentation average 0.14/255 apart. To reproduce, run the Debug binary with `-benchmarkMatteCache <path to .upshotrec>`, then `-benchmarkExport` on the same package. Delete `camera-matte-v1.mov` to time the live path. The log's `cutoutWaitSeconds` is the time finishing frames spent waiting for mattes.
 
 ## Measured blur-pass timings
 
@@ -114,18 +114,18 @@ From the repository root, with Xcode selected and access to the Mac's GPU:
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc \
   -O -swift-version 6 -strict-concurrency=complete -default-isolation MainActor \
-  -module-cache-path /tmp/screendrop-metal-module-cache -parse-as-library \
-  Screendrop/StudioMetalScreenRenderer.swift \
-  Screendrop/StudioScreenLayerCache.swift \
+  -module-cache-path /tmp/upshot-metal-module-cache -parse-as-library \
+  Upshot/StudioMetalScreenRenderer.swift \
+  Upshot/StudioScreenLayerCache.swift \
   scripts/benchmark-studio-motion-blur.swift \
-  -o /tmp/screendrop-motion-blur-benchmark-bin
+  -o /tmp/upshot-motion-blur-benchmark-bin
 
-/tmp/screendrop-motion-blur-benchmark-bin
+/tmp/upshot-motion-blur-benchmark-bin
 ```
 
-The harness compiles the actual shader source, exercises 2/8/24-sample cases at 1080p and 4K with 1×/2×/4× input sizes, and reports Core Graphics fallback cases separately. For accelerated fixtures it asserts RGB mean absolute error below 4/255 and PSNR above 31 dB against the original compositor's screen pass. These are regression checks, not a perceptual-quality guarantee. PNG pairs are saved under `/tmp/screendrop-motion-blur-benchmark` for inspection.
+The harness compiles the actual shader source, exercises 2/8/24-sample cases at 1080p and 4K with 1×/2×/4× input sizes, and reports Core Graphics fallback cases separately. For accelerated fixtures it asserts RGB mean absolute error below 4/255 and PSNR above 31 dB against the original compositor's screen pass. These are regression checks, not a perceptual-quality guarantee. PNG pairs are saved under `/tmp/upshot-motion-blur-benchmark` for inspection.
 
-It also writes and decodes six frames each through H.264 and HEVC, exercising the writer's pixel-buffer pool, GPU rendering, a settled Core Graphics frame, screen-layer reuse, a moving CPU-drawn overlay, and a Metal-compatible reader. It checks that the overlay survives in the correct position, does not remain at its old position, and that invalid rectangles are rejected. Use `--encode-only` to rerun just these integration checks. The harness does not launch Screendrop or access user recordings. The [editor resource checks](editor-performance.md#standalone-checks) additionally verify byte-identical screen reuse, overlay isolation, and the snapshot budget.
+It also writes and decodes six frames each through H.264 and HEVC, exercising the writer's pixel-buffer pool, GPU rendering, a settled Core Graphics frame, screen-layer reuse, a moving CPU-drawn overlay, and a Metal-compatible reader. It checks that the overlay survives in the correct position, does not remain at its old position, and that invalid rectangles are rejected. Use `--encode-only` to rerun just these integration checks. The harness does not launch Upshot or access user recordings. The [editor resource checks](editor-performance.md#standalone-checks) additionally verify byte-identical screen reuse, overlay isolation, and the snapshot budget.
 
 ## Compare complete exports
 
@@ -135,12 +135,12 @@ In **Edit Scheme → Run → Arguments → Environment Variables**, set:
 
 | Variable | Value | Purpose |
 | --- | --- | --- |
-| `SCREENDROP_EXPORT_BYPASS_CACHE` | `1` | Render on every Export/Share instead of reusing the session's flattened deliverable. |
-| `SCREENDROP_EXPORT_RENDERER` | `cpu` | Force the original Core Graphics renderer for a baseline. Unset for automatic Metal selection. |
-| `SCREENDROP_EXPORT_BYPASS_SCREEN_CACHE` | `1` | Disable settled screen-layer reuse while retaining the selected renderer. |
-| `SCREENDROP_EXPORT_BYPASS_FRAME_CACHE` | `1` | Disable immutable composed-frame reuse; still render every output timestamp. |
+| `UPSHOT_EXPORT_BYPASS_CACHE` | `1` | Render on every Export/Share instead of reusing the session's flattened deliverable. |
+| `UPSHOT_EXPORT_RENDERER` | `cpu` | Force the original Core Graphics renderer for a baseline. Unset for automatic Metal selection. |
+| `UPSHOT_EXPORT_BYPASS_SCREEN_CACHE` | `1` | Disable settled screen-layer reuse while retaining the selected renderer. |
+| `UPSHOT_EXPORT_BYPASS_FRAME_CACHE` | `1` | Disable immutable composed-frame reuse; still render every output timestamp. |
 
-Run the same recording, edits, codec, resolution, and quality once with the CPU override and once without it, keeping deliverable cache bypass enabled for both. To isolate screen-layer reuse, keep the renderer setting unchanged, bypass the composed-frame cache for both runs, and toggle only `SCREENDROP_EXPORT_BYPASS_SCREEN_CACHE`. To reproduce the original Core Graphics rendering path, set the CPU override and both frame/screen cache bypasses. To isolate composed-frame reuse, keep all other settings fixed and toggle `SCREENDROP_EXPORT_BYPASS_FRAME_CACHE`. Keep baseline exports under separate filenames. Remove the overrides after measuring so normal render reuse resumes.
+Run the same recording, edits, codec, resolution, and quality once with the CPU override and once without it, keeping deliverable cache bypass enabled for both. To isolate screen-layer reuse, keep the renderer setting unchanged, bypass the composed-frame cache for both runs, and toggle only `UPSHOT_EXPORT_BYPASS_SCREEN_CACHE`. To reproduce the original Core Graphics rendering path, set the CPU override and both frame/screen cache bypasses. To isolate composed-frame reuse, keep all other settings fixed and toggle `UPSHOT_EXPORT_BYPASS_FRAME_CACHE`. Keep baseline exports under separate filenames. Remove the overrides after measuring so normal render reuse resumes.
 
 Filter the Xcode console or Console.app by `StudioExport`. The log reports:
 
@@ -158,13 +158,13 @@ Compare zooms and pans, small text, rounded edges, crops/reframing, camera place
 
 ## Frame-rate and blur option checks
 
-This standalone harness uses the production settings decoder and timing/sampling policy. It checks legacy settings, all four option combinations, cached-settings equality, the unchanged 60 fps shutter samples on analytical fixtures, and blur-off's single sample. It also writes and decodes synthetic H.264 and HEVC movies to verify frame counts, timestamps, nominal frame rates, and one-second playback duration. It does not launch Screendrop, exercise the complete Studio composition, or claim end-to-end export performance.
+This standalone harness uses the production settings decoder and timing/sampling policy. It checks legacy settings, all four option combinations, cached-settings equality, the unchanged 60 fps shutter samples on analytical fixtures, and blur-off's single sample. It also writes and decodes synthetic H.264 and HEVC movies to verify frame counts, timestamps, nominal frame rates, and one-second playback duration. It does not launch Upshot, exercise the complete Studio composition, or claim end-to-end export performance.
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc \
   -O -swift-version 6 -strict-concurrency=complete -default-isolation MainActor \
-  -module-cache-path /tmp/screendrop-metal-module-cache -parse-as-library \
-  Screendrop/VideoCompressionModels.swift Screendrop/RecordingExportTiming.swift \
-  scripts/check-recording-export-options.swift -o /tmp/screendrop-export-options-check
-/tmp/screendrop-export-options-check
+  -module-cache-path /tmp/upshot-metal-module-cache -parse-as-library \
+  Upshot/VideoCompressionModels.swift Upshot/RecordingExportTiming.swift \
+  scripts/check-recording-export-options.swift -o /tmp/upshot-export-options-check
+/tmp/upshot-export-options-check
 ```

@@ -8,11 +8,11 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "Screendrop"
+SOURCE = ROOT / "Upshot"
 
 
 def main():
-    with tempfile.TemporaryDirectory(prefix="screendrop-camera-motion-") as directory:
+    with tempfile.TemporaryDirectory(prefix="upshot-camera-motion-") as directory:
         work = Path(directory)
         # The app's storage and preferences have unrelated AppKit dependencies.
         # Keep only their input fields; compile the real layout, edit map,

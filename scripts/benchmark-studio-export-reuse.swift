@@ -1,4 +1,4 @@
-// Standalone, optimized benchmark; never launches Screendrop or reads a
+// Standalone, optimized benchmark; never launches Upshot or reads a
 // user recording. Compile with the production renderer, camera scaler,
 // frame caches, and renamed pre-change versions; see export-performance.md.
 import AVFoundation
@@ -63,7 +63,7 @@ struct ExportReuseBenchmark {
     static func main() async throws {
         let device = MTLCreateSystemDefaultDevice()!
         let library = try await device.makeLibrary(
-            source: String(contentsOfFile: "Screendrop/StudioMotionBlur.metal", encoding: .utf8), options: nil)
+            source: String(contentsOfFile: "Upshot/StudioMotionBlur.metal", encoding: .utf8), options: nil)
         print("Device: \(device.name)")
         try prefilterChecks(library: library)
         cameraChecks()
@@ -155,7 +155,7 @@ struct ExportReuseBenchmark {
     }
 
     static func repeatedBufferEncoding(codec: AVVideoCodecType) async throws {
-        let url = URL(fileURLWithPath: "/tmp/screendrop-repeated-frame-\(codec.rawValue).mov")
+        let url = URL(fileURLWithPath: "/tmp/upshot-repeated-frame-\(codec.rawValue).mov")
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [

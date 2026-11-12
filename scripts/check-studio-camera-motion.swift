@@ -1,5 +1,5 @@
 // Run: python3 scripts/check-studio-camera-motion.py
-// Compiles the production geometry and motion types without launching Screendrop.
+// Compiles the production geometry and motion types without launching Upshot.
 import Foundation
 import CoreGraphics
 

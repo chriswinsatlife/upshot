@@ -1,10 +1,10 @@
-# Screendrop
+# Upshot
 
 A beautiful screenshot + screen recording + Loom alternative - all native, self hostable and free.
 
 <p>
-  <a href="https://github.com/fayazara/Screendrop/releases/latest/download/Screendrop.dmg">
-    <img src="download-button.png" alt="Download the latest version of Screendrop" width="220">
+  <a href="https://github.com/chriswinsatlife/upshot/releases/latest/download/Upshot.dmg">
+    <img src="download-button.png" alt="Download the latest version of Upshot" width="220">
   </a>
 </p>
 
@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/c8d5636a-b03d-4b97-9ef1-e775df75117a
 
 
 
-<img width="2500" height="1622" alt="Screendrop_2026-10-17-15-27-03" src="https://github.com/user-attachments/assets/d438df03-cbf9-4e85-ae18-07397fa02fb6" />
+<img width="2500" height="1622" alt="Upshot_2026-10-17-15-27-03" src="https://github.com/user-attachments/assets/d438df03-cbf9-4e85-ae18-07397fa02fb6" />
 
 
 <br />
@@ -21,13 +21,13 @@ https://github.com/user-attachments/assets/c8d5636a-b03d-4b97-9ef1-e775df75117a
 
 
 > [!IMPORTANT]
-> Screendrop is under active development. Expect rough edges and occasional breaking changes
+> Upshot is under active development. Expect rough edges and occasional breaking changes
 
 
 <p>
-  <a href="https://github.com/fayazara/Screendrop/releases/latest">Latest release</a>
+  <a href="https://github.com/chriswinsatlife/upshot/releases/latest">Latest release</a>
   ·
-  <a href="https://github.com/fayazara/Screendrop/releases">All releases</a>
+  <a href="https://github.com/chriswinsatlife/upshot/releases">All releases</a>
 </p>
 
 
@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/c8d5636a-b03d-4b97-9ef1-e775df75117a
 - Configure global hotkeys, timers, file formats, save behavior, and complete after-capture workflows.
 - Copy, compress, save, pin, preview, annotate, edit, upload, or delete directly from a customizable floating preview stack.
 - Grab text off the screen with on-device OCR - no screenshot saved, just the text on your clipboard.
-- Open images from Finder with Screendrop and edit imported copies without touching the originals.
+- Open images from Finder with Upshot and edit imported copies without touching the originals.
 - Annotate non-destructively with drawing tools, crop, smart redaction, backgrounds, wallpaper packs, perspective effects, progressive blur, borders, and watermarks.
 - Record camera, microphone, and system audio as separately editable sources.
 - Use a notch-native teleprompter that follows your narration with on-device speech recognition.
@@ -50,9 +50,9 @@ https://github.com/user-attachments/assets/c8d5636a-b03d-4b97-9ef1-e775df75117a
 
 ### Download
 
-1. Download the latest `Screendrop.dmg` using the button above or from the [releases page](https://github.com/fayazara/Screendrop/releases/latest).
-2. Open the DMG and drag **Screendrop** into your Applications folder.
-3. Launch Screendrop. It lives in the menu bar at the top-right of the screen.
+1. Download the latest `Upshot.dmg` using the button above or from the [releases page](https://github.com/chriswinsatlife/upshot/releases/latest).
+2. Open the DMG and drag **Upshot** into your Applications folder.
+3. Launch Upshot. It lives in the menu bar at the top-right of the screen.
 
 The download button always points to the newest release.
 
@@ -64,20 +64,20 @@ The download button always points to the newest release.
 Install from the Homebrew tap:
 
 ```bash
-brew install --cask fayazara/tap/screendrop
+brew install --cask chriswinsatlife/tap/upshot
 ```
 
 Update later with:
 
 ```bash
-brew upgrade --cask screendrop
+brew upgrade --cask upshot
 ```
 
-Screendrop can also update itself through Sparkle.
+Upshot can also update itself through Sparkle.
 
 ## Quick Start
 
-Screendrop can be controlled from its menu bar item or with global hotkeys.
+Upshot can be controlled from its menu bar item or with global hotkeys.
 
 | Default shortcut | Action |
 | --- | --- |
@@ -92,7 +92,7 @@ All five shortcuts are customizable under **Settings → Screenshots** and **Set
 You can also:
 
 - Run capture and recording actions from Apple Shortcuts, Siri, or Spotlight.
-- Right-click one or more images in Finder and choose **Open With → Screendrop**.
+- Right-click one or more images in Finder and choose **Open With → Upshot**.
 - Browse screenshots and recordings together in the native Library, or reopen recent captures from the menu bar.
 
 ## Screenshots
@@ -109,7 +109,7 @@ Screenshot preferences include:
 - PNG or JPEG export with configurable JPEG quality.
 - A configurable export folder and a Save action that can bypass the save panel.
 - A lower-resolution editor preview to reduce memory use while preserving full-resolution exports.
-- An option to include Screendrop's own windows in screenshots and recordings; they are excluded by default.
+- An option to include Upshot's own windows in screenshots and recordings; they are excluded by default.
 
 ### Capture Text
 
@@ -174,17 +174,17 @@ Normal launches open Library, with a Dock icon while regular windows are open. L
 
 ### Open Images from Finder
 
-Screendrop registers as an image editor in Finder. Opening an image with Screendrop:
+Upshot registers as an image editor in Finder. Opening an image with Upshot:
 
 1. Validates the image.
-2. Imports a copy into the Screendrop Library.
+2. Imports a copy into the Upshot Library.
 3. Opens the copy in the annotation editor.
 
 The original file is never modified. Multiple selected images can be opened at once, each in its own editor window.
 
 ## Annotation Studio
 
-The annotation editor is non-destructive. Screendrop preserves the untouched base image and writes editable state to a neighboring `.screendrop` sidecar, so saved annotations can be reopened and changed later. Display previews are lightweight, while final renders use the source image's full pixel resolution.
+The annotation editor is non-destructive. Upshot preserves the untouched base image and writes editable state to a neighboring `.upshot` sidecar, so saved annotations can be reopened and changed later. Display previews are lightweight, while final renders use the source image's full pixel resolution.
 
 Save, Done, and Upload coordinate screenshot commits so conflicting saves cannot overlap. Failed commits keep the editor open with its changes unsaved; file replacements retain recovery copies until the image and editable files are written successfully. Upload also works on screenshots without annotations. Recording Studio likewise stays open when **Save and Close** cannot save the project.
 
@@ -210,10 +210,10 @@ Crop at full resolution with freeform, original, `1:1`, `16:9`, `9:16`, `4:3`, a
 
 ### Backgrounds and Mockups
 
-Turn a plain screenshot into a finished visual without leaving Screendrop:
+Turn a plain screenshot into a finished visual without leaving Upshot:
 
 - Apply solid colors, gradients, custom images, or downloadable wallpaper packs.
-- Save, import, export, and share background presets as versioned `.screendroppreset` JSON files.
+- Save, import, export, and share background presets as versioned `.upshotpreset` JSON files.
 - Adjust padding, corner radius, shadow, aspect ratio, and nine-point alignment.
 - Add a configurable solid border around the screenshot.
 - Add a text watermark with placement and typography controls.
@@ -241,7 +241,7 @@ The recording picker provides one place to prepare a session:
 
 During the start countdown, click **Cancel**, press **Escape**, or close the recorder to cancel the pending recording. Source selection is disabled until the countdown finishes or is cancelled. The display control shows source-loading progress; if loading fails, it offers Retry and, when needed, a link to screen recording permissions.
 
-Turning on the camera starts a live preview before recording begins, giving the camera time to settle exposure and white balance. Camera permission failures or disconnected optional devices do not throw away the screen recording; Screendrop warns and continues without that input.
+Turning on the camera starts a live preview before recording begins, giving the camera time to settle exposure and white balance. Camera permission failures or disconnected optional devices do not throw away the screen recording; Upshot warns and continues without that input.
 
 For area recordings, the selected boundary remains visibly highlighted while the rest of the display is dimmed. The guide is click-through and excluded from the recording.
 
@@ -254,7 +254,7 @@ A floating control bar shows elapsed time and lets you:
 - Stop and keep the recording.
 - Delete the current recording.
 
-The screen, camera, cursor activity, clicks, keystrokes, microphone, and system audio are captured as coordinated inputs. Screendrop keeps the raw screen and camera masters separate so later edits do not permanently burn effects into the footage.
+The screen, camera, cursor activity, clicks, keystrokes, microphone, and system audio are captured as coordinated inputs. Upshot keeps the raw screen and camera masters separate so later edits do not permanently burn effects into the footage.
 
 ### Teleprompter
 
@@ -289,7 +289,7 @@ Every new recording is stored as a non-destructive session package. The package 
 
 ### Zooms, Cursor, Clicks, and Keystrokes
 
-Screendrop records interaction data separately from the screen pixels, so presentation effects remain editable:
+Upshot records interaction data separately from the screen pixels, so presentation effects remain editable:
 
 - **Auto Zoom** turns recorded clicks into smooth camera moves.
 - Add, remove, enable, resize, and retime zooms manually.
@@ -316,7 +316,7 @@ Narrated recordings can be transcribed entirely on-device with Apple's Speech An
 The result powers two workflows:
 
 - **Captions:** edit text line by line, click timestamps to seek, adjust position and size, and optionally highlight each spoken word for a karaoke-style effect.
-- **Edit Video:** click a word to seek, Shift-click to select a passage, and cut the selection to remove the matching footage. Screendrop can also remove filler words and trim narration silences automatically.
+- **Edit Video:** click a word to seek, Shift-click to select a passage, and cut the selection to remove the matching footage. Upshot can also remove filler words and trim narration silences automatically.
 
 Transcript cuts update the video timeline and captions together and remain undoable.
 
@@ -330,7 +330,7 @@ Export and Share show progress, can be cancelled, and report completion. Renders
 
 Studio uses Metal to accelerate eligible motion-blur frames. Blur-on uses a one-frame shutter at the selected frame rate; blur-off draws the screen once at each frame's camera position. Core Graphics remains available for unsupported frames and devices. See [export performance](docs/export-performance.md) for the rendering policy, benchmarks, and comparison workflow.
 
-Screendrop also includes a lightweight trim-and-compress editor for regular video files. FFmpeg enables its conversion and compression options:
+Upshot also includes a lightweight trim-and-compress editor for regular video files. FFmpeg enables its conversion and compression options:
 
 ```bash
 brew install ffmpeg
@@ -343,7 +343,7 @@ Cloud sharing is optional, self-hosted, and Cloudflare-first:
 - A Cloudflare Worker receives authenticated uploads and returns share links.
 - [Cloudflare R2](https://developers.cloudflare.com/r2/) stores screenshots and recordings without egress-bandwidth charges.
 - [Cloudflare D1](https://developers.cloudflare.com/d1/) stores lightweight upload and share-page metadata.
-- Screendrop only needs the Worker URL and an upload token; it never needs R2 or S3 access keys.
+- Upshot only needs the Worker URL and an upload token; it never needs R2 or S3 access keys.
 
 Shared recordings get a Loom-style page:
 
@@ -362,13 +362,13 @@ The companion Worker lives at:
 
 ### Cloud Setup
 
-The fastest setup is built into Screendrop:
+The fastest setup is built into Upshot:
 
 1. Open **Settings → Cloud**.
 2. Copy the generated upload token.
 3. Click **Deploy to Cloudflare**.
 4. Paste the token when Cloudflare asks for the `UPLOAD_TOKEN` secret.
-5. After deployment, copy the Worker URL back into Screendrop.
+5. After deployment, copy the Worker URL back into Upshot.
 6. Click **Verify Connection**.
 
 The deploy flow provisions the R2 and D1 bindings used by the Worker. For a manual deployment, configure the Worker with those bindings and store the token as a Worker secret:
@@ -377,15 +377,15 @@ The deploy flow provisions the R2 and D1 bindings used by the Worker. For a manu
 npx wrangler secret put UPLOAD_TOKEN
 ```
 
-Screendrop verifies the Worker URL and token before enabling uploads.
+Upshot verifies the Worker URL and token before enabling uploads.
 
 ### How Uploads Work
 
-1. Screendrop sends the file to the Worker with `PUT /api/upload`.
+1. Upshot sends the file to the Worker with `PUT /api/upload`.
 2. The Worker validates the bearer token, streams the file to R2, and writes its metadata to D1.
-3. The Worker returns a share URL. Screendrop copies it and stores it in the local Library.
-4. For edited recordings, Screendrop uploads the rendered final cut-not the raw screen master.
-5. Screendrop then adds best-effort video sidecars: a title, poster, transcript remapped to the edited timeline, and a storyboard sprite used for scrub previews.
+3. The Worker returns a share URL. Upshot copies it and stores it in the local Library.
+4. For edited recordings, Upshot uploads the rendered final cut-not the raw screen master.
+5. Upshot then adds best-effort video sidecars: a title, poster, transcript remapped to the edited timeline, and a storyboard sprite used for scrub previews.
 
 The share link works as soon as the main upload finishes and becomes richer as the sidecars arrive.
 
@@ -393,13 +393,13 @@ Files of 90 MiB or larger use 16 MiB multipart requests to stay below Cloudflare
 
 ## Privacy and Permissions
 
-Screendrop is local-first:
+Upshot is local-first:
 
 - Captures, project files, editable annotation sidecars, and transcripts are stored on your Mac.
 - Speech transcription runs on-device. Apple may download the required language model when you first enable transcription or the speech-following teleprompter.
 - The cloud upload token is stored in Keychain.
 - Cloud uploads only happen when an upload action or configured after-capture action requests one.
-- Screendrop has no central account or hosted Screendrop server.
+- Upshot has no central account or hosted Upshot server.
 - Network access is otherwise limited to explicit features such as update checks, cloud setup, and wallpaper downloads.
 
 macOS may request:
@@ -409,9 +409,9 @@ macOS may request:
 - **Microphone** for narration and speech-following teleprompter progress.
 - **Input Monitoring** for editable keystroke captions.
 
-Screendrop windows are excluded from captures by default. Enable **Settings → General → Include Screendrop windows in captures** when you intentionally want preview cards, recording controls, Settings, or other Screendrop UI in the result.
+Upshot windows are excluded from captures by default. Enable **Settings → General → Include Upshot windows in captures** when you intentionally want preview cards, recording controls, Settings, or other Upshot UI in the result.
 
-While this setting is enabled, a reminder below the pre-record bar warns that Screendrop windows will be captured. Turn off its switch to disable capture visibility immediately; the reminder disappears when the setting is off or recording begins.
+While this setting is enabled, a reminder below the pre-record bar warns that Upshot windows will be captured. Turn off its switch to disable capture visibility immediately; the reminder disappears when the setting is off or recording begins.
 
 ## Building Locally
 
@@ -426,26 +426,26 @@ Build from the command line:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build \
-  -project Screendrop.xcodeproj \
-  -scheme Screendrop \
+  -project Upshot.xcodeproj \
+  -scheme Upshot \
   -configuration Debug \
   -destination "platform=macOS"
 ```
 
 There is no test target. A successful Xcode build is the automated verification gate.
 
-The standalone [motion-blur benchmark](docs/export-performance.md#standalone-check) also compares the Metal renderer with Core Graphics and checks encoder interoperability and settled screen reuse without launching Screendrop. [Editor performance](docs/editor-performance.md) documents image budgets, close/cancellation behavior, and standalone resource checks.
+The standalone [motion-blur benchmark](docs/export-performance.md#standalone-check) also compares the Metal renderer with Core Graphics and checks encoder interoperability and settled screen reuse without launching Upshot. [Editor performance](docs/editor-performance.md) documents image budgets, close/cancellation behavior, and standalone resource checks.
 
 ## Releasing
 
-Screendrop includes a Go release helper. To run the complete archive, notarize, package, and publish flow:
+Upshot includes a Go release helper. To run the complete archive, notarize, package, and publish flow:
 
 ```bash
-go run ./cmd/screendrop-release -build
+go run ./cmd/upshot-release -build
 ```
 
-It creates a DMG, signs the update for Sparkle, creates the GitHub release, updates and pushes `appcast.xml`, and updates the Homebrew cask. Without `-build`, the helper expects an already exported `Screendrop.app` in `~/Downloads`.
+It creates a DMG, signs the update for Sparkle, creates the GitHub release, updates and pushes `appcast.xml`, and updates the Homebrew cask. Without `-build`, the helper expects an already exported `Upshot.app` in `~/Downloads`.
 
 ## License
 
-Screendrop is dedicated to the public domain under [CC0 1.0 Universal](LICENSE).
+Upshot is dedicated to the public domain under [CC0 1.0 Universal](LICENSE).

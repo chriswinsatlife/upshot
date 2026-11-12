@@ -2,10 +2,10 @@
 
 ## Project overview
 
-Screendrop is a native macOS screenshot and screen recording tool. Its Library window opens on normal launch; login launches remain in the menu bar (`LSUIElement = YES`). `AppActivationPolicy` uses `.regular` while Library, Settings, or editor windows are open, and returns to `.accessory` when they close. The opt-in `ScreendropPreferences.hideDockIcon` setting keeps it `.accessory` throughout. Built with SwiftUI + AppKit and no test target.
+Upshot is a native macOS screenshot and screen recording tool. Its Library window opens on normal launch; login launches remain in the menu bar (`LSUIElement = YES`). `AppActivationPolicy` uses `.regular` while Library, Settings, or editor windows are open, and returns to `.accessory` when they close. The opt-in `UpshotPreferences.hideDockIcon` setting keeps it `.accessory` throughout. Built with SwiftUI + AppKit and no test target.
 
 **Deployment target:** macOS 26.4 (Xcode 26.4 / Tahoe beta SDK).
-**Bundle ID:** `com.fayazahmed.Screendrop`
+**Bundle ID:** `co.chrisyork.upshot`
 
 ## Build
 
@@ -13,8 +13,8 @@ Use `xcodebuild` from the command line. The project requires the Xcode 26.4 beta
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build \
-  -project Screendrop.xcodeproj \
-  -scheme Screendrop \
+  -project Upshot.xcodeproj \
+  -scheme Upshot \
   -configuration Debug \
   -destination "platform=macOS" \
   2>&1 | grep -E "(BUILD SUCCEEDED|BUILD FAILED|error:)" | head -20
@@ -22,10 +22,10 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build \
 
 There are two shared schemes, both building the same target:
 
-- `Screendrop` - `Debug` configuration, produces `Screendrop.app` (`com.fayazahmed.Screendrop`).
-- `Screendrop Dev` - `Debug Dev` configuration, produces `Screendrop Dev.app` (`com.fayazahmed.Screendrop.dev`) in `Build/Products/Debug Dev`. It runs alongside an installed release build and keeps its own permissions, so use it for running and testing the app.
+- `Upshot` - `Debug` configuration, produces `Upshot.app` (`co.chrisyork.upshot`).
+- `Upshot Dev` - `Debug Dev` configuration, produces `Upshot Dev.app` (`co.chrisyork.upshot.dev`) in `Build/Products/Debug Dev`. It runs alongside an installed release build and keeps its own permissions, so use it for running and testing the app.
 
-`-configuration` overrides the scheme's own, so build the Dev scheme with `-configuration "Debug Dev"` (or leave the flag off). With `-configuration Debug` it quietly builds `Screendrop.app` instead and leaves `Screendrop Dev.app` stale.
+`-configuration` overrides the scheme's own, so build the Dev scheme with `-configuration "Debug Dev"` (or leave the flag off). With `-configuration Debug` it quietly builds `Upshot.app` instead and leaves `Upshot Dev.app` stale.
 
 No test target exists. Build success is the only automated verification.
 
@@ -41,19 +41,19 @@ When adding new types, assume `@MainActor` isolation by default. If a type must 
 
 ## Architecture
 
-All source is in `Screendrop/` (flat, no subdirectories). Key flow:
+All source is in `Upshot/` (flat, no subdirectories). Key flow:
 
-1. **App entry** - `ScreendropApp.swift`: `@main` App struct. Creates a `MenuBarExtra`, a Settings window, and an annotation editor `WindowGroup`.
+1. **App entry** - `UpshotApp.swift`: `@main` App struct. Creates a `MenuBarExtra`, a Settings window, and an annotation editor `WindowGroup`.
 2. **Hotkeys** - `HotkeyManager.swift`: Registers global Carbon hotkeys (Option+1/2/3) at launch via `AppDelegate`.
 3. **Capture** - `CaptureCoordinator.swift` → `ScreenshotManager.swift`: Fullscreen uses `ScreenCaptureKit`; window/area use `/usr/sbin/screencapture` CLI.
 4. **Capture shelf** - `CaptureShelfPresenter.swift` + `CaptureShelfView.swift` + `CaptureShelfCard.swift`: a borderless, card-wide `NSPanel` against the docked screen edge showing recent captures. `CaptureShelf` (an `@Observable` model) owns the cards and their actions; tucking slides them out through the edge and leaves a handle.
 5. **Annotation** - `AnnotationEditorWindow.swift` + `AnnotationEditorModel.swift` + `AnnotationCanvas.swift`: Full annotation editor with tools (rectangle, ellipse, arrow, freehand, text, numbered circles, pixelate, blur). All coordinates are normalized (0..1) relative to the image.
 6. **Rendering** - `AnnotationRenderer.swift`: Composites annotations onto the source image at full pixel resolution using Core Graphics.
-7. **Preferences** - `ScreendropPreferences.swift` + `SettingsView.swift`: `UserDefaults`-backed settings (auto-save, auto-copy, auto-compress, export directory).
+7. **Preferences** - `UpshotPreferences.swift` + `SettingsView.swift`: `UserDefaults`-backed settings (auto-save, auto-copy, auto-compress, export directory).
 8. **Library** - `CaptureLibraryView.swift` + `CaptureLibraryModel.swift`: Single native sidebar/detail/inspector scene. `CaptureLibraryCollection.swift` reuses AppKit cells for grid/list layouts; `CaptureLibraryThumbnails.swift` bounds decoded image memory and concurrency. The model merges History metadata with recording packages by standardized package path. Existing capture storage and editable sidecars remain authoritative. `CaptureLibraryActions.swift` handles batch operations and prevents trashing captures while their editors are open.
-9. **Library index** - `CaptureLibraryIndex.swift` + `CaptureLibraryAnalyzer.swift`: background, on-device analysis of every capture (Vision OCR with line boxes, a feature print for Similar, and a Foundation Models category/title/keywords, falling back to `CaptureCategoryRules`). One JSON file per capture lives in `Application Support/Screendrop/Library Index`, keyed by a hash of the item ID and invalidated by `thumbnailKey`; bump `CaptureAnalysis.currentVersion` to re-index. Similar compares feature prints in `Feature Prints.pack`, a memory-mapped, append-only copy of the per-capture `.print` archives (which stay authoritative). Work runs in two passes: `read` (OCR, feature print, rules category) for every capture, then `sort` (the model) for captures made after `ScreendropPreferences.libraryAutoSortSince`, or for all of them once the user opts in (`librarySortExisting`). `libraryAnalyzeCaptures` is the master switch. `CaptureLibrarySearch.swift` folds and matches the search text. `CaptureSource.swift` records the app a capture came from (stored in history.json and the recording manifest).
+9. **Library index** - `CaptureLibraryIndex.swift` + `CaptureLibraryAnalyzer.swift`: background, on-device analysis of every capture (Vision OCR with line boxes, a feature print for Similar, and a Foundation Models category/title/keywords, falling back to `CaptureCategoryRules`). One JSON file per capture lives in `Application Support/Upshot/Library Index`, keyed by a hash of the item ID and invalidated by `thumbnailKey`; bump `CaptureAnalysis.currentVersion` to re-index. Similar compares feature prints in `Feature Prints.pack`, a memory-mapped, append-only copy of the per-capture `.print` archives (which stay authoritative). Work runs in two passes: `read` (OCR, feature print, rules category) for every capture, then `sort` (the model) for captures made after `UpshotPreferences.libraryAutoSortSince`, or for all of them once the user opts in (`librarySortExisting`). `libraryAnalyzeCaptures` is the master switch. `CaptureLibrarySearch.swift` folds and matches the search text. `CaptureSource.swift` records the app a capture came from (stored in history.json and the recording manifest).
 
-10. **Agent (MCP) server** - `AgentRelay.swift` + `AgentServer.swift` + `AgentTools.swift` + `AgentToolHandlers.swift` + `AgentProjects.swift`: lets MCP clients (Claude Code, Codex, ...) edit and export recordings. Agents launch the app binary with `--mcp` (`ScreendropMain` branches before SwiftUI starts); that relay copies newline-delimited JSON-RPC between stdio and a Unix socket in `Application Support/Screendrop` (`agent.sock`, or `agent-dev.sock` for the Dev build), opening the app in the background if needed. `AgentServer` speaks MCP over the socket on the main actor. Edits always go through a `RecordingStudioModel`: the open Studio window's model when there is one, otherwise a windowless one (`isAgentSession`) that a window takes over when it opens. Most edits transform `editDocument` as JSON and call `applyAgentDocument` inside `performAgentEdit`, which makes each one a single undo step (socket-driven edits get no UI event to close an undo group). Tool descriptions are the agent's only documentation; keep them accurate when model fields change. Toggle: `ScreendropPreferences.agentServerEnabled` (Settings → MCP, `SettingsMCPPane.swift`).
+10. **Agent (MCP) server** - `AgentRelay.swift` + `AgentServer.swift` + `AgentTools.swift` + `AgentToolHandlers.swift` + `AgentProjects.swift`: lets MCP clients (Claude Code, Codex, ...) edit and export recordings. Agents launch the app binary with `--mcp` (`UpshotMain` branches before SwiftUI starts); that relay copies newline-delimited JSON-RPC between stdio and a Unix socket in `Application Support/Upshot` (`agent.sock`, or `agent-dev.sock` for the Dev build), opening the app in the background if needed. `AgentServer` speaks MCP over the socket on the main actor. Edits always go through a `RecordingStudioModel`: the open Studio window's model when there is one, otherwise a windowless one (`isAgentSession`) that a window takes over when it opens. Most edits transform `editDocument` as JSON and call `applyAgentDocument` inside `performAgentEdit`, which makes each one a single undo step (socket-driven edits get no UI event to close an undo group). Tool descriptions are the agent's only documentation; keep them accurate when model fields change. Toggle: `UpshotPreferences.agentServerEnabled` (Settings → MCP, `SettingsMCPPane.swift`).
 
 ### Singletons
 

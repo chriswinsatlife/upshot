@@ -1,14 +1,14 @@
 import Foundation
 
-// Exercises the production file transaction without launching Screendrop.
-// xcrun swiftc -module-cache-path /tmp/screendrop-save-module-cache \
-//   Screendrop/ScreenshotEditFileTransaction.swift scripts/check-screenshot-save.swift \
-//   -o /tmp/screendrop-save-check && /tmp/screendrop-save-check
+// Exercises the production file transaction without launching Upshot.
+// xcrun swiftc -module-cache-path /tmp/upshot-save-module-cache \
+//   Upshot/ScreenshotEditFileTransaction.swift scripts/check-screenshot-save.swift \
+//   -o /tmp/upshot-save-check && /tmp/upshot-save-check
 @main
 struct ScreenshotSaveChecks {
     static func main() throws {
         let manager = FileManager.default
-        let root = manager.temporaryDirectory.appendingPathComponent("screendrop-save-check-\(UUID())")
+        let root = manager.temporaryDirectory.appendingPathComponent("upshot-save-check-\(UUID())")
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
         func file(_ name: String, _ contents: String) throws -> URL {
@@ -28,7 +28,7 @@ struct ScreenshotSaveChecks {
         }
         func expectNoStagingFiles() throws {
             let files = try manager.contentsOfDirectory(atPath: root.path)
-            precondition(!files.contains(where: { $0.hasPrefix(".screendrop-save-") }))
+            precondition(!files.contains(where: { $0.hasPrefix(".upshot-save-") }))
         }
 
         let display = try file("display.png", "original pixels")
