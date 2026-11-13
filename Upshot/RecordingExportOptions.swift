@@ -1,21 +1,8 @@
-//
-//  RecordingExportOptions.swift
-//  Upshot
-//
-//  Export settings are asked for at the moment of export rather than parked
-//  in a collapsed inspector section nobody opens. Mirrors the share flow in
-//  CloudUploadOptions.swift: a button opens a small options popover, and
-//  confirming remembers the choice as the default for next time.
-//
 
 import SwiftUI
 
-/// Remembers the last-confirmed export settings so a recording that has never
-/// been exported starts from what the user picked previously instead of the
-/// factory defaults. Projects that already saved their own settings keep them.
 enum RecordingExportPreferences {
     private static let settingsKey = "recordingExportDefaultSettings"
-    /// Set once the remembered codec has moved to the HEVC default.
     private static let hevcDefaultKey = "recordingExportDefaultsMovedToHEVC"
 
     static var lastSettings: VideoCompressionSettings {
@@ -27,8 +14,6 @@ enum RecordingExportPreferences {
                   ) else {
                 return VideoCompressionSettings()
             }
-            // H.264 was remembered when it was the only default. Move it
-            // to HEVC once; choosing H.264 again afterwards sticks.
             if !UserDefaults.standard.bool(forKey: hevcDefaultKey) {
                 UserDefaults.standard.set(true, forKey: hevcDefaultKey)
                 if decoded.codec == .h264 {
@@ -45,14 +30,12 @@ enum RecordingExportPreferences {
     }
 }
 
-/// The options form shown from the Export button: quality, codec, resolution,
-/// container, frame rate, motion blur, and audio. Confirming hands back the settings
-/// and remembers them.
 struct RecordingExportOptionsPopover: View {
     let initialSettings: VideoCompressionSettings
     let onConfirm: (VideoCompressionSettings) -> Void
 
     @State private var settings: VideoCompressionSettings
+    @State private var delivery = UpshotPreferences.recordingExtendedExportDefaults
     @Environment(\.dismiss) private var dismiss
 
     init(
@@ -72,11 +55,23 @@ struct RecordingExportOptionsPopover: View {
             onConfirm: {
                 let confirmed = settings
                 RecordingExportPreferences.lastSettings = confirmed
+                UpshotPreferences.recordingExtendedExportDefaults = delivery
                 dismiss()
                 onConfirm(confirmed)
             }
         ) {
             VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+                segmented("Output", options: RecordingExportFormat.allCases, selection: $delivery.format)
+                if delivery.format == .gif {
+                    Picker("GIF frame rate", selection: $delivery.gifFrameRate) {
+                        ForEach(RecordingGIFFrameRate.allCases, id: \.self) { rate in
+                            Text("\(rate.rawValue) fps").tag(rate)
+                        }
+                    }
+                    segmented("GIF quality", options: RecordingGIFQuality.allCases, selection: $delivery.gifQuality)
+                    toggle("Optimize GIF", isOn: $delivery.optimizesGIF)
+                    InspectorHint("GIF exports loop continuously and contain no audio. Optimization combines identical frames.")
+                }
                 segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
                 segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
                 segmented("Resolution", options: VideoCompressionResolution.allCases, selection: $settings.resolution)
@@ -95,8 +90,6 @@ struct RecordingExportOptionsPopover: View {
                 ))
                 .help("Soften motion during zooms and pans. Turn off for faster exports with sharper motion.")
 
-                // `container` is optional on disk for backwards compatibility,
-                // but the control always shows a concrete choice.
                 segmented(
                     "Format",
                     options: VideoExportContainer.allCases,
@@ -130,8 +123,6 @@ struct RecordingExportOptionsPopover: View {
         InspectorToggleRow(title, isOn: isOn)
     }
 
-    /// Segmented row matching the inspector's group-label-above-control
-    /// rhythm, so the popover reads as the same control system as the panel.
     private func segmented<Option: Hashable & RawRepresentable>(
         _ title: String,
         options: [Option],
@@ -154,9 +145,6 @@ struct RecordingExportOptionsPopover: View {
     }
 }
 
-/// Wraps any trigger content in a button that opens the export options
-/// popover before firing `onExport`. Drop-in replacement for a plain
-/// `Button(action: model.export) { ... }` at an export call site.
 struct RecordingExportButton<Label: View>: View {
     let currentSettings: VideoCompressionSettings
     let onExport: (VideoCompressionSettings) -> Void

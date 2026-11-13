@@ -1,13 +1,3 @@
-//
-//  RecordingStudioModel.swift
-//  Upshot
-//
-//  View-model for the recording studio: loads a recording session (screen
-//  movie + optional camera movie + pointer-capture sidecar), owns the style
-//  settings and zoom cues, and keeps the screen and camera players in
-//  sync. Layout math lives in RecordingStudioLayout so the live preview and
-//  the exporter compose frames identically.
-//
 
 import AppKit
 import AVFoundation
@@ -37,7 +27,6 @@ enum RecordingStudioExportState: Equatable {
     }
 }
 
-/// Share-to-cloud pipeline: render the current edits, upload, copy link.
 enum RecordingStudioShareState: Equatable {
     case idle
     case rendering(progress: Double)
@@ -67,7 +56,6 @@ final class RecordingStudioModel {
     private(set) var hasCameraVideo = false
     private(set) var hasRecordedAudio = false
     private(set) var cameraOffset: TimeInterval = 0
-    /// The camera picture's width over its height, which a cutout takes.
     private(set) var cameraVideoAspect = RecordingCameraLayoutResolver.defaultCameraAspect
     private(set) var isLoaded = false
     private(set) var loadError: String?
@@ -97,12 +85,8 @@ final class RecordingStudioModel {
             scheduleProjectSave()
         }
     }
-    /// A background shown in the preview while the pointer rests on it in
-    /// the picker. Never saved or exported; picking it writes `style`.
     var previewBackground: AnnotationBackgroundStyle?
 
-    /// Shows or clears a hovered background. Leaving one fill can arrive
-    /// after entering the next, so only the fill being left is cleared.
     func previewBackground(_ background: AnnotationBackgroundStyle, isHovering: Bool) {
         if isHovering {
             previewBackground = background
@@ -111,9 +95,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The style preset currently applied, so the Studio's preset bar can
-    /// show its name and detect whether the user has since edited away from
-    /// it. Not persisted in the project file: reapplied by content match.
     var appliedStylePresetID: RecordingStudioStylePreset.ID?
     var zoomEnabled = true {
         didSet {
@@ -121,11 +102,22 @@ final class RecordingStudioModel {
             rebuildPreviewReframe()
         }
     }
+    var exportDeliveryOptions = RecordingExportDeliveryOptions() {
+        didSet {
+            guard exportDeliveryOptions != oldValue else { return }
+            if isLoaded, let session {
+                do {
+                    try RecordingExportOptionStore.save(exportDeliveryOptions, to: session.directoryURL)
+                    session.removeFinalVideos()
+                } catch {
+                    NSLog("[Upshot] Export options save failed: %@", error.localizedDescription)
+                }
+            }
+        }
+    }
     var exportSettings = VideoCompressionSettings() {
         didSet { scheduleProjectSave() }
     }
-    /// Studio-side input feedback: both are reconstructed from the sidecar,
-    /// so they can be toggled after the fact without touching the footage.
     var showsClickEffects = true {
         didSet { scheduleProjectSave() }
     }
@@ -135,7 +127,6 @@ final class RecordingStudioModel {
     var keystrokePlacement: RecordingKeystrokePlacement = .bottomCenter {
         didSet { scheduleProjectSave() }
     }
-    /// The "2× ›››" badge over sped-up clips; off unless asked for.
     var showsSpeedBadge = false {
         didSet { scheduleProjectSave() }
     }
@@ -148,26 +139,18 @@ final class RecordingStudioModel {
     var subtitleStyle = SubtitleBarStyle() {
         didSet { scheduleProjectSave() }
     }
-    /// Output aspect for Export/Share. Anything but `.original` crops the
-    /// render with a virtual camera that follows the pointer and zooms;
-    /// the Studio preview shows the same crop live.
     var exportAspect: ExportAspectPreset = .original {
         didSet {
             scheduleProjectSave()
             rebuildPreviewReframe()
         }
     }
-    /// Fill crops with the follow camera; Fit shows the whole recording
-    /// framed on the background.
     var exportAspectMode: ExportAspectContentMode = .fill {
         didSet {
             scheduleProjectSave()
             rebuildPreviewReframe()
         }
     }
-    /// Non-destructive crop of the screen-video source. The Studio background,
-    /// camera bubble and captions remain in canvas space around the reshaped
-    /// video card.
     var videoCropRect = CropGeometry.unit {
         didSet {
             scheduleProjectSave()
@@ -176,25 +159,16 @@ final class RecordingStudioModel {
     }
     private(set) var isCroppingVideo = false
     var workingVideoCropRect = CropGeometry.unit
-    /// The crop drag in progress, in the video's pixels.
     private(set) var videoCropDrag: CropDrag?
     var videoCropAspect: CropAspectRatio = .freeform
-    /// The preview's copy of the reframe camera, kept current with every
-    /// edit that would change the exported crop.
     private(set) var previewReframe: ReframeTrack?
-    /// Shared screen, clipping-card, and camera motion for preview and export.
     private(set) var motionTimeline = RecordingStudioMotionTimeline.none
     private var reframeFocusTimeline: PointerTimeline?
     private var reframeFocusResolved = false
     private(set) var subtitleCues: [RecordingSubtitleCue] = []
     private(set) var subtitleTimeline = SubtitleTimeline.empty
-    /// Word-level timing behind the cues; empty for projects transcribed
-    /// before transcript editing shipped (cues only).
     private(set) var transcriptWords: [RecordingTranscriptWord] = []
-    /// Word-timing lookup for karaoke captions; rebuilt with the cues.
     private(set) var karaokeTimeline = KaraokeTimeline.empty
-    /// Word under the playhead, updated only on word boundaries so the
-    /// transcript view isn't invalidated on every 20 ms playback tick.
     private(set) var activeTranscriptWordIndex: Int?
     var transcriptionState = RecordingTranscriptionState.idle
     private(set) var zoomCues: [ZoomCue] = []
@@ -202,38 +176,22 @@ final class RecordingStudioModel {
     private(set) var pointerTimeline = PointerTimeline.empty
     private(set) var keystrokeTimeline = KeystrokeCaptionTimeline.empty
     var selectedCueID: UUID?
-    /// Stretches of the recording in a layout other than the default.
     private(set) var cameraLayoutCues: [RecordingCameraLayoutCue] = []
-    /// The default layout and every cue resolved along editor time.
     private(set) var cameraLayoutTimeline = RecordingCameraLayoutTimeline.constant(RecordingCameraLayout())
     var selectedLayoutCueID: UUID?
-    /// Text over the recording, on the source clock. Later texts draw on
-    /// top of earlier ones.
     private(set) var textOverlays: [RecordingTextOverlay] = []
     var selectedTextID: UUID?
-    /// Pixelated or blurred regions of the recorded picture, on the source
-    /// clock.
     private(set) var redactions: [RecordingRedaction] = []
     var selectedRedactionID: UUID?
-    /// What the screen player's composition filters each frame through.
     let redactionPreview = RecordingRedactionPreviewSource()
-    /// What the camera player's composition touches each frame up with.
     let cameraBeautyPreview = StudioCameraBeautyPreviewSource()
-    /// Images and GIFs over the canvas, on the source clock, drawn above
-    /// the camera and below text.
     private(set) var imageOverlays: [RecordingImageOverlay] = []
     var selectedImageID: UUID?
-    /// Music and sound under the video, on the edited video's clock.
     private(set) var audioClips: [RecordingAudioClip] = []
     var selectedAudioClipID: UUID?
-    /// Decoded overlay images, shared with the canvas.
     let overlayImages = RecordingOverlayImageStore()
-    /// Moves on when an overlay image finishes decoding, so the canvas
-    /// draws it.
     private(set) var overlayImageRevision = 0
-    /// Waveform outlines of the audio files, by file name.
     private(set) var audioPeaks: [String: [Float]] = [:]
-    /// Why the last media import was turned down, if it was.
     var mediaImportError: String?
     private(set) var clipTimeline = RecordingClipTimeline(segments: []) {
         didSet {
@@ -242,19 +200,13 @@ final class RecordingStudioModel {
             }
         }
     }
-    /// Where the cut plays faster than recorded, for the speed badge.
     private(set) var speedBadgeTimeline = SpeedBadgeTimeline.empty
     var selectedClipID: UUID?
     var timelineHoverTime: TimeInterval?
-    /// Storyboard tiles for the clip lane, sampled on demand at whatever
-    /// density the lane's current zoom needs.
     let timelineThumbnails = RecordingTimelineThumbnailStore()
 
     private(set) var isPlaying = false
     var currentTime: TimeInterval = 0
-    /// Live scrub-preview time while the pointer hovers the trim strip
-    /// without committing to a new playhead position, matching Final
-    /// Cut/iMovie skimming. `nil` shows the real playhead again.
     var hoverPreviewTime: TimeInterval? {
         didSet {
             guard isLoaded, duration > 0, !isPlaying else { return }
@@ -268,13 +220,9 @@ final class RecordingStudioModel {
     var shareState: RecordingStudioShareState = .idle {
         didSet { updateCameraMatteCache() }
     }
-    /// Makes the cutout's mattes for the whole camera in the background.
     private var cameraMatteTask: Task<Void, Never>?
-    /// Upload identity while sharing, so the UI can read the uploader's
-    /// live progress and the history card mirrors the state.
     private(set) var shareItemID: UUID?
 
-    /// Gain shared by playback and video/audio export; 1 preserves the source.
     var audioVolume: CGFloat = 1 {
         didSet {
             updatePlaybackVolume()
@@ -284,8 +232,6 @@ final class RecordingStudioModel {
 
     private func updatePlaybackVolume() {
         guard let item = screenPlayer.currentItem else { return }
-        // The recording's gain applies to its own tracks; added audio
-        // carries its own volume and fades.
         let clipTrackIDs = Set(playbackClipTrackIDs.values)
         let recordingTracks = item.asset.tracks(withMediaType: .audio).filter { !clipTrackIDs.contains($0.trackID) }
         item.audioMix = RecordingAudioClipMixer.mix(
@@ -296,14 +242,10 @@ final class RecordingStudioModel {
         )
     }
 
-    /// Format the audio-only export writes.
     var audioExportFormat: RecordingAudioFormat = .m4a {
         didSet { scheduleProjectSave() }
     }
-    /// The soundtrack standing in for the recording's own audio, resolved
-    /// so both playback and export can use it without reloading tracks.
     private(set) var replacementAudio: RecordingReplacementAudio?
-    /// Why the last import was rejected, shown next to the Replace control.
     private(set) var replacementAudioError: String?
 
     private var timeObserver: Any?
@@ -311,9 +253,6 @@ final class RecordingStudioModel {
     private var exportTask: Task<Void, Never>?
     private var audioExportTask: Task<Void, Never>?
     private var replacementAudioTask: Task<Void, Never>?
-    /// The screen movie's video track, kept from load so the player item
-    /// can be rebuilt synchronously when an imported soundtrack means the
-    /// composition has to be assembled track by track.
     private var screenVideoTrack: AVAssetTrack?
     private var shareTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
@@ -329,49 +268,29 @@ final class RecordingStudioModel {
     private var layoutEditSnapshot: [RecordingCameraLayoutCue]?
     private var textEditSnapshot: [RecordingTextOverlay]?
     private var redactionEditSnapshot: [RecordingRedaction]?
-    /// Re-renders the paused frame after a region changes, at most once a
-    /// display frame however fast a drag reports.
     private var redactionRefreshTask: Task<Void, Never>?
-    /// Re-renders the paused camera frame after a touch-up changes.
     private var cameraBeautyRefreshTask: Task<Void, Never>?
-    /// Ends an inspector edit once its control has rested, so a slider
-    /// sweep or a run of typing undoes as one step.
     private var textCoalesceTask: Task<Void, Never>?
     private var redactionCoalesceTask: Task<Void, Never>?
     private var imageEditSnapshot: [RecordingImageOverlay]?
     private var audioEditSnapshot: [RecordingAudioClip]?
     private var imageCoalesceTask: Task<Void, Never>?
     private var audioCoalesceTask: Task<Void, Never>?
-    /// Each audio file's track, resolved once so the player item can be
-    /// rebuilt synchronously.
     private var audioTracksByFile: [String: RecordingAudioFileTrack] = [:]
-    /// The playback composition's track for each audio clip.
     private var playbackClipTrackIDs: [UUID: CMPersistentTrackID] = [:]
     private var audioPlaybackRebuildTask: Task<Void, Never>?
     private var mediaLoadTask: Task<Void, Never>?
-    /// The document as of the last explicit save. Everything the user does
-    /// after that lives in memory and in the autosaved draft until they save
-    /// again, which is what makes the close prompt meaningful.
     private var lastSavedDocument: RecordingEditDocument?
-    /// Set while a stored document is being applied to the model, so the
-    /// resulting property writes don't register as user edits.
     private var isApplyingDocument = false
-    /// Loaded by the agent server with no window behind it. Such a model
-    /// edits and exports like any other but doesn't count as an open editor.
     var isAgentSession = false
-    /// Whether the editor holds edits that have not been committed with an
-    /// explicit save. Stored rather than derived: the title bar and the Save
-    /// button read it on every body evaluation, and rebuilding the whole
-    /// document to compare it there would cost real time while dragging.
     private(set) var hasUnsavedChanges = false
     private(set) var saveFlash = false
 
-    /// Accepts either a recording session folder or a bare video file (so
-    /// history items and old recordings still open, just without events).
     init(url: URL) {
         sessionURL = url
         if RecordingSession.isSessionDirectory(url) {
             session = RecordingSession(directoryURL: url)
+            exportDeliveryOptions = RecordingExportOptionStore.load(from: url) ?? UpshotPreferences.recordingExtendedExportDefaults
         } else {
             session = nil
         }
@@ -381,12 +300,8 @@ final class RecordingStudioModel {
         session?.screenURL ?? sessionURL
     }
 
-    /// False for a bare movie opened from disk: there is no project package
-    /// behind it, so there is nothing to save into.
     var isProject: Bool { session != nil }
 
-    /// What the window title, share sheet, and Projects browser call this
-    /// project. A bare movie falls back to its file name.
     var projectDisplayName: String {
         session?.displayName ?? sessionURL.deletingPathExtension().lastPathComponent
     }
@@ -449,7 +364,6 @@ final class RecordingStudioModel {
                 guard !isTornDown, !Task.isCancelled else { return }
                 cameraVideoAspect = aspect
             }
-            // A cutout's first frame shouldn't wait on Vision loading its model.
             StudioCameraMatteGenerator.prewarm()
             cameraPlayer.replaceCurrentItem(with: AVPlayerItem(url: session.cameraURL))
             cameraPlayer.actionAtItemEnd = .pause
@@ -460,22 +374,12 @@ final class RecordingStudioModel {
         }
 
         lastSavedDocument = session?.loadEditDocument()
-        // A draft that outlived its editor means the last session ended
-        // without a save - a crash, a force quit, or a Studio window that is
-        // still open elsewhere. Reopen on the draft so nothing is lost; the
-        // project simply opens dirty.
         let document = session?.effectiveEditDocument()
-        // Sessions recorded before the toggle moved into Studio stored the
-        // choice in the manifest; honor it as the default.
         showsClickEffects = manifest?.pressEffectsEnabled ?? true
-        // A brand new recording has no project yet, so it also starts from
-        // the remembered export choice.
         exportSettings = RecordingExportPreferences.lastSettings
         if let document {
             applyDocumentSettings(document)
         } else if session == nil {
-            // Legacy bare movies use the same editor, but open visually
-            // unchanged until the user explicitly adds styling.
             style = RecordingStudioStyle(
                 background: .none,
                 padding: 0,
@@ -503,12 +407,8 @@ final class RecordingStudioModel {
             )
         }
         duration = clipTimeline.duration
-        // Nothing is selected until the user picks a clip; an unsplit
-        // recording would otherwise open wrapped in selection chrome.
         selectedClipID = nil
 
-        // Resolve the imported soundtrack before the first player item is
-        // built, so the editor opens already playing what it will export.
         if let session, let fileName = document?.replacementAudioFileName {
             let url = session.directoryURL.appendingPathComponent(fileName)
             if FileManager.default.fileExists(atPath: url.path) {
@@ -537,19 +437,11 @@ final class RecordingStudioModel {
 
         if let session {
             if session.hasUnsavedDraft {
-                // Reopened on a draft that outlived its editor.
                 hasUnsavedChanges = true
             } else if lastSavedDocument == nil {
-                // A recording that has never been saved is unsaved work by
-                // definition, which is what makes the close prompt offer to
-                // throw the whole thing away.
                 hasUnsavedChanges = true
             } else {
                 hasUnsavedChanges = false
-                // Adopt the loaded document in its normalized in-memory form
-                // as the baseline. Defaults filled in during load (an export
-                // preset an older project never stored, clips normalized to
-                // the real duration) would otherwise read as edits.
                 lastSavedDocument = currentDocument()
             }
             session.updateProjectMetadata { $0.lastOpenedAt = Date() }
@@ -557,8 +449,6 @@ final class RecordingStudioModel {
         StudioProjectRegistry.shared.register(self)
     }
 
-    /// Copies a stored project onto the model. Shared by the initial load and
-    /// by discarding changes, so both routes can never drift apart.
     private func applyDocumentSettings(_ document: RecordingEditDocument) {
         isApplyingDocument = true
         defer { isApplyingDocument = false }
@@ -573,12 +463,8 @@ final class RecordingStudioModel {
         audioClips = document.audioClips ?? []
         loadOverlayMedia()
         redactionPreview.update(redactions: redactions, clipTimeline: clipTimeline)
-        // A project that never chose its own settings inherits whatever
-        // was picked last, so "export as MP4" sticks across recordings.
         exportSettings = document.exportSettings ?? RecordingExportPreferences.lastSettings
         if document.exportSettings == nil {
-            // Old projects without export settings may inherit quality/codec
-            // preferences, but keep their original cadence and blur policy.
             exportSettings.frameRate = nil
             exportSettings.motionBlurEnabled = nil
         }
@@ -603,7 +489,6 @@ final class RecordingStudioModel {
     func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
-        // Persist only a fully loaded document, before releasing its data.
         if isLoaded { writeDraftNow() }
         isLoaded = false
         StudioProjectRegistry.shared.unregister(self)
@@ -680,14 +565,12 @@ final class RecordingStudioModel {
         wallpaperCacheLease = nil
     }
 
-    // MARK: - Style presets
 
     func applyStylePreset(_ preset: RecordingStudioStylePreset) {
         style = preset.value
         appliedStylePresetID = preset.id
     }
 
-    // MARK: - Playback
 
     func togglePlayback() {
         if isPlaying {
@@ -728,9 +611,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Moves both players to a source time without touching `currentTime`,
-    /// so hover skimming can preview a frame and cleanly hand back to the
-    /// real playhead position afterward.
     private func movePlayers(to time: TimeInterval) {
         let editorTime = min(max(time, 0), max(duration, 0))
         let sourceTime = clipTimeline.sourceTime(at: editorTime)
@@ -747,7 +627,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Time the preview canvas should render right now.
     var displayTime: TimeInterval {
         if isPlaying {
             let time = screenPlayer.currentTime().seconds
@@ -803,7 +682,6 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Clips
 
     var canUndo: Bool {
         _ = undoRevision
@@ -846,8 +724,6 @@ final class RecordingStudioModel {
         selectedLayoutCueID = id
     }
 
-    /// Lets go of whatever is selected on the timeline, like clicking
-    /// empty canvas.
     func clearTimelineSelection() {
         selectedCueID = nil
         selectedClipID = nil
@@ -973,9 +849,6 @@ final class RecordingStudioModel {
         selectedClipID = selectedID.flatMap { id in
             next.segments.contains(where: { $0.id == id }) ? id : nil
         } ?? next.segments.first?.id
-        // Both motion timelines integrate along editor time, so a cut, trim,
-        // or speed change invalidates them even when their source data did not
-        // change.
         rebuildPointerTimeline()
         rebuildViewportTimeline()
 
@@ -1009,11 +882,8 @@ final class RecordingStudioModel {
             )
         }
 
-        // Added music sits on its own tracks beside the recording's audio.
         let composedAsset = try addingAudioClips(to: playbackAsset)
         let item = AVPlayerItem(asset: composedAsset)
-        // Regions are filtered into the picture before the card draws it,
-        // so the preview's zoom and crop carry them exactly as the export's.
         redactionPreview.update(redactions: redactions, clipTimeline: clipTimeline)
         if !redactions.isEmpty {
             item.videoComposition = redactionPreview.makeVideoComposition(for: composedAsset)
@@ -1043,8 +913,6 @@ final class RecordingStudioModel {
         timelineThumbnails.prepare(url: screenURL, duration: sourceDuration)
     }
 
-    /// Speed of whichever clip covers this editor time; 1 when nothing
-    /// covers it (e.g. past the end of the timeline).
     private func speed(atEditorTime time: TimeInterval) -> Double {
         guard let location = clipTimeline.location(at: time) else { return 1 }
         return clipTimeline.segments[location.segmentIndex].speed
@@ -1058,9 +926,6 @@ final class RecordingStudioModel {
             cameraPlayer.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
             return
         }
-        // The camera master is a separate, unedited recording - it has no
-        // composition to bake speed into, so a sped-up clip must also play
-        // the camera bubble at that rate or the two drift apart immediately.
         let rate = Float(speed(atEditorTime: currentTime))
         let cameraTime = CMTime(seconds: max(0, sourceTime - cameraOffset), preferredTimescale: 600)
         cameraPlayer.seek(to: cameraTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
@@ -1098,14 +963,10 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Zoom cues
 
     private func replaceZoomCues(_ cues: [ZoomCue]) {
         zoomCues = cues.sorted { $0.start < $1.start }
         if zoomEditSnapshot != nil {
-            // A drag reports dozens of moves a second, and planning the
-            // camera integrates the whole recording. The block follows the
-            // pointer from `zoomCues`; the plan catches up when it rests.
             scheduleViewportRebuild()
         } else {
             rebuildViewportTimeline()
@@ -1156,9 +1017,6 @@ final class RecordingStudioModel {
         insertZoomCue(start: start, end: min(sourceDuration, start + 3))
     }
 
-    /// Room a cue has to grow or slide into before it would run into a
-    /// neighbor. Cues are kept sorted and non-overlapping, so the only cues
-    /// that can be in the way are the ones on either side.
     private func neighborBounds(
         forCueAt index: Int,
         in cues: [ZoomCue]
@@ -1171,9 +1029,6 @@ final class RecordingStudioModel {
         )
     }
 
-    /// Where a new cue can actually go. A request landing inside an existing
-    /// zoom is pushed past it rather than dropped, and the span is trimmed to
-    /// the next cue; nil when no gap from here on is long enough to use.
     private func freeSpan(
         from start: TimeInterval,
         preferredEnd: TimeInterval
@@ -1181,8 +1036,6 @@ final class RecordingStudioModel {
         guard sourceDuration > 0 else { return nil }
         let length = max(preferredEnd - start, ZoomCue.minimumDuration)
         var lower = min(max(start, 0), sourceDuration)
-        // Walks chains of touching cues, so "add at playhead" inside a run of
-        // zooms lands in the first real gap after them.
         while let covering = zoomCues.first(where: { $0.start <= lower && $0.end > lower }) {
             lower = covering.end
         }
@@ -1194,10 +1047,6 @@ final class RecordingStudioModel {
         return lower...min(lower + length, upper)
     }
 
-    /// Adds a zoom over a range drawn on the zoom track, in editor time.
-    /// The track has already fitted the range between the neighbouring
-    /// blocks and grown it to `ZoomCue.minimumDuration`, and shown it that
-    /// way, so this adds it as is: it neither moves nor stretches it.
     func addZoomCue(overEditorRange range: ClosedRange<TimeInterval>) {
         guard let span = drawnSourceSpan(
             for: range,
@@ -1238,8 +1087,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Applies an edited cue, stopping either edge at the neighboring cues so
-    /// blocks can be resized right up to each other but never through.
     func updateZoomCue(_ cue: ZoomCue) {
         var cues = zoomCues
         guard let index = cues.firstIndex(where: { $0.id == cue.id }) else { return }
@@ -1257,8 +1104,6 @@ final class RecordingStudioModel {
         replaceZoomCues(cues)
     }
 
-    /// Slides a cue without changing its length. Unlike a resize, running into
-    /// a neighbor parks the block against it rather than squashing it.
     func moveZoomCue(_ cue: ZoomCue) {
         var cues = zoomCues
         guard let index = cues.firstIndex(where: { $0.id == cue.id }) else { return }
@@ -1272,8 +1117,6 @@ final class RecordingStudioModel {
         replaceZoomCues(cues)
     }
 
-    /// Everything about a cue except its placement, which the caller clamps
-    /// against its neighbors.
     private func sanitized(_ cue: ZoomCue) -> ZoomCue {
         var cue = cue
         cue.start = min(max(0, cue.start), sourceDuration)
@@ -1291,7 +1134,6 @@ final class RecordingStudioModel {
         zoomCues.first { $0.id == selectedCueID }
     }
 
-    // MARK: - Camera layouts
 
     var selectedLayoutCue: RecordingCameraLayoutCue? {
         cameraLayoutCues.first { $0.id == selectedLayoutCueID }
@@ -1301,15 +1143,12 @@ final class RecordingStudioModel {
         RecordingCameraLayoutTimeline.blocks(for: cameraLayoutCues, clipTimeline: clipTimeline)
     }
 
-    /// The cue covering an editor time, if any.
     func layoutCue(atEditorTime time: TimeInterval) -> RecordingCameraLayoutCue? {
         cameraLayoutTimelineBlocks
             .first { $0.editorStart <= time && time < $0.editorEnd }?
             .cue
     }
 
-    /// Changes whichever layout is showing at `time`: the cue covering it,
-    /// or the default when none does. Used by direct edits on the canvas.
     func editLayout(atEditorTime time: TimeInterval, actionName: String, _ change: (inout RecordingCameraLayout) -> Void) {
         if var cue = layoutCue(atEditorTime: time) {
             change(&cue.layout)
@@ -1332,11 +1171,6 @@ final class RecordingStudioModel {
         if rebuildsZoom { rebuildMotionTimeline() }
     }
 
-    /// Once a cutout appears anywhere on the timeline, the whole camera is
-    /// segmented in the background so exports can read the mattes instead
-    /// of running Vision. A render segments for itself, so the cache steps
-    /// aside while one runs - Vision shared between them would slow both -
-    /// and starts over after.
     private func updateCameraMatteCache() {
         let isRendering = exportState.isExporting || shareState.isBusy
         guard isLoaded, !isTornDown, !isRendering, showsCameraLayer,
@@ -1374,8 +1208,6 @@ final class RecordingStudioModel {
         replaceLayoutCues(sorted)
     }
 
-    /// Opens a continuous edit (a drag); `endLayoutCueEdit` registers it as
-    /// one undo step.
     func beginLayoutCueEdit() {
         if layoutEditSnapshot == nil {
             layoutEditSnapshot = cameraLayoutCues
@@ -1391,15 +1223,12 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Adds a cue at the playhead, three seconds long or up to the next cue.
     func addLayoutCue(at time: TimeInterval, layout: RecordingCameraLayout? = nil) {
         let sourceTime = clipTimeline.sourceTime(at: time)
         let start = min(max(0, sourceTime), max(0, sourceDuration - RecordingCameraLayoutCue.minimumDuration))
         insertLayoutCue(start: start, end: min(sourceDuration, start + 3), layout: layout)
     }
 
-    /// Adds a cue over a range drawn on the layout track, in editor time,
-    /// as is - see `addZoomCue(overEditorRange:)`.
     func addLayoutCue(overEditorRange range: ClosedRange<TimeInterval>) {
         guard let span = drawnSourceSpan(
             for: range,
@@ -1426,8 +1255,6 @@ final class RecordingStudioModel {
         selectLayoutCue(id: cue.id)
     }
 
-    /// Mirrors zoom cue placement: a request inside a cue is pushed past it,
-    /// and the span stops at the next cue.
     private func freeLayoutSpan(from start: TimeInterval, preferredEnd: TimeInterval) -> ClosedRange<TimeInterval>? {
         guard sourceDuration > 0 else { return nil }
         let minimum = RecordingCameraLayoutCue.minimumDuration
@@ -1459,15 +1286,12 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Applies an edited cue as its own undo step.
     func updateLayoutCue(_ cue: RecordingCameraLayoutCue, actionName: String) {
         beginLayoutCueEdit()
         resizeLayoutCue(cue)
         endLayoutCueEdit(actionName: actionName)
     }
 
-    /// Applies an edited cue during a continuous edit, stopping either edge
-    /// at the neighboring cues.
     func resizeLayoutCue(_ cue: RecordingCameraLayoutCue) {
         var cues = cameraLayoutCues
         guard let index = cues.firstIndex(where: { $0.id == cue.id }) else { return }
@@ -1480,8 +1304,6 @@ final class RecordingStudioModel {
         replaceLayoutCues(cues)
     }
 
-    /// Slides a cue without changing its length, parking it against a
-    /// neighbor rather than squashing it.
     func moveLayoutCue(_ cue: RecordingCameraLayoutCue) {
         var cues = cameraLayoutCues
         guard let index = cues.firstIndex(where: { $0.id == cue.id }) else { return }
@@ -1496,7 +1318,6 @@ final class RecordingStudioModel {
         replaceLayoutCues(cues)
     }
 
-    // MARK: - Text
 
     var selectedText: RecordingTextOverlay? {
         textOverlays.first { $0.id == selectedTextID }
@@ -1508,7 +1329,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The texts showing at an editor time, bottom to top.
     func texts(atEditorTime time: TimeInterval) -> [RecordingTextOverlay] {
         guard !textOverlays.isEmpty, clipTimeline.location(at: time) != nil else { return [] }
         let sourceTime = clipTimeline.sourceTime(at: time)
@@ -1521,7 +1341,6 @@ final class RecordingStudioModel {
         selectedTextID = id
     }
 
-    /// Adds a text at the playhead, three seconds long.
     func addText(atEditorTime time: TimeInterval) {
         let range = sourceRange(startingAt: time, length: RecordingTextOverlay.defaultDuration,
                                 minimum: RecordingTextOverlay.minimumDuration)
@@ -1529,8 +1348,6 @@ final class RecordingStudioModel {
         insertText(RecordingTextOverlay(start: range.lowerBound, end: range.upperBound))
     }
 
-    /// Adds a text over a range dragged across the text track. Times are
-    /// editor time and need not be ordered.
     func addText(fromEditorTime editorStart: TimeInterval, toEditorTime editorEnd: TimeInterval) {
         guard let range = sourceRange(fromEditorTime: editorStart, toEditorTime: editorEnd,
                                       minimum: RecordingTextOverlay.minimumDuration) else { return }
@@ -1547,8 +1364,6 @@ final class RecordingStudioModel {
         if selectedTextID == id { selectedTextID = nil }
     }
 
-    /// Opens a continuous edit (a drag, or typing); `endTextEdit` registers
-    /// it as one undo step.
     func beginTextEdit() {
         if textEditSnapshot == nil { textEditSnapshot = textOverlays }
     }
@@ -1562,8 +1377,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Applies an edited text during a continuous edit, keeping it inside
-    /// the recording.
     func setText(_ overlay: RecordingTextOverlay) {
         guard let index = textOverlays.firstIndex(where: { $0.id == overlay.id }) else { return }
         var texts = textOverlays
@@ -1578,8 +1391,6 @@ final class RecordingStudioModel {
         replaceTexts(texts)
     }
 
-    /// Applies an inspector edit; edits that follow each other closely,
-    /// like a slider sweep or typing, undo together.
     func editText(_ overlay: RecordingTextOverlay, actionName: String) {
         beginTextEdit()
         setText(overlay)
@@ -1591,7 +1402,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Applies an edited text as its own undo step.
     func updateText(_ overlay: RecordingTextOverlay, actionName: String) {
         beginTextEdit()
         setText(overlay)
@@ -1615,7 +1425,6 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Pixelate
 
     var selectedRedaction: RecordingRedaction? {
         redactions.first { $0.id == selectedRedactionID }
@@ -1627,7 +1436,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The regions showing at an editor time.
     func redactions(atEditorTime time: TimeInterval) -> [RecordingRedaction] {
         guard !redactions.isEmpty, clipTimeline.location(at: time) != nil else { return [] }
         let sourceTime = clipTimeline.sourceTime(at: time)
@@ -1640,8 +1448,6 @@ final class RecordingStudioModel {
         selectedRedactionID = id
     }
 
-    /// Pixelates the middle of the picture from the playhead for three
-    /// seconds; the region is then moved and sized on the canvas.
     func addRedaction(atEditorTime time: TimeInterval, style: RecordingRedaction.Style = .pixelate) {
         guard let range = sourceRange(startingAt: time, length: RecordingRedaction.defaultDuration,
                                       minimum: RecordingRedaction.minimumDuration) else { return }
@@ -1669,8 +1475,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Applies an edited region during a continuous edit, keeping it inside
-    /// the recording and the picture.
     func setRedaction(_ redaction: RecordingRedaction) {
         guard let index = redactions.firstIndex(where: { $0.id == redaction.id }) else { return }
         var updated = redaction
@@ -1728,9 +1532,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The player renders a paused frame once, so a region edited while
-    /// paused needs the frame drawn again. A fresh composition makes the
-    /// player re-render; the seek puts the same moment back on screen.
     private func scheduleRedactionRefresh() {
         guard !isPlaying, redactionRefreshTask == nil else { return }
         redactionRefreshTask = Task { [weak self] in
@@ -1745,8 +1546,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The camera player runs a touch-up composition only while there's
-    /// something to touch up, so an untouched camera plays as recorded.
     private func updateCameraBeautyPreview() {
         let beauty = style.camera.beauty
         cameraBeautyPreview.update(beauty)
@@ -1759,8 +1558,6 @@ final class RecordingStudioModel {
         scheduleCameraBeautyRefresh()
     }
 
-    /// Like a region edit, a touch-up changed while paused needs the
-    /// camera's frame drawn again.
     private func scheduleCameraBeautyRefresh() {
         guard !isPlaying, cameraBeautyRefreshTask == nil else { return }
         cameraBeautyRefreshTask = Task { [weak self] in
@@ -1775,19 +1572,13 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Media
 
-    /// Where imported images and audio are copied; nil for a bare movie,
-    /// which has no project folder to keep them in.
     var mediaDirectoryURL: URL? {
         session?.directoryURL.appendingPathComponent("media", isDirectory: true)
     }
 
     var canImportMedia: Bool { mediaDirectoryURL != nil && isLoaded }
 
-    /// Copies picked images, GIFs and audio into the project and places
-    /// them from `time`: images on the Images & Effects track, audio on the
-    /// Audio track, several of a kind one after another.
     func importMedia(_ urls: [URL], atEditorTime time: TimeInterval) {
         guard let directory = mediaDirectoryURL else { return }
         mediaImportError = nil
@@ -1819,8 +1610,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// One file, awaited: the agent server needs to know it landed before
-    /// it reports back. False when the file isn't an image, GIF, or audio.
     func importMediaFile(_ url: URL, atEditorTime time: TimeInterval) async -> Bool {
         guard let directory = mediaDirectoryURL, !isTornDown else { return false }
         if RecordingOverlayImage.canImport(url) {
@@ -1845,7 +1634,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Adds one image at an editor time. Returns where the next one goes.
     private func importImage(_ url: URL, into directory: URL, atEditorTime time: TimeInterval) async -> TimeInterval? {
         guard let fileName = copyIntoProject(url, directory: directory) else { return nil }
         let storedURL = directory.appendingPathComponent(fileName)
@@ -1865,7 +1653,6 @@ final class RecordingStudioModel {
         )
         overlay.aspect = decoded.aspect
         overlay.isAnimated = decoded.isAnimated
-        // At most 40% of the canvas wide and half of it tall.
         let canvas = basePreviewCanvasSize
         let heightLimitedWidth = canvas.width > 0 ? 0.5 * canvas.height * decoded.aspect / canvas.width : 0.4
         overlay.width = min(0.4, heightLimitedWidth)
@@ -1875,7 +1662,6 @@ final class RecordingStudioModel {
         return clipTimeline.editorTime(forSourceTime: range.upperBound) ?? time + RecordingImageOverlay.defaultDuration
     }
 
-    /// Adds one audio file at an editor time. Returns where the next one goes.
     private func importAudio(_ url: URL, into directory: URL, atEditorTime time: TimeInterval) async -> TimeInterval? {
         guard let fileName = copyIntoProject(url, directory: directory) else { return nil }
         let storedURL = directory.appendingPathComponent(fileName)
@@ -1887,8 +1673,6 @@ final class RecordingStudioModel {
         }
         audioTracksByFile[fileName] = file
         loadPeaks(for: fileName, url: storedURL)
-        // A file dropped right at the end starts from the top instead of
-        // landing past everything.
         let start = time > duration - 0.5 ? 0 : max(0, time)
         var clip = RecordingAudioClip(
             fileName: fileName,
@@ -1910,9 +1694,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Decodes a project's overlay images and resolves its audio files in
-    /// the background after it opens; the canvas and player pick them up as
-    /// they arrive.
     private func loadOverlayMedia() {
         mediaLoadTask?.cancel()
         guard let directory = mediaDirectoryURL, !imageOverlays.isEmpty || !audioClips.isEmpty else { return }
@@ -1943,7 +1724,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The playback asset with every resolved audio clip on its own track.
     private func addingAudioClips(to asset: AVAsset) throws -> AVAsset {
         playbackClipTrackIDs = [:]
         let sources = audioClips.compactMap { clip in
@@ -1954,8 +1734,6 @@ final class RecordingStudioModel {
         if let existing = asset as? AVMutableComposition {
             composition = existing
         } else {
-            // The unedited recording plays as-is; music needs a composition
-            // to sit in.
             composition = AVMutableComposition()
             try composition.insertTimeRange(
                 CMTimeRange(start: .zero, duration: CMTime(seconds: sourceDuration, preferredTimescale: 600)),
@@ -1967,7 +1745,6 @@ final class RecordingStudioModel {
         return composition
     }
 
-    // MARK: - Images
 
     var selectedImage: RecordingImageOverlay? {
         imageOverlays.first { $0.id == selectedImageID }
@@ -1979,7 +1756,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The images showing at an editor time, bottom to top.
     func images(atEditorTime time: TimeInterval) -> [RecordingImageOverlay] {
         guard !imageOverlays.isEmpty, clipTimeline.location(at: time) != nil else { return [] }
         let sourceTime = clipTimeline.sourceTime(at: time)
@@ -2054,7 +1830,6 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Audio
 
     var selectedAudioClip: RecordingAudioClip? {
         audioClips.first { $0.id == selectedAudioClipID }
@@ -2084,7 +1859,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Applies an edited clip, keeping its trim inside the file.
     func setAudioClip(_ clip: RecordingAudioClip) {
         guard let index = audioClips.firstIndex(where: { $0.id == clip.id }) else { return }
         var updated = clip
@@ -2113,8 +1887,6 @@ final class RecordingStudioModel {
         let previous = audioClips
         audioClips = all
         scheduleProjectSave()
-        // Volume and fades only change the mix; anything that moves audio
-        // in time needs the composition rebuilt.
         let placement: (RecordingAudioClip) -> [Double] = { [$0.start, $0.trimStart, $0.trimEnd] }
         let movedAudio = previous.map(\.id) != all.map(\.id)
             || zip(previous, all).contains { placement($0) != placement($1) || $0.fileName != $1.fileName }
@@ -2125,8 +1897,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// A drag reports many moves; the player item is rebuilt once they
-    /// settle.
     private func scheduleAudioPlaybackRebuild() {
         audioPlaybackRebuildTask?.cancel()
         audioPlaybackRebuildTask = Task { [weak self] in
@@ -2151,10 +1921,7 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Overlay ranges
 
-    /// A source range `length` long from the recording moment under an
-    /// editor time, kept inside the recording.
     private func sourceRange(
         startingAt editorTime: TimeInterval,
         length: TimeInterval,
@@ -2183,12 +1950,6 @@ final class RecordingStudioModel {
         return lower...max(lower, upper)
     }
 
-    /// The recording under a range drawn on a track whose blocks can't
-    /// overlap. The track has fitted the range between the blocks it draws,
-    /// so this only trims away what it couldn't see: a cue cut out of the
-    /// edit draws nothing, and the round trip through editor time can land
-    /// a hair inside a neighbour. Nil when that leaves less than `minimum`,
-    /// which the track already measured, in editor time.
     private func drawnSourceSpan(
         for range: ClosedRange<TimeInterval>,
         among occupied: [ClosedRange<TimeInterval>],
@@ -2201,9 +1962,6 @@ final class RecordingStudioModel {
         }
         let ceiling = occupied.map(\.lowerBound).filter { $0 >= lower }.min() ?? sourceDuration
         let upper = min(end, ceiling)
-        // Speed only ever packs more recording into a timeline second, so a
-        // block drawn `minimum` long covers at least that much recording;
-        // the slack absorbs rounding.
         guard upper - lower >= minimum - 0.001 else { return nil }
         return lower...upper
     }
@@ -2212,10 +1970,6 @@ final class RecordingStudioModel {
         recordedPressTimes.compactMap { clipTimeline.editorTime(forSourceTime: $0) }
     }
 
-    /// One visual block per cue on the edited timeline. A cue's per-segment
-    /// slices are always contiguous in editor time (a cut removes the editor
-    /// time between them), so they merge into a single block - cutting a clip
-    /// inside a zoom never splits the zoom's lane representation.
     var zoomTimelineBlocks: [RecordingZoomTimelineBlock] {
         zoomCues
             .filter { !$0.isImplicit }
@@ -2265,8 +2019,6 @@ final class RecordingStudioModel {
     }
 
     private func rebuildViewportTimeline() {
-        // Layout cues live on the edited timeline. Rebuild their shared
-        // motion with every cut, trim, speed change, or zoom edit.
         rebuildCameraLayoutTimeline(rebuildsZoom: false)
         guard sourceDuration > 0 else {
             viewportTimeline = .identity
@@ -2277,8 +2029,6 @@ final class RecordingStudioModel {
             capture: pointerCapture,
             clipTimeline: clipTimeline
         )
-        // The reframe camera derives from the viewport, so it follows
-        // every rebuild (zoom edits, cuts, speed changes).
         rebuildPreviewReframe()
     }
 
@@ -2293,7 +2043,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Every edit in the editor, as a storable document.
     private func currentDocument() -> RecordingEditDocument {
         RecordingEditDocument(
             style: style,
@@ -2309,8 +2058,6 @@ final class RecordingStudioModel {
             showsClickEffects: showsClickEffects,
             showsKeystrokes: showsKeystrokes,
             keystrokePlacement: keystrokePlacement,
-            // Written only when they differ from the defaults, so projects
-            // that never touch the badge stay byte-identical on disk.
             showsSpeedBadge: showsSpeedBadge ? true : nil,
             speedBadgePlacement: speedBadgePlacement == .topRight ? nil : speedBadgePlacement,
             showsSubtitles: showsSubtitles,
@@ -2327,23 +2074,15 @@ final class RecordingStudioModel {
         )
     }
 
-    /// True until the project has been saved at least once. Only these get
-    /// offered "Delete and close" - throwing away a project the user already
-    /// committed to would be unrecoverable.
     var hasNeverBeenSaved: Bool {
         guard let session else { return false }
         return !session.hasSavedProject
     }
 
-    /// Persists the working copy. Cheap, debounced, and never touches the
-    /// committed `edit.json`, so a crash costs nothing and Save still means
-    /// something.
     private func writeDraftNow() {
         guard isLoaded, let session else { return }
         let document = currentDocument()
         if document == lastSavedDocument {
-            // Edited back to the saved state (undo, or a discard landing):
-            // the draft is now noise and would reopen the project dirty.
             session.removeDraftDocument()
             hasUnsavedChanges = false
         } else {
@@ -2353,33 +2092,22 @@ final class RecordingStudioModel {
         dropStaleRender(for: document, in: session)
     }
 
-    /// A cached flatten that no longer matches the edits is worse than no
-    /// cache: History previews it and Share would upload it.
     private func dropStaleRender(for document: RecordingEditDocument, in session: RecordingSession) {
         guard session.existingFinalURL != nil else { return }
         guard session.freshFinalURL(matching: document) == nil else { return }
         session.removeFinalVideos()
     }
 
-    /// Writes the working copy immediately, bypassing the debounce. Used on
-    /// teardown and on quit so no edit is left only in memory.
     func flushDraft() {
         projectSaveTask?.cancel()
         writeDraftNow()
     }
 
-    // MARK: - Agent edits
 
-    /// Every edit as a storable document, for the agent server to read and
-    /// transform.
     var editDocument: RecordingEditDocument {
         currentDocument()
     }
 
-    /// Runs one agent edit as exactly one undo step. Undo groups normally
-    /// close at the end of a UI event, and edits arriving over the agent
-    /// socket never get one, so without an explicit group every agent edit
-    /// would pile into a single step that undoes them all at once.
     func performAgentEdit(_ edit: () throws -> Void) rethrows {
         let manager = editUndoManager
         closeOpenUndoGroups()
@@ -2392,18 +2120,12 @@ final class RecordingStudioModel {
         try edit()
     }
 
-    /// Ends a group left open by an edit that arrived outside a UI event,
-    /// such as a media import an agent awaited.
     func closeOpenUndoGroups() {
         while editUndoManager.groupingLevel > 0 {
             editUndoManager.endUndoGrouping()
         }
     }
 
-    /// Applies a whole document an agent produced as one undo step, so the
-    /// user can ⌘Z an agent's change like their own. The imported soundtrack
-    /// is the one thing that stays put: swapping it loads a file, which this
-    /// synchronous path (and undo) can't wait for.
     func applyAgentDocument(_ requested: RecordingEditDocument, actionName: String) {
         guard isLoaded else { return }
         var document = requested
@@ -2439,7 +2161,6 @@ final class RecordingStudioModel {
         scheduleProjectSave()
     }
 
-    /// ⌘S. Commits the working copy to `edit.json` and clears the draft.
     @discardableResult
     func saveProject() -> Bool {
         guard isLoaded, let session else { return false }
@@ -2462,8 +2183,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Throws away everything since the last save and returns the editor to
-    /// that state. Only offered for projects that have actually been saved.
     func discardChanges() async {
         guard isLoaded, let session else { return }
         projectSaveTask?.cancel()
@@ -2471,13 +2190,9 @@ final class RecordingStudioModel {
         guard let document = lastSavedDocument else { return }
         applyDocumentSettings(document)
         await applyDocumentTimeline(document)
-        // Rebuilding the timeline touches published state; let the normal
-        // draft path settle the dirty flag rather than assuming it landed.
         flushDraft()
     }
 
-    /// Deletes the whole recording package - footage included - and its
-    /// History entry. Reserved for a project that was never saved.
     func deleteProject() {
         guard let session else { return }
         teardown()
@@ -2492,8 +2207,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The parts of a stored project that need the timeline rebuilt around
-    /// them: cuts, the imported soundtrack, and everything derived from both.
     private func applyDocumentTimeline(_ document: RecordingEditDocument) async {
         guard !isTornDown, !Task.isCancelled, let session else { return }
         isApplyingDocument = true
@@ -2510,8 +2223,6 @@ final class RecordingStudioModel {
             )
         }
         duration = clipTimeline.duration
-        // Nothing is selected until the user picks a clip; an unsplit
-        // recording would otherwise open wrapped in selection chrome.
         selectedClipID = nil
 
         if let fileName = document.replacementAudioFileName {
@@ -2538,26 +2249,20 @@ final class RecordingStudioModel {
         undoRevision += 1
     }
 
-    /// Viewport frame to render at a given time, honoring the zoom toggle.
     func viewportFrame(at time: TimeInterval) -> ViewportFrame {
         guard zoomEnabled else { return .identity }
         return viewportTimeline.frame(at: time)
     }
 
-    /// How far the zoom has travelled toward its target, 0...1.
     func zoomProgress(at time: TimeInterval) -> Double {
         guard zoomEnabled else { return 0 }
         return viewportTimeline.zoomProgress(at: time)
     }
 
-    /// True when this session was captured without the OS cursor, so the
-    /// preview and export draw the synthetic pointer.
     var pointerIsSynthesized: Bool {
         manifest?.pointerSynthesized == true
     }
 
-    /// Smoothed normalized pointer location for the preview overlay; nil when
-    /// the recording carries its cursor in the pixels.
     func pointerLocation(at time: TimeInterval) -> CGPoint? {
         guard pointerIsSynthesized else { return nil }
         return pointerTimeline.location(at: time)
@@ -2572,8 +2277,6 @@ final class RecordingStudioModel {
         pointerTimeline.artwork(id: id)?.styled(style.cursorStyle, inverted: style.invertsCursor)
     }
 
-    /// Legacy sessions may already contain baked-in press feedback; only
-    /// sidecar-reconstructed sessions can re-render it on demand.
     var canShowPressEffects: Bool {
         pointerIsSynthesized && manifest?.pressEffectsBaked == false
     }
@@ -2586,10 +2289,7 @@ final class RecordingStudioModel {
         !keystrokeTimeline.isEmpty
     }
 
-    // MARK: - Transcription
 
-    /// Only narrated sessions can be transcribed; the mic requirement means
-    /// legacy bare movies and silent captures never show the section.
     var canTranscribe: Bool {
         manifest?.includesMicrophone == true
     }
@@ -2598,16 +2298,11 @@ final class RecordingStudioModel {
         !subtitleTimeline.isEmpty
     }
 
-    /// Subtitle text to draw over the card right now; nil when hidden or
-    /// nobody is speaking.
     func subtitleText(at time: TimeInterval) -> String? {
         guard showsSubtitles, hasSubtitles else { return nil }
         return subtitleTimeline.text(at: clipTimeline.sourceTime(at: time))
     }
 
-    /// Karaoke word state for the bar at this editor time; nil when the
-    /// style doesn't highlight words or no timings exist, in which case
-    /// the bar renders `subtitleText` plainly.
     func subtitleKaraokeLine(at time: TimeInterval) -> KaraokeTimeline.Line? {
         guard showsSubtitles, subtitleStyle.highlightsSpokenWord,
               !karaokeTimeline.isEmpty else {
@@ -2664,8 +2359,6 @@ final class RecordingStudioModel {
         scheduleProjectSave()
     }
 
-    /// Moves the paused playhead to a cue's first surviving frame; a cue
-    /// whose audio was cut out entirely has no home on the edited timeline.
     func seekToSubtitle(_ cue: RecordingSubtitleCue) {
         let target = clipTimeline.editorTime(forSourceTime: cue.start)
             ?? clipTimeline.editorTime(forSourceTime: (cue.start + cue.end) / 2)
@@ -2674,21 +2367,16 @@ final class RecordingStudioModel {
         seek(to: target)
     }
 
-    /// Cue under the playhead right now, for highlighting the list row.
     var activeSubtitleCue: RecordingSubtitleCue? {
         guard hasSubtitles else { return nil }
         return subtitleTimeline.cue(at: clipTimeline.sourceTime(at: currentTime))
     }
 
-    // MARK: - Transcript editing
 
-    /// Cues-only projects (transcribed before words were stored) can still
-    /// show captions but need a fresh transcription to edit by text.
     var hasTranscriptWords: Bool {
         !transcriptWords.isEmpty
     }
 
-    /// Whether this word's audio still exists on the edited timeline.
     func transcriptWordSurvives(_ index: Int) -> Bool {
         guard transcriptWords.indices.contains(index) else { return false }
         return clipTimeline.editorTime(forSourceTime: transcriptWords[index].midpoint) != nil
@@ -2699,19 +2387,16 @@ final class RecordingStudioModel {
         return TranscriptEditPlanner.isFiller(transcriptWords[index])
     }
 
-    /// Fillers that would actually be cut - ones already removed don't count.
     var removableFillerWordCount: Int {
         TranscriptEditPlanner.fillerIndices(in: transcriptWords)
             .count { transcriptWordSurvives($0) }
     }
 
-    /// Narration pauses long enough to trim that still exist in the edit.
     var trimmableSilenceCount: Int {
         TranscriptEditPlanner.silenceCutRanges(in: transcriptWords, sourceDuration: sourceDuration)
             .count { !clipTimeline.slices(overlapping: $0.lowerBound, sourceEnd: $0.upperBound).isEmpty }
     }
 
-    /// Moves the paused playhead to a word's first surviving frame.
     func seekToTranscriptWord(at index: Int) {
         guard transcriptWords.indices.contains(index) else { return }
         let word = transcriptWords[index]
@@ -2722,7 +2407,6 @@ final class RecordingStudioModel {
         seek(to: target)
     }
 
-    /// Cuts the selected words' footage out of the video.
     func cutTranscriptWords(in range: ClosedRange<Int>) {
         guard let cut = TranscriptEditPlanner.cutRange(
             forWordsAt: range,
@@ -2746,10 +2430,6 @@ final class RecordingStudioModel {
         )
     }
 
-    /// The shared transcript-cut path: removes source ranges from the clip
-    /// timeline and drops the cut words from any overlapping captions. Both
-    /// registrations land in one undo group, so a single ⌘Z restores the
-    /// footage and the caption text together.
     func cutSourceRanges(_ ranges: [ClosedRange<TimeInterval>], actionName: String) {
         let merged = RecordingClipTimeline.mergedRanges(ranges)
         guard !merged.isEmpty,
@@ -2768,8 +2448,6 @@ final class RecordingStudioModel {
             applySubtitleCues(updatedCues, actionName: actionName)
         }
 
-        // Park the playhead on the first splice so the result is audible
-        // right where the cut happened.
         let playhead = next.editorTime(forSourceTime: merged[0].upperBound)
             ?? min(currentTime, next.duration)
         applyClipTimeline(
@@ -2792,10 +2470,6 @@ final class RecordingStudioModel {
         scheduleProjectSave()
     }
 
-    /// Rewrites the text of cues touched by a cut so captions stop showing
-    /// words whose audio is gone. Only touched cues are rebuilt, so manual
-    /// caption edits elsewhere survive. A word belongs to the last cue that
-    /// starts at or before it.
     private static func rebuildingCueTexts(
         _ cues: [RecordingSubtitleCue],
         words: [RecordingTranscriptWord],
@@ -2829,8 +2503,6 @@ final class RecordingStudioModel {
         return result
     }
 
-    /// Recomputes which word the playhead is on; assigns only on change so
-    /// observation-driven views wake on word boundaries, not every tick.
     private func updateActiveTranscriptWord() {
         guard !transcriptWords.isEmpty else {
             if activeTranscriptWordIndex != nil {
@@ -2847,9 +2519,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// Last word started at or before this source time, if the time is
-    /// still within it (with a small bridge across inter-word gaps so the
-    /// highlight doesn't flicker between words).
     private static func transcriptWordIndex(
         at sourceTime: TimeInterval,
         in words: [RecordingTranscriptWord]
@@ -2870,8 +2539,6 @@ final class RecordingStudioModel {
         return sourceTime <= words[index].end + 0.25 ? index : nil
     }
 
-    /// Caption to draw over the card right now; nil when hidden or silent.
-    /// Whether any clip plays faster than recorded.
     var hasSpedUpClips: Bool {
         !speedBadgeTimeline.isEmpty
     }
@@ -2891,7 +2558,6 @@ final class RecordingStudioModel {
         return CGSize(width: videoSize.width / scale, height: videoSize.height / scale)
     }
 
-    // MARK: - Video crop
 
     var isVideoCropped: Bool {
         RecordingVideoCropGeometry.isCropped(videoCropRect)
@@ -2947,7 +2613,6 @@ final class RecordingStudioModel {
         ))
     }
 
-    /// Arrow keys: moves the selection by whole pixels.
     func nudgeVideoCrop(by delta: CGSize) {
         guard isCroppingVideo, videoCropDrag == nil else { return }
         workingVideoCropRect = normalizedVideoCrop(CropGeometry.snapped(
@@ -2956,12 +2621,6 @@ final class RecordingStudioModel {
         ))
     }
 
-    // MARK: Crop dragging
-    //
-    // The same interaction as the screenshot editor's crop: the press is
-    // hit-tested against the box as drawn, and every update re-applies the
-    // pointer's total travel to the selection the drag started with.
-    // Pointers arrive in view points over `videoFrame`, the uncropped video.
 
     var isVideoCropDragging: Bool { videoCropDrag != nil }
 
@@ -3024,8 +2683,6 @@ final class RecordingStudioModel {
         )
     }
 
-    /// The crop engine works in pixels so aspect ratios are exact; Studio
-    /// stores its crop normalized to the video.
     private var videoCropBounds: CGRect { CGRect(origin: .zero, size: videoSize) }
 
     private func pixelVideoCrop(_ rect: CGRect) -> CGRect {
@@ -3066,22 +2723,18 @@ final class RecordingStudioModel {
         videoCropRect = next
     }
 
-    /// Whether any layout on the timeline can show the camera at all.
-    /// No time gate: before cameraOffset the player is parked on the
-    /// camera's first frame, which beats the camera popping in late.
     var showsCameraLayer: Bool {
         hasCameraVideo && style.camera.isVisible
     }
 
-    // MARK: - Export
 
-    private func makeExportConfiguration() -> RecordingStudioExporter.Configuration {
+    private func makeExportConfiguration(includesGIF: Bool = false) -> RecordingStudioExporter.Configuration {
         let reframe = makeReframeTrack()
         let fitContentAspect: CGFloat? =
             (exportAspect == .original || exportAspectMode == .fit) && videoSize.height > 0
                 ? videoSize.width / videoSize.height
                 : nil
-        return RecordingStudioExporter.Configuration(
+        var configuration = RecordingStudioExporter.Configuration(
             screenURL: screenURL,
             cameraURL: showsCameraLayer && cameraLayoutTimeline.usesCamera ? session?.cameraURL : nil,
             cameraOffset: cameraOffset,
@@ -3120,9 +2773,12 @@ final class RecordingStudioModel {
             audioClips: audioClips,
             mediaDirectory: mediaDirectoryURL
         )
+        configuration.deliveryOptions = exportDeliveryOptions
+        if !includesGIF { configuration.deliveryOptions.format = .video }
+        configuration.sourcePixelScale = manifest?.pixelScale ?? 1
+        return configuration
     }
 
-    /// Shared screen and camera motion, on the same canvas used by export.
     private func makeMotionTimeline(reframe: ReframeTrack?) -> RecordingStudioMotionTimeline {
         guard sourceDuration > 0 else { return .none }
         let fitContentAspect: CGFloat? =
@@ -3150,9 +2806,6 @@ final class RecordingStudioModel {
         motionTimeline = makeMotionTimeline(reframe: previewReframe)
     }
 
-    /// The crop-and-follow camera for non-original aspect exports. Focus
-    /// comes from the recorded pointer whenever the session captured one,
-    /// whether or not the cursor is drawn synthetically.
     private func makeReframeTrack() -> ReframeTrack? {
         guard exportAspect != .original, exportAspectMode == .fill else { return nil }
         let focusTimeline = reframeFocusPointer()
@@ -3167,7 +2820,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The focus source is immutable per session, so it resolves once.
     private func reframeFocusPointer() -> PointerTimeline? {
         if reframeFocusResolved { return reframeFocusTimeline }
         reframeFocusResolved = true
@@ -3191,10 +2843,7 @@ final class RecordingStudioModel {
         motionTimeline = makeMotionTimeline(reframe: previewReframe)
     }
 
-    // MARK: - Preview canvas
 
-    /// What the Studio canvas shows: the target-aspect canvas when a
-    /// non-original aspect is selected, the visible source plus padding otherwise.
     var basePreviewCanvasSize: CGSize {
         exportAspect == .original
             ? RecordingStudioLayout.originalCanvasSize(
@@ -3217,7 +2866,6 @@ final class RecordingStudioModel {
         videoSize.height > 0 ? videoSize.width / videoSize.height : 1
     }
 
-    /// The source aspect remains independent of the padded canvas and video crop.
     var previewContentAspect: CGFloat? {
         guard videoSize.height > 0 else { return nil }
         return sourceVideoAspect
@@ -3227,32 +2875,27 @@ final class RecordingStudioModel {
         isCroppingVideo ? CropGeometry.unit : videoCropRect
     }
 
-    /// How the content occupies the card on a target-aspect canvas.
     var previewContentMode: RecordingStudioLayout.ContentMode {
         exportAspect == .original || exportAspectMode == .fit ? .fit : .fill
     }
 
-    /// Shared rendered viewport, with the uncomposed camera retained while
-    /// the user edits the source crop.
     func previewViewportFrame(at time: TimeInterval) -> ViewportFrame {
         if !isCroppingVideo, let viewport = motionTimeline.viewport(at: time) { return viewport }
         let base = previewReframe?.frame(at: time) ?? viewportFrame(at: time)
         return RecordingVideoCropGeometry.viewport(base, crop: previewVideoCropRect)
     }
 
-    /// The flattened deliverable when it provably matches the current
-    /// in-memory edits - the render is stamped with the document that
-    /// produced it. Both Export and Share can then skip the render entirely.
     private var freshDeliverableURL: URL? {
-        // Measure the actual renderer during development comparisons, even
-        // when this exact document already has a flattened deliverable.
         guard ProcessInfo.processInfo.environment["UPSHOT_EXPORT_BYPASS_CACHE"] != "1" else { return nil }
-        guard let session else { return nil }
+        guard exportDeliveryOptions == RecordingExportDeliveryOptions(), let session else { return nil }
         return session.freshFinalURL(matching: currentDocument())
     }
 
     private var exportSuggestedFileName: String {
         let container = exportSettings.effectiveContainer
+        if exportDeliveryOptions.format == .gif {
+            return sessionURL.deletingPathExtension().lastPathComponent + ".gif"
+        }
         return session.map {
             $0.directoryURL
                 .deletingPathExtension()
@@ -3261,10 +2904,8 @@ final class RecordingStudioModel {
         } ?? VideoFileActions.exportFileName(for: screenURL, container: container)
     }
 
-    /// Entry point for the export options popover. Assigning settings marks
-    /// the project dirty and drops the cached render, so an unchanged
-    /// confirmation must not touch them.
     func export(settings: VideoCompressionSettings) {
+        exportDeliveryOptions = UpshotPreferences.recordingExtendedExportDefaults
         if settings != exportSettings {
             exportSettings = settings
         }
@@ -3272,15 +2913,10 @@ final class RecordingStudioModel {
     }
 
     func export() {
-        // One render at a time: the share pipeline uses the same exporter,
-        // so a second encode would just fight it for the media engine.
         guard !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
         pause()
         let previewURL = sessionURL
 
-        // A fresh deliverable (e.g. right after a share) is byte-identical
-        // to what this render would produce - same configuration builds
-        // both - so exporting becomes a plain copy into the save folder.
         if let cached = freshDeliverableURL {
             let suggestedFileName = exportSuggestedFileName
             exportTask = Task { [weak self] in
@@ -3302,7 +2938,7 @@ final class RecordingStudioModel {
 
         exportState = .exporting(progress: 0)
 
-        let configuration = makeExportConfiguration()
+        let configuration = makeExportConfiguration(includesGIF: true)
         let suggestedFileName = exportSuggestedFileName
 
         let dockProgressID = DockExportProgressCoordinator.shared.start()
@@ -3349,17 +2985,11 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Audio only
 
-    /// True once there is a soundtrack to export or swap - the recording's
-    /// own audio, or one already imported over it.
     var hasAudio: Bool {
         hasRecordedAudio || replacementAudio != nil
     }
 
-    /// How far the imported soundtrack falls short of (or overruns) the
-    /// edited timeline. Nil when there is nothing imported or the two
-    /// agree closely enough to be the same take.
     var replacementAudioDrift: TimeInterval? {
         guard let replacementAudio else { return nil }
         let drift = replacementAudio.duration - duration
@@ -3373,8 +3003,6 @@ final class RecordingStudioModel {
         return "\(base).\(audioExportFormat.fileExtension)"
     }
 
-    /// Writes the edited soundtrack on its own, for cleanup in a tool that
-    /// has no API - the outbound half of the replace-audio round trip.
     func exportAudio() {
         guard !audioExportState.isExporting, isLoaded, hasAudio else { return }
         pause()
@@ -3428,10 +3056,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// The inbound half: adopts a cleaned-up soundtrack as the project's
-    /// audio. The file is copied into the session so the project keeps
-    /// playing after the original is moved, and playback switches to it
-    /// immediately rather than only revealing itself at export.
     func replaceAudio(with pickedURL: URL) {
         guard isLoaded else { return }
         pause()
@@ -3445,8 +3069,6 @@ final class RecordingStudioModel {
                 .appendingPathComponent(RecordingSession.replacementAudioBaseName)
                 .appendingPathExtension(pickedURL.pathExtension.isEmpty ? "m4a" : pickedURL.pathExtension)
             do {
-                // Clear every previous import, whatever extension it had,
-                // so the session never accumulates orphaned soundtracks.
                 removeStoredReplacementAudio(in: session)
                 try FileManager.default.copyItem(at: pickedURL, to: destination)
             } catch {
@@ -3456,8 +3078,6 @@ final class RecordingStudioModel {
             }
             storedURL = destination
         } else {
-            // Bare movies have no project folder to copy into; they
-            // reference the picked file where it sits.
             storedURL = pickedURL
         }
 
@@ -3492,8 +3112,6 @@ final class RecordingStudioModel {
         clearReplacementAudio()
     }
 
-    /// Drops back to the recorded audio, whether that follows a removal or
-    /// a failed import that already deleted the copy.
     private func clearReplacementAudio() {
         guard replacementAudio != nil else { return }
         replacementAudio = nil
@@ -3521,28 +3139,20 @@ final class RecordingStudioModel {
         }
     }
 
-    // MARK: - Share to cloud
 
     var canShareToCloud: Bool {
         CloudUploader.shared.isConfigured
     }
 
-    /// The Loom loop: render the current edits, cache the result as the
-    /// session's flattened deliverable, upload it, and copy the share
-    /// link - without leaving the Studio or touching a save panel.
     func shareToCloud(options: CloudUploadOptions) {
         guard !shareState.isBusy, !exportState.isExporting, isLoaded,
               canShareToCloud else {
             return
         }
         pause()
-        // Flush the draft first so the deliverable-invalidation in the
-        // debounced autosave can't race the file this render produces.
         projectSaveTask?.cancel()
         writeDraftNow()
 
-        // A fresh deliverable (e.g. sharing again without edits) skips
-        // the render and goes straight to upload.
         let cachedDeliverable = freshDeliverableURL
         let configuration = cachedDeliverable == nil ? makeExportConfiguration() : nil
         let session = session
@@ -3550,8 +3160,6 @@ final class RecordingStudioModel {
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
 
         shareTask = Task { [weak self] in
-            // Bare (session-less) videos upload straight from the render's
-            // temp file; whatever happens, it must not outlive the share.
             var temporaryUploadURL: URL?
             defer {
                 if let temporaryUploadURL {
@@ -3563,9 +3171,6 @@ final class RecordingStudioModel {
                 if let cachedDeliverable {
                     uploadURL = cachedDeliverable
                 } else if let configuration {
-                    // The render leg gets its own Dock entry; the upload
-                    // leg's Dock progress is owned by CloudUploader, so
-                    // the two never overlap.
                     let dockProgressID = DockExportProgressCoordinator.shared.start()
                     let temporaryURL: URL
                     do {
@@ -3582,14 +3187,8 @@ final class RecordingStudioModel {
                         DockExportProgressCoordinator.shared.finish(dockProgressID)
                         throw error
                     }
-                    // From here the deferred cleanup owns the temp render;
-                    // once it moves into the session the delete is a
-                    // harmless no-op.
                     temporaryUploadURL = temporaryURL
 
-                    // Session recordings keep the render as the flattened
-                    // deliverable, so history, preview, and sidecar mapping
-                    // all agree on what was shared.
                     if let session {
                         uploadURL = try session.installFinalVideo(
                             movingFrom: temporaryURL,
@@ -3641,8 +3240,6 @@ final class RecordingStudioModel {
         }
     }
 
-    /// History item for this session, so the share upload's progress and
-    /// resulting link also appear on the preview card.
     private func historyItemID(for session: RecordingSession?) -> UUID? {
         guard let session else { return nil }
         let standardizedPath = session.directoryURL.standardizedFileURL.path
@@ -3652,7 +3249,6 @@ final class RecordingStudioModel {
     }
 }
 
-/// A zoom cue's single merged footprint on the edited timeline.
 struct RecordingZoomTimelineBlock: Identifiable, Equatable, Sendable {
     let cue: ZoomCue
     let editorStart: TimeInterval

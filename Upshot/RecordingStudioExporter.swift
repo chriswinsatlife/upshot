@@ -1,20 +1,3 @@
-//
-//  RecordingStudioExporter.swift
-//  Upshot
-//
-//  Offline compositor for studio exports: decodes the screen (and camera)
-//  recordings frame by frame, draws each frame through the same
-//  RecordingStudioLayout / ViewportTimeline math the live preview
-//  uses, and writes a new HEVC movie. Audio tracks (system + microphone)
-//  are mixed and passed through on the unchanged timeline, unless the
-//  project imported a soundtrack to replace them.
-//
-//  Everything static - the background fill and the card shadow - is
-//  rendered once into a backdrop image. A Metal compute pass draws the
-//  screen layer for every frame, blurred or settled; Core Graphics handles
-//  rare fallback frames and the per-frame pointer, camera, and caption
-//  overlays.
-//
 
 import AppKit
 import AVFoundation
@@ -33,58 +16,35 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let screenURL: URL
         let cameraURL: URL?
         let cameraOffset: TimeInterval
-        /// The camera picture's width over its height, which a cutout's
-        /// frame takes; nil assumes 16:9.
         let cameraAspect: CGFloat?
         let style: RecordingStudioStyle
-        /// Where the screen and camera sit over time.
         let cameraLayoutTimeline: RecordingCameraLayoutTimeline
         let viewportTimeline: ViewportTimeline
-        /// Non-nil when the capture hid the OS cursor and the export must
-        /// draw the synthetic pointer along this smoothed timeline.
         let pointerTimeline: PointerTimeline?
         let showsPressEffects: Bool
-        /// Non-nil when recorded keystroke chords should be captioned.
         let keystrokeTimeline: KeystrokeCaptionTimeline?
         let keystrokePlacement: RecordingKeystrokePlacement
-        /// Non-nil when sped-up clips should carry the "2× ›››" badge.
         let speedBadgeTimeline: SpeedBadgeTimeline?
         let speedBadgePlacement: RecordingKeystrokePlacement
-        /// Non-nil when transcribed narration should be subtitled.
         let subtitleTimeline: SubtitleTimeline?
         let subtitleStyle: SubtitleBarStyle
-        /// Word timings behind the subtitles, for karaoke highlighting.
         let karaokeTimeline: KaraokeTimeline?
         let canvasSize: CGSize
-        /// Normalized top-left crop of the screen-video source.
         let videoCropRect: CGRect
         let clipTimeline: RecordingClipTimeline
         var exportSettings: VideoCompressionSettings
-        /// Non-nil when an imported soundtrack stands in for the recorded
-        /// audio. It is already the finished cut's audio, so it plays flat
-        /// from zero instead of being re-cut through the clip timeline.
+        var deliveryOptions = RecordingExportDeliveryOptions()
+        var sourcePixelScale: Double = 1
         let audioReplacementURL: URL?
         let audioVolume: Double
-        /// Non-nil when exporting into a different aspect ratio; drives the
-        /// crop-and-follow virtual camera in place of the zoom viewport.
         let reframe: ReframeTrack?
-        /// Non-nil for Original or a different aspect ratio in Fit
-        /// mode: the recording shows in a content-aspect card and
-        /// the background fills the rest. Mutually exclusive with
-        /// `reframe`.
         let fitContentAspect: CGFloat?
         let usesUniformPadding: Bool
-        /// Zoom cameras for fill splits, which crop the screen.
         let motionTimeline: RecordingStudioMotionTimeline
-        /// Text over the canvas, on the source clock.
         var textOverlays: [RecordingTextOverlay] = []
-        /// Regions of the recorded picture to pixelate or blur.
         var redactions: [RecordingRedaction] = []
-        /// Images and GIFs over the canvas, on the source clock.
         var imageOverlays: [RecordingImageOverlay] = []
-        /// Music and sound under the video, on the edited clock.
         var audioClips: [RecordingAudioClip] = []
-        /// The project's media folder, holding both kinds' files.
         var mediaDirectory: URL?
 
         init(
@@ -184,10 +144,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         }
     }
 
-    /// `@concurrent` keeps the frame loop off the caller's actor. Callers
-    /// are main-actor models, and approachable concurrency would otherwise
-    /// run this nonisolated async work - blocking reader calls included -
-    /// on the main thread alongside the UI.
     @concurrent
     func export(
         _ configuration: Configuration,
@@ -196,7 +152,21 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let cancelFlag = CancelFlag()
         let started = CFAbsoluteTimeGetCurrent()
         return try await withTaskCancellationHandler {
-            let result = try await run(configuration, cancelFlag: cancelFlag, progress: progress)
+            let makesGIF = configuration.deliveryOptions.format == .gif
+            var rendering = configuration
+            if makesGIF { rendering.exportSettings.removeAudio = true }
+            let videoURL = try await run(rendering, cancelFlag: cancelFlag) { value in
+                progress(value * (makesGIF ? 0.75 : 1))
+            }
+            let result: URL
+            if makesGIF {
+                defer { try? FileManager.default.removeItem(at: videoURL) }
+                result = try await RecordingGIFExporter.export(videoURL: videoURL, options: configuration.deliveryOptions) { value in
+                    progress(0.75 + value * 0.25)
+                }
+            } else {
+                result = videoURL
+            }
             Self.logger.info("Export completed totalSeconds=\(CFAbsoluteTimeGetCurrent() - started)")
             return result
         } onCancel: {
@@ -239,7 +209,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let canvasHeight = max(2, Int(outputSize.height.rounded()) & ~1)
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
 
-        // Readers
         let screenReader = try AVAssetReader(asset: screenAsset)
         let videoOutput = AVAssetReaderTrackOutput(
             track: videoTrack,
@@ -253,14 +222,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         screenReader.add(videoOutput)
         screenReader.timeRange = exportTimeRange
 
-        // An imported soundtrack replaces the recorded one wholesale, and it
-        // needs its own reader: it is a different file, already carrying the
-        // finished cut's timing, so it plays straight through from zero
-        // while the screen reader stays on the composed video.
         var audioOutput: AVAssetReaderAudioMixOutput?
         var replacementReader: AVAssetReader?
-        // Held for the whole export: the clips' tracks need their assets
-        // alive while the audio is read.
         var clipSources: [RecordingAudioClipSource] = []
         if !configuration.exportSettings.removeAudio {
             if let directory = configuration.mediaDirectory {
@@ -270,8 +233,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                     }
                 }
             }
-            // Added audio mixes with the soundtrack on a reader of its own,
-            // over a composition of the cut's audio and each clip.
             let mixed: (reader: AVAssetReader, output: AVAssetReaderAudioMixOutput)? = clipSources.isEmpty
                 ? nil
                 : try await Self.makeMixedAudio(
@@ -289,8 +250,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 let replacementTracks = try await replacementAsset.loadTracks(withMediaType: .audio)
                 if !replacementTracks.isEmpty {
                     let reader = try AVAssetReader(asset: replacementAsset)
-                    // Clamps a soundtrack that overruns the cut; a shorter
-                    // one simply leaves the tail silent.
                     reader.timeRange = exportTimeRange
                     let output = AVAssetReaderAudioMixOutput(
                         audioTracks: replacementTracks,
@@ -320,14 +279,9 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             beauty: StudioCameraBeautyFrameFilter(beauty: configuration.style.camera.beauty)
         )
 
-        // Writer
         let container = configuration.exportSettings.effectiveContainer
         let outputURL = Self.temporaryOutputURL(container: container)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: container.fileType)
-        // Faststart puts the index ahead of the media so a shared link plays
-        // before it finishes downloading. The writer pays for that with an
-        // extra pass at the end, so only MP4 - the container people actually
-        // stream - opts in.
         writer.shouldOptimizeForNetworkUse = container.supportsFastStart
 
         let codec: AVVideoCodecType = configuration.exportSettings.codec == .hevc ? .hevc : .h264
@@ -340,10 +294,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             AVVideoExpectedSourceFrameRateKey: timing.framesPerSecond
         ]
         if codec == .hevc {
-            // The hardware HEVC encoder is the export's ceiling at Retina
-            // sizes; its speed mode runs ~1.75x faster (52 -> 91 fps at
-            // 3760x2538 on M4 Pro) for ~1.5 dB PSNR, still above 40 dB.
-            // H.264's encoder ignores this flag.
             compressionProperties[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = true
         }
         let videoSettings: [String: Any] = [
@@ -419,8 +369,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             mediaDirectory: configuration.mediaDirectory
         )
 
-        // A cutout's mattes are made ahead of the frames that show them, on
-        // their own decode of the camera, for exactly those frames.
         var cutoutMattes: StudioCameraMatteTrack?
         if cameraFeed != nil, configuration.cameraLayoutTimeline.usesCutout, let cameraURL = configuration.cameraURL {
             let frameCount = timing.frameCount(for: clipTimeline.duration)
@@ -498,13 +446,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        // Render on a fixed output clock, not per source frame. Screen
-        // captures only contain frames where pixels changed, so a static
-        // screen has second-long gaps - but the virtual camera animates
-        // through them (most zoom-outs happen exactly there, seconds after
-        // the last click). Each tick re-renders the newest source frame at
-        // or before it; only writing on source arrivals would hold the last
-        // zoomed frame through the move and then visibly jump.
         let duration = clipTimeline.duration
         let frameCount = timing.frameCount(for: duration)
 
@@ -530,10 +471,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             Self.logger.info("Export frames=\(renderedFrames) fps=\(timing.framesPerSecond) motionBlur=\(timing.motionBlurEnabled) Metal blur frames=\(compositor.metalFrameCount) reusedScreenFrames=\(compositor.reusedScreenFrameCount) reusedComposedFrames=\(compositor.reusedComposedFrameCount) renderSeconds=\(renderSeconds) metalSeconds=\(compositor.metalSeconds) cutoutWaitSeconds=\(compositor.cutoutWaitSeconds) decodeSeconds=\(decodeSeconds) cameraSeconds=\(cameraSeconds) writerWaitSeconds=\(writerWaitSeconds)")
         }
 
-        // The adaptor's pool appears shortly after writing starts and then
-        // stays fixed, but reading it takes the compression session's lock,
-        // which the encoder holds while it works. Asked for every frame,
-        // that stalled rendering for as long as the encoder was busy.
         var cachedPool: CVPixelBufferPool?
 
         var inFlight: (frame: StudioFrameCompositor.PendingFrame, index: Int)?
@@ -567,9 +504,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             let sourceTime = location.sourceTime
 
             if previousClipID != location.segmentID {
-                // Never carry a sparse screen-capture frame across a hard
-                // edit boundary - the reader may not have caught up yet to
-                // the new clip's starting source position.
                 if previousClipID != nil {
                     currentBuffer = nil
                 }
@@ -580,12 +514,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 currentBuffer = sample.buffer
                 pending = nextSourceFrame()
             }
-            // Ticks before the first source frame show it early rather than
-            // emitting black; a capture with no frames at all has nothing to
-            // render.
             guard let decodedBuffer = currentBuffer ?? pending?.buffer else { break }
-            // Pixelated regions belong to the recorded picture, so they are
-            // filtered in before the frame is laid out on the canvas.
             let sourceBuffer = redactionFilter?.apply(to: decodedBuffer, atSourceTime: sourceTime) ?? decodedBuffer
 
             if cachedPool == nil { cachedPool = adaptor.pixelBufferPool }
@@ -612,8 +541,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             }
             renderSeconds += CFAbsoluteTimeGetCurrent() - renderStart
 
-            // The GPU renders this frame while the previous one gets its
-            // overlays and goes to the encoder.
             if let previous = inFlight {
                 try await finishAndAppend(previous.frame, at: previous.index)
             }
@@ -625,9 +552,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         input.markAsFinished()
     }
 
-    /// The finished video's audio: the recording's cut audio (or the
-    /// imported soundtrack standing in for it) at the project's volume,
-    /// plus every added clip with its own volume and fades.
     private static func makeMixedAudio(
         recordingTracks: [AVAssetTrack],
         replacementURL: URL?,
@@ -737,20 +661,14 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
     }
 }
 
-// MARK: - Camera frame feed
 
-/// Sequential decoder for the camera movie that answers "latest camera frame
-/// at screen-time t". Screen frames arrive in order, so a one-frame
-/// look-ahead over the camera reader is all that's needed.
 nonisolated private final class CameraFrameFeed: @unchecked Sendable {
     private let reader: AVAssetReader
     private let output: AVAssetReaderTrackOutput
     private let offset: TimeInterval
-    /// Touches up each frame once, as it becomes the current one.
     private let beauty: StudioCameraBeautyFrameFilter?
     private var currentFrame: (buffer: CVPixelBuffer, time: TimeInterval)?
     private var isCurrentTouchedUp = false
-    /// Decoded frames after the current one, oldest first.
     private var ahead: [(buffer: CVPixelBuffer, time: TimeInterval)] = []
     private var isFinished = false
 
@@ -766,7 +684,6 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
             track: track,
             outputSettings: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                // IOSurface-backed so the bubble scaler can read it on the GPU.
                 kCVPixelBufferMetalCompatibilityKey as String: true,
                 kCVPixelBufferIOSurfacePropertiesKey as String: [:]
             ]
@@ -783,13 +700,9 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
         self.beauty = beauty
     }
 
-    /// `time` is the frame's own time on the screen's clock.
     func latestFrame(at screenTime: TimeInterval) -> (buffer: CVPixelBuffer, time: TimeInterval)? {
         while true {
             if let next = ahead.first {
-                // Promote the very first frame unconditionally: the camera
-                // starts a beat after the screen (capture warmup), and holding
-                // its first frame from t=0 beats the bubble popping in late.
                 guard next.time <= screenTime || currentFrame == nil else { break }
                 currentFrame = next
                 isCurrentTouchedUp = false
@@ -798,7 +711,6 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
                 break
             }
         }
-        // Only the frame shown is touched up, not those skipped past.
         if let beauty, let frame = currentFrame, !isCurrentTouchedUp {
             currentFrame = (beauty.apply(to: frame.buffer, time: frame.time), frame.time)
             isCurrentTouchedUp = true
@@ -822,33 +734,19 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
     }
 }
 
-/// A layout holding still: settled on the timeline, with a corner camera
-/// either full size or fully shrunk for a zoom.
 nonisolated private struct SettledLayout: Hashable, Sendable {
     let layout: RecordingCameraLayout
     let isShrunk: Bool
 }
 
-// MARK: - Frame compositor
 
-/// Draws one output frame: cached backdrop, then the zoom-transformed screen
-/// frame clipped to the rounded card, then the camera.
-///
-/// The camera layout timeline moves the card and the camera. While a layout
-/// is settled, everything static about it - the backdrop with the card's
-/// shadow, the Metal clip, the camera's shadow and scaler - is built once
-/// and kept for the next time that layout shows. Frames inside a morph are
-/// drawn in full by Core Graphics, with the moving screen and camera
-/// averaged across the shutter like any other camera move.
 nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
-    /// Everything that stays fixed while one layout is settled.
     fileprivate final class LayoutResources {
         let layout: RecordingStudioLayout
         let backdrop: CGImage?
         var metalRenderer: StudioMetalScreenRenderer?
         var bubbleShadow: (image: CGImage, rect: CGRect)??
         var cameraScaler: StudioCameraBubbleScaler??
-        /// Retained so pixel-buffer pool reuse can't produce a false cache hit.
         var bubbleContentSource: CVPixelBuffer?
         var bubbleContentImage: CGImage?
         var scheduledCameraSource: CVPixelBuffer?
@@ -863,34 +761,19 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let canvasSize: CGSize
     private let videoCropRect: CGRect
     private let style: RecordingStudioStyle
-    /// The resting card, before any camera layout moves it.
     private let baseLayout: RecordingStudioLayout
     private let layoutResolver: RecordingCameraLayoutResolver
     private let layoutTimeline: RecordingCameraLayoutTimeline
-    /// The frame being finished. `begin` runs a frame ahead, so it works
-    /// from its own resolved layout and never reads this.
     private var layout: RecordingStudioLayout
-    /// Settled layouts' resources, most recent last. Two cover the common
-    /// back-and-forth between a talking head and the screen without holding
-    /// a full-canvas backdrop per layout the export ever used.
     private var layoutResources: [(key: SettledLayout, resources: LayoutResources)] = []
     private static let maxLayoutResources = 2
-    /// Morph frames compute the card's clip and shadow on the GPU over the
-    /// plain background, so one renderer serves every one of them.
     private var morphRenderer: StudioMetalScreenRenderer?
     private var morphRendererFailed = false
-    /// The camera inside a morph; nil until needed or if Metal can't.
     private var morphCameraRenderer: StudioMorphCameraRenderer?
     private var morphCameraRendererFailed = false
-    /// The cutout's mattes, made ahead; nil when no layout cuts it out.
     var cutoutMattes: StudioCameraMatteTrack?
-    /// Segments a frame the matte track missed, which should be none.
     private lazy var fallbackMattes = StudioCameraMatteGenerator()
-    /// Time finishing frames spent waiting for Vision.
     private(set) var cutoutWaitSeconds = 0.0
-    /// A quarter-size canvas for the moving card's shadow. A shadow is a
-    /// blur, so its resolution doesn't show, and full size costs ten times
-    /// as much every frame.
     private lazy var morphShadowContext: CGContext? = {
         let width = max(1, Int((canvasSize.width / Self.morphShadowScale).rounded(.up)))
         let height = max(1, Int((canvasSize.height / Self.morphShadowScale).rounded(.up)))
@@ -901,7 +784,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         )
     }()
     private static let morphShadowScale: CGFloat = 4
-    /// Card-space overlays (pointer, captions) fade with the screen.
     private var overlayOpacity: CGFloat = 1
     private let viewportTimeline: ViewportTimeline
     private let pointerTimeline: PointerTimeline?
@@ -923,24 +805,18 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private lazy var pointerMaterialRenderer = PointerMaterialRenderer()
     private let pointerScale: CGFloat
     private let colorSpace: CGColorSpace
-    /// The background alone, for frames inside a layout morph.
     private let plainBackdrop: CGImage?
     private let timing: RecordingExportTiming
     private var metalFailed = false
     private(set) var metalFrameCount = 0
-    /// Wall time submitting and waiting on Metal passes. With a frame in
-    /// flight this is only the GPU time the CPU could not overlap.
     private(set) var metalSeconds = 0.0
     private let screenLayerCache = StudioScreenLayerCache()
-    /// The layer the cache will hold once every begun frame finishes. The
-    /// layout is part of the key: the cached layer includes its backdrop.
     private var plannedCacheKey: (source: CVPixelBuffer, rect: CGRect, layout: SettledLayout)?
     private(set) var reusedScreenFrameCount = 0
     private let composedFrameCache = StudioComposedFrameCache<ComposedFrameState>()
     private(set) var reusedComposedFrameCount = 0
     private let bypassFrameCache = ProcessInfo.processInfo.environment["UPSHOT_EXPORT_BYPASS_FRAME_CACHE"] == "1"
     private let bypassScreenCache = ProcessInfo.processInfo.environment["UPSHOT_EXPORT_BYPASS_SCREEN_CACHE"] == "1"
-    // Developer comparison switch; export settings and saved projects do not change.
     private let forceCoreGraphics = ProcessInfo.processInfo.environment["UPSHOT_EXPORT_RENDERER"] == "cpu"
 
     init(
@@ -1003,7 +879,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         self.subtitleStyle = subtitleStyle
         self.karaokeTimeline = karaokeTimeline
         self.reframe = reframe
-        // Without a camera every layout resolves to the bare screen.
         self.motionTimeline = motionTimeline
         self.timing = timing
         self.pointerScale = style.cursorScale
@@ -1016,8 +891,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         )
     }
 
-    /// The layout state and resolved layout at an editor time. The zoom
-    /// at that moment sizes a corner camera.
     private func frameLayout(at editorTime: TimeInterval) -> (
         layout: RecordingStudioLayout,
         settled: SettledLayout?
@@ -1037,8 +910,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         guard settled.kind == .pictureInPicture || settled.kind == .cutout else {
             return (layout, SettledLayout(layout: settled, isShrunk: false))
         }
-        // A camera mid-shrink is moving, so it isn't settled; full
-        // size and shrunk are two steady states with their own resources.
         let scale = layoutResolver.cameraScale(forZoomProgress: zoomProgress)
         if abs(scale - 1) < 0.0001 {
             return (layout, SettledLayout(layout: settled, isShrunk: false))
@@ -1049,8 +920,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return (layout, nil)
     }
 
-    /// Where the screen draws at an editor time, with the layout at that
-    /// same moment - so a morph blurs like any other camera move.
     private func screenDrawRect(at editorTime: TimeInterval) -> CGRect {
         frameLayout(at: editorTime).layout.frameRect(for: viewportFrame(at: editorTime))
     }
@@ -1077,18 +946,12 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return resources
     }
 
-    /// The viewport derived from the shared screen-motion rectangle. Older
-    /// callers without that track retain the reframe/zoom camera fallback.
     private func viewportFrame(at editorTime: TimeInterval) -> ViewportFrame {
         if let viewport = motionTimeline.viewport(at: editorTime) { return viewport }
         let base = reframe?.frame(at: editorTime) ?? viewportTimeline.frame(at: editorTime)
         return RecordingVideoCropGeometry.viewport(base, crop: videoCropRect)
     }
 
-    /// Only settled, single-sample frames qualify. Include the actual
-    /// interpolated geometry and every overlay's displayed state: a layout
-    /// label or a stationary cursor alone is insufficient to establish that
-    /// the complete frame is unchanged. Buffer identity retains its source.
     private struct ComposedFrameState: Equatable {
         let screen: CVPixelBuffer?
         let camera: CVPixelBuffer?
@@ -1114,8 +977,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         editorTime: TimeInterval, sourceTime: TimeInterval
     ) -> ComposedFrameState? {
         guard !bypassFrameCache, settled != nil, sampleRects.count <= 1 else { return nil }
-        // Text animates on its own clock, so a frame showing any is drawn
-        // fresh rather than matched against the last one.
         guard !textOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }),
               !imageOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }) else { return nil }
         let showsScreen = layout.screenOpacity > 0.001
@@ -1134,7 +995,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         )
     }
 
-    /// A frame whose screen layer may still be rendering on the GPU.
     struct PendingFrame {
         fileprivate let screenFrame: CVPixelBuffer
         fileprivate let cameraFrame: CVPixelBuffer?
@@ -1142,12 +1002,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         fileprivate let editorTime: TimeInterval
         fileprivate let sourceTime: TimeInterval
         fileprivate let layout: RecordingStudioLayout
-        /// Nil while the frame is inside a layout morph.
         fileprivate let settledLayout: SettledLayout?
         fileprivate let sampleRects: [CGRect]
         fileprivate let shouldCacheScreen: Bool
-        /// Set when the previous frame leaves this exact screen layer in the
-        /// cache; the restore itself waits for finish, which runs in order.
         fileprivate let plansRestore: Bool
         fileprivate let submission: StudioMetalScreenRenderer.Submission?
         fileprivate let resources: LayoutResources?
@@ -1156,9 +1013,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let destination: CVPixelBuffer
     }
 
-    /// Starts a frame: resolves its shutter and submits the GPU screen pass
-    /// without waiting, so the caller can finish the previous frame while
-    /// this one renders. Frames must be finished in the order they began.
     func begin(
         screenFrame: CVPixelBuffer,
         cameraFrame: CVPixelBuffer?,
@@ -1180,9 +1034,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             editorTime: editorTime, sourceTime: sourceTime
         )
         if let composedState, let cached = composedFrameCache.frame(matching: composedState) {
-            // The preceding frame finishes before this one, completing the
-            // shared buffer exactly once. Subsequent encoder submissions are
-            // read-only and keep the full selected 30/60 fps output cadence.
             return PendingFrame(
                 screenFrame: screenFrame, cameraFrame: cameraFrame, cameraTime: cameraTime,
                 editorTime: editorTime, sourceTime: sourceTime, layout: frameLayout,
@@ -1200,16 +1051,11 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             && plannedCacheKey.map {
                 $0.source === screenFrame && $0.rect == sampleRects[0] && $0.layout == settled
             } == true
-        // Cache only a settled layer that can be reused on the next tick.
-        // Moving frames and continuously changing video avoid the extra copy.
         let shouldCacheScreen = !bypassScreenCache && sourceRepeatsOnNextFrame && sampleCount == 1
             && settled != nil
             && self.frameLayout(at: editorTime + timing.frameInterval).settled == settled
             && sampleRects[0] == screenDrawRect(at: editorTime + timing.frameInterval)
             && StudioScreenLayerCache.canCapture(width: Int(canvasSize.width), height: Int(canvasSize.height))
-        // Mirrors the cache transitions finish(_:) applies in order: a
-        // restored layer stays cached, a newly cached one replaces it, and
-        // anything else clears it.
         if !shouldCacheScreen {
             plannedCacheKey = nil
         } else if !plansRestore, let settled {
@@ -1253,8 +1099,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         )
     }
 
-    /// Completes a frame begun earlier: waits for its screen pass, then draws
-    /// the CPU overlays into its destination.
     func finish(_ frame: PendingFrame) throws {
         if frame.reusesComposedFrame {
             reusedComposedFrameCount += 1
@@ -1272,8 +1116,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         if reusedScreen { reusedScreenFrameCount += 1 }
         else { screenLayerCache.invalidate() }
 
-        // Metal completes before the CPU locks this IOSurface for overlays.
-        // A planned restore that failed renders its layer now instead.
         var renderedWithMetal = false
         if !reusedScreen,
            let submission = frame.submission ?? submitMetal(
@@ -1281,8 +1123,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                layout: frame.layout, into: destination
            ) {
             let waitStart = CFAbsoluteTimeGetCurrent()
-            // The submission holds its own command buffer, so it can be
-            // waited on even if its layout's resources were since evicted.
             renderedWithMetal = StudioMetalScreenRenderer.wait(for: submission)
             metalSeconds += CFAbsoluteTimeGetCurrent() - waitStart
             if renderedWithMetal { metalFrameCount += 1 }
@@ -1304,7 +1144,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             if let resources {
                 drawBackdrop(resources.backdrop, in: context)
             } else {
-                // Inside a morph the card moves, so its shadow does too.
                 drawBackdrop(plainBackdrop, in: context)
                 drawCardShadow(for: layout, in: context)
             }
@@ -1313,19 +1152,11 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         var renderedScreen = reusedScreen || renderedWithMetal
         if !reusedScreen, !renderedWithMetal, !sampleRects.isEmpty,
            let screenImage = Self.makeImage(from: screenFrame, colorSpace: colorSpace) {
-            // Motion blur by temporal supersampling: while the virtual camera
-            // is moving, average several sub-frame camera states across the
-            // frame's shutter interval. Pans smear linearly, zooms radially,
-            // and settled frames pay for a single draw. The viewport timeline
-            // runs on the gapless output clock, so the shutter is always
-            // exactly one output frame - no per-call time tracking needed.
             if settled != nil {
                 context.saveGState()
                 context.addPath(roundedPath(for: layout.cardRect, radius: layout.cardCornerRadius))
                 context.clip()
                 for (sample, drawRect) in sampleRects.enumerated() {
-                    // Drawing sample i at alpha 1/(i+1) keeps the buffer equal to
-                    // the running average of all samples so far.
                     context.setAlpha(1 / CGFloat(sample + 1))
                     context.draw(screenImage, in: flipped(drawRect))
                 }
@@ -1342,29 +1173,17 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
         if !shouldCacheScreen { screenLayerCache.invalidate() }
 
-        // Card-space overlays fade with the screen when a layout hides it.
         overlayOpacity = screenOpacity
         if screenOpacity > 0.001 {
-            // Pointer motion is resolved independently from viewport shutter
-            // blur. Its interaction magnification and tilt stay anchored at the
-            // recorded artwork anchor point, while the final point still passes
-            // through the same viewport transform and rounded-card clip as the
-            // source pixels.
             drawPointer(editorTime: editorTime, in: context)
 
-            // The keystroke caption stays in card space - pinned to its edge and
-            // unaffected by the zoom transform, like a broadcast lower third.
             drawKeystrokeCaption(at: sourceTime, in: context)
 
-            // The speed badge is card-space chrome too, paced by editor time
-            // so its chevrons sweep at the same rate as the preview's.
             drawSpeedBadge(at: editorTime, in: context)
         }
 
         if let cameraFrame, layout.bubbleRect.width > 0, layout.cameraOpacity > 0.001 {
             if layout.cameraCutout > 0.001 {
-                // The matte changes with every camera frame, so a cutout
-                // always composites on the GPU, settled or not.
                 context.flush()
                 CVPixelBufferUnlockBaseAddress(destination, [])
                 let drawn = renderCutoutCamera(
@@ -1381,7 +1200,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             } else if let resources {
                 drawCameraBubble(cameraFrame, resources: resources, submission: frame.cameraSubmission, in: context)
             } else {
-                // The GPU draws into the buffer while the CPU has it unlocked.
                 context.flush()
                 CVPixelBufferUnlockBaseAddress(destination, [])
                 let drawn = renderMorphingCamera(cameraFrame, editorTime: editorTime, into: destination)
@@ -1396,13 +1214,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             }
         }
 
-        // Images, then text, sit on the canvas above the camera and under
-        // the subtitles.
         drawImageOverlays(at: sourceTime, in: context)
         drawTextOverlays(at: sourceTime, in: context)
 
-        // The subtitle bar lives in canvas space - over the background too,
-        // not just the card - and above everything else, camera included.
         drawSubtitleBar(at: sourceTime, in: context)
     }
 
@@ -1424,7 +1238,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let active = textOverlays.filter { $0.isActive(atSourceTime: sourceTime) }
         guard !active.isEmpty else { return }
         context.saveGState()
-        // The shared renderer works top-down, like the preview's canvas.
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
         for overlay in active {
@@ -1433,15 +1246,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.restoreGState()
     }
 
-    /// Casts `path`'s shadow without drawing `path` itself. Filling a shape
-    /// to get its shadow also leaves the shape, and its antialiased edge
-    /// then shows through whatever is composited over it: a dark outline
-    /// whose strength changes with the edge's sub-pixel position, so it
-    /// flickers as the card or camera moves. The shape is filled off to
-    /// the left of everything visible and the shadow offset back by the
-    /// same distance. `offset` and `blur` are in base (device) units, which
-    /// shadows use whatever the CTM; `baseUnitsPerPoint` converts the
-    /// user-space shift when the context is scaled.
     nonisolated static func castShadow(
         of path: CGPath,
         in context: CGContext,
@@ -1453,8 +1257,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let visible = context.boundingBoxOfClipPath
         let shape = path.boundingBoxOfPath
         guard !shape.isNull, !visible.isNull else { return }
-        // Far enough that the shape and its antialiasing clear the visible
-        // area; the shadow lands exactly where it would have.
         let shift = (shape.maxX - visible.minX + 2).rounded(.up)
         context.saveGState()
         context.translateBy(x: -shift, y: 0)
@@ -1478,7 +1280,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
     }
 
-    /// The moving card's shadow, rendered small and drawn up to size.
     private func drawCardShadow(for layout: RecordingStudioLayout, in context: CGContext) {
         let opacity = layout.screenOpacity
         guard opacity > 0.001, style.shadow > 0.01, style.background != .none,
@@ -1490,7 +1291,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         shadowContext.clear(small)
         shadowContext.saveGState()
         shadowContext.scaleBy(x: 1 / scale, y: 1 / scale)
-        // Shadows ignore the CTM, so their blur and offset are scaled by hand.
         Self.castShadow(
             of: roundedPath(for: layout.cardRect, radius: layout.cardCornerRadius),
             in: shadowContext,
@@ -1507,8 +1307,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.restoreGState()
     }
 
-    /// A morph frame's screen pass: the backdrop with the card's shadow
-    /// where the card is now, and the card itself as the clip.
     private func submitMorphMetal(
         screenFrame: CVPixelBuffer,
         sampleRects: [CGRect],
@@ -1541,15 +1339,12 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return submission
     }
 
-    /// The card's shadow, as `renderBackdrop` casts it for a settled layout.
     private func cardShadow(for layout: RecordingStudioLayout) -> StudioMorphShadow? {
         guard layout.screenOpacity > 0.001, style.shadow > 0.01, style.background != .none else { return nil }
         let blur = min(canvasSize.width, canvasSize.height) * 0.045 * style.shadow
         return StudioMorphShadow(offset: blur * 0.35, blur: blur, alpha: 0.55 * style.shadow * layout.screenOpacity)
     }
 
-    /// The most samples a morphing layer averages. The Core Graphics path
-    /// pays for every one, and a morph is over in a fraction of a second.
     private static let maxMorphSamples = 8
 
     private func morphSampleTimes(at editorTime: TimeInterval, rect: (TimeInterval) -> CGRect) -> [TimeInterval] {
@@ -1561,9 +1356,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
     }
 
-    /// The screen while its card moves: each shutter sample is clipped to
-    /// the card as it stood at that instant and the samples are summed at
-    /// equal weight, so the card's edges blur along with its pixels.
     private func drawMorphingScreen(
         _ screenImage: CGImage,
         editorTime: TimeInterval,
@@ -1589,10 +1381,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.restoreGState()
     }
 
-    /// The camera while a layout morph moves or reshapes it, drawn from
-    /// scratch: aspect-filled into each shutter sample's rect, clipped to
-    /// where it is mid-shutter. A running average needs no offscreen layer,
-    /// which at canvas size costs more than the draws themselves.
     private func drawMorphingCamera(_ cameraFrame: CVPixelBuffer, editorTime: TimeInterval, in context: CGContext) {
         guard let cameraImage = Self.makeImage(from: cameraFrame, colorSpace: colorSpace) else { return }
         let opacity = layout.cameraOpacity
@@ -1626,7 +1414,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 width: fillSize.width,
                 height: fillSize.height
             )
-            // Sample i at 1/(i+1) keeps the running average.
             context.setAlpha(index == 0 ? opacity : 1 / CGFloat(index + 1))
             context.draw(cameraImage, in: flipped(fillRect))
         }
@@ -1641,8 +1428,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private static let maxMorphCameraSamples = 4
 
     private func morphCameraSampleTimes(at editorTime: TimeInterval) -> [TimeInterval] {
-        // A running average can't also carry a fade, so a fading camera
-        // draws once, mid-shutter.
         let times = layout.cameraOpacity < 0.999
             ? [editorTime]
             : timing.sampleTimes(at: editorTime) { self.frameLayout(at: $0).layout.bubbleRect }
@@ -1652,8 +1437,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
     }
 
-    /// `drawMorphingCamera` on the GPU, into the unlocked `destination`.
-    /// False if Metal can't, leaving the frame untouched.
     private func renderMorphingCamera(
         _ cameraFrame: CVPixelBuffer, editorTime: TimeInterval, into destination: CVPixelBuffer
     ) -> Bool {
@@ -1690,18 +1473,12 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         )
     }
 
-    /// Whether the camera is cut out at all at an editor time.
     func showsCutout(at editorTime: TimeInterval) -> Bool {
         let layout = frameLayout(at: editorTime).layout
         return layout.cameraCutout > 0.001 && layout.cameraOpacity > 0.001 && layout.bubbleRect.width > 0
     }
 
 
-    /// The camera cut out of its background by the layout's cutout amount,
-    /// over the finished frame in the unlocked `destination`: the framed
-    /// camera's shadow and border give way to the person's own shadow as
-    /// the background melts. False if Metal or Vision can't, leaving the
-    /// frame untouched.
     private func renderCutoutCamera(
         _ cameraFrame: CVPixelBuffer, cameraTime: TimeInterval, editorTime: TimeInterval,
         into destination: CVPixelBuffer
@@ -1777,7 +1554,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         layout: RecordingStudioLayout,
         into destination: CVPixelBuffer
     ) -> StudioMetalScreenRenderer.Submission? {
-        // Morph frames move the card clip every frame; Core Graphics draws them.
         guard let settled, !sampleRects.isEmpty, !forceCoreGraphics, !metalFailed,
               StudioMetalScreenRenderer.shouldAccelerate(screenFrame: screenFrame, sampleRects: sampleRects)
         else { return nil }
@@ -1799,11 +1575,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return submission
     }
 
-    /// Shadow + hairline border match the live preview's bubble styling.
-    /// The camera sits over moving video, so it composites every frame -
-    /// but while a layout is settled its geometry is fixed: the blurred
-    /// shadow renders once, the clipped camera layer once per camera frame,
-    /// and each output frame only blits them 1:1.
     private func drawCameraBubble(
         _ cameraFrame: CVPixelBuffer, resources: LayoutResources,
         submission: StudioCameraBubbleScaler.Submission?, in context: CGContext
@@ -1819,8 +1590,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.draw(content, in: bubbleContentRect(for: resources.layout))
     }
 
-    /// The bubble in bottom-up canvas pixels, grown to whole pixels so its
-    /// cached layer blits without resampling.
     private func bubbleContentRect(for layout: RecordingStudioLayout) -> CGRect {
         flipped(layout.bubbleRect).integral
     }
@@ -1868,9 +1637,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                       width: size.width, height: size.height)
     }
 
-    /// Schedule the camera before finishing the previous frame's overlays.
-    /// Consecutive output ticks sharing one decoded camera frame also share
-    /// its scale submission; the resulting image is still clipped identically.
     private func prepareCamera(
         _ cameraFrame: CVPixelBuffer, resources: LayoutResources
     ) -> StudioCameraBubbleScaler.Submission? {
@@ -1898,8 +1664,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let fillRect = cameraFillRect(cameraFrame, layout: layout)
         let minDimension = min(canvasSize.width, canvasSize.height)
         let layerRect = bubbleContentRect(for: layout)
-        // The GPU scales straight into the layer's pixel box, so the draw
-        // below is 1:1; Core Graphics resamples the full frame otherwise.
         let scaledCamera = submission.flatMap { cameraScaler(for: resources)?.image(for: $0) }
         let cameraImage = scaledCamera == nil ? Self.makeImage(from: cameraFrame, colorSpace: colorSpace) : nil
         guard scaledCamera != nil || cameraImage != nil else { return nil }
@@ -1921,8 +1685,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
     }
 
-    /// Renders canvas-space (bottom-up) drawing into an image covering only
-    /// `rect`, which must be in whole pixels.
     private func renderLayer(covering rect: CGRect, draw: (CGContext) -> Void) -> CGImage? {
         guard rect.width >= 1, rect.height >= 1,
               let context = CGContext(
@@ -1993,10 +1755,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             )
         }
 
-        // The pointer is clipped to the rounded card like the screen pixels
-        // beneath it, but a full-canvas clip mask costs more than the whole
-        // draw. When everything drawn sits inside the card's corner-free
-        // interior the clip removes nothing, so skip it.
         var bounds = CGRect.null
         if let pressGeometry {
             let reach = max(pressGeometry.effect.impactRadius, pressGeometry.effect.rippleRadius)
@@ -2209,9 +1967,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let metrics = SubtitleBarMetrics(canvasSize: canvasSize, style: subtitleStyle)
         let maximumTextWidth = metrics.maximumTextWidth(canvasWidth: canvasSize.width)
 
-        // On narrow canvases the text wraps into centered lines rather
-        // than shrinking into a full-width sliver; the font only scales
-        // down when even the maximum line count can't hold it.
         var fontSize = metrics.fontSize
         var wrappedLines: [CTLine] = []
         for _ in 0..<3 {
@@ -2258,8 +2013,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.fillPath()
 
         context.textMatrix = .identity
-        // The CG context is bottom-up, so the first wrapped line sits at
-        // the top of the bar and subsequent lines step downward.
         let firstBaseline = barRect.maxY - metrics.paddingVertical - ascent
         for (index, wrappedLine) in wrappedLines.enumerated() {
             context.textPosition = CGPoint(
@@ -2271,7 +2024,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.restoreGState()
     }
 
-    /// Word-wraps an attributed string into CTLines within a width.
     private static func wrapLines(
         _ attributed: NSAttributedString,
         width: CGFloat
@@ -2290,9 +2042,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return (CTFrameGetLines(frame) as? [CTLine]) ?? []
     }
 
-    /// The bar's text: karaoke-colored words when word timings exist and
-    /// the style asks for them, the plain cue text otherwise. Colors match
-    /// StudioSubtitleBarView exactly.
     private func subtitleAttributedText(
         plainText: String,
         at time: TimeInterval,
@@ -2372,7 +2121,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return image
     }
 
-    /// Layout rects use a top-left origin; CoreGraphics draws bottom-up.
     private func flipped(_ rect: CGRect) -> CGRect {
         CGRect(
             x: rect.minX,
@@ -2413,7 +2161,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return context.makeImage()
     }
 
-    /// The background, plus the card's shadow when `layout` is given.
     private static func renderBackdrop(
         canvasSize: CGSize,
         layout: RecordingStudioLayout?,
@@ -2456,7 +2203,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 colors: cgColors as CFArray,
                 locations: nil
             ) {
-                // UnitPoint has a top-left origin; the context is bottom-up.
                 let start = CGPoint(
                     x: gradient.startPoint.x * canvasSize.width,
                     y: canvasSize.height - gradient.startPoint.y * canvasSize.height
@@ -2491,8 +2237,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             }
         }
 
-        // Card shadow: static, so it lives in the backdrop. Only the shadow:
-        // the card's own shape would show through its antialiased edge.
         if let layout, style.shadow > 0.01, style.background != .none {
             let minDimension = min(canvasSize.width, canvasSize.height)
             let blur = minDimension * 0.045 * style.shadow

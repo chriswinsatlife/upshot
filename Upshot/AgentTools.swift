@@ -1,23 +1,11 @@
-//
-//  AgentTools.swift
-//  Upshot
-//
-//  The tools the agent (MCP) server offers, and their dispatch. The
-//  descriptions are written for the model on the other end: they are the
-//  only documentation it gets, so they spell out units, clocks, and what
-//  each call changes.
-//
 
 import Foundation
 
-/// Which timeline a time refers to. Source time is the raw recording;
-/// edited time is the movie after cuts and speed changes.
 enum AgentClock: String {
     case source
     case edited
 }
 
-/// Typed access to a tool's arguments, with errors the model can act on.
 struct AgentArguments {
     let raw: JSONValue
 
@@ -292,6 +280,7 @@ enum AgentTools {
                 properties: [
                     "recording": recordingProperty,
                     "output_path": ["type": "string", "description": "Absolute file path to move the finished video to. Its extension should match the container."],
+                    "options": ["type": "object", "description": "Merge patch for additional export options. format: Video or GIF; gifFrameRate: 10, 15, 20, 25, or 30; gifQuality: Low, Medium, or High; optimizesGIF: boolean. Resolution uses settings.resolution. GIF contains no audio. Saved per project."],
                     "settings": ["type": "object", "description": "Merge patch for the export settings: quality, speed, codec, resolution, container, frameRate, motionBlurEnabled, removeAudio. See get_editing_guide for values. Saved into the project."],
                     "wait": ["type": "boolean", "description": "Wait for the export to finish. Defaults to true."],
                 ],
@@ -350,12 +339,11 @@ enum AgentTools {
         case "export_video": return try await exportVideo(arguments, progress: progress)
         case "export_audio": return try await exportAudio(arguments, progress: progress)
         case "export_status": return try await exportStatus(arguments)
-        case "get_editing_guide": return [text(AgentEditingGuide.text)]
+        case "get_editing_guide": return [text(AgentEditingGuide.text + "\n" + RecordingExportAgentGuide.text)]
         default: throw AgentToolError.message("Unknown tool \"\(name)\".")
         }
     }
 
-    // MARK: - Schema helpers
 
     static let recordingProperty: JSONValue = [
         "type": "string",
@@ -417,14 +405,11 @@ enum AgentTools {
         ]
     }
 
-    // MARK: - Content helpers
 
     static func text(_ string: String) -> JSONValue {
         ["type": "text", "text": .string(string)]
     }
 
-    /// Compact: tool output is read by a model, and pretty-printing
-    /// roughly doubles its token cost.
     static func json(_ value: JSONValue) -> JSONValue {
         text(value.compactString)
     }

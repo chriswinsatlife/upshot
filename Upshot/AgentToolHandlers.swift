@@ -1,20 +1,8 @@
-//
-//  AgentToolHandlers.swift
-//  Upshot
-//
-//  What each agent tool does. Reads come straight off the loaded Studio
-//  model. Edits either call the model's own operations (cuts, transcript
-//  edits, media import) or transform its edit document as JSON and apply
-//  the result with `applyAgentDocument`, which makes the change a single
-//  undo step. Every edit is flushed to the draft before the tool returns.
-//
 
 import AppKit
 import AVFoundation
 import Foundation
 
-/// The kinds of timed item an agent can add, change, or remove, and where
-/// each lives in the edit document.
 enum AgentItemKind: String, CaseIterable {
     case zoom
     case text
@@ -36,8 +24,6 @@ enum AgentItemKind: String, CaseIterable {
         }
     }
 
-    /// Added audio is placed on the edited movie; everything else rides
-    /// on the footage it was put over.
     var isOnEditedClock: Bool { self == .audio }
 
     var title: String {
@@ -52,9 +38,6 @@ enum AgentItemKind: String, CaseIterable {
         }
     }
 
-    /// Decodes one item through its real model type and re-encodes it, so
-    /// defaults are filled in and bad fields are caught before they reach
-    /// the document.
     func normalized(_ item: JSONValue) throws -> JSONValue {
         switch self {
         case .zoom: try JSONValue(encoding: item.decode(as: ZoomCue.self))
@@ -69,7 +52,6 @@ enum AgentItemKind: String, CaseIterable {
 }
 
 extension AgentTools {
-    // MARK: - Reading
 
     static func listRecordings(_ arguments: AgentArguments) throws -> [JSONValue] {
         let query = arguments.optionalString("query")?.lowercased()
@@ -119,7 +101,6 @@ extension AgentTools {
 
     static func recordingSummary(_ model: RecordingStudioModel) throws -> JSONValue {
         var document = try JSONValue(encoding: model.editDocument)
-        // Transcripts run to thousands of words; get_transcript serves them.
         document = document.merging(["subtitleWords": .null, "subtitleCues": .null])
 
         let timeline = model.clipTimeline
@@ -169,11 +150,10 @@ extension AgentTools {
             "clips": .array(clips),
             "items": .array(items),
             "document": document,
+            "exportOptions": try JSONValue(encoding: model.exportDeliveryOptions),
         ]
     }
 
-    /// One item as the timeline shows it: id, a short label, and its range
-    /// on both clocks (edited is null when the footage under it is cut).
     private static func timelineEntry(_ item: JSONValue, kind: AgentItemKind, model: RecordingStudioModel) -> JSONValue {
         var entry: [String: JSONValue] = ["kind": .string(kind.rawValue), "id": item["id"] ?? .null]
         let label: JSONValue? = switch kind {
@@ -340,7 +320,6 @@ extension AgentTools {
         return (data, CGSize(width: cgImage.width, height: cgImage.height))
     }
 
-    // MARK: - Cutting
 
     static func cut(_ arguments: AgentArguments) async throws -> [JSONValue] {
         let model = try await AgentProjects.shared.model(for: arguments.recording())
@@ -379,7 +358,6 @@ extension AgentTools {
                 segments.append(segment)
                 continue
             }
-            // Never leave a sliver too short to be a clip at either edge.
             if start - segment.sourceStart < minimum { start = segment.sourceStart }
             if segment.sourceEnd - end < minimum { end = segment.sourceEnd }
             var pieces: [RecordingClipSegment] = []
@@ -433,7 +411,6 @@ extension AgentTools {
         return [json(editResult(model, removedSeconds: before - model.duration))]
     }
 
-    // MARK: - Items
 
     static func addItems(_ arguments: AgentArguments) async throws -> [JSONValue] {
         let model = try await AgentProjects.shared.model(for: arguments.recording())
@@ -458,8 +435,6 @@ extension AgentTools {
             fields = try convertTimes(fields, kind: kind, clock: clock, model: model)
             fields["id"] = .string(UUID().uuidString)
             if kind == .cameraLayout {
-                // A partial layout ({"kind": "camera"}) fills in from the
-                // project's default arrangement.
                 let base = try JSONValue(encoding: model.style.camera.layout)
                 fields["layout"] = base.merging(fields["layout"] ?? [:])
             }
@@ -560,7 +535,6 @@ extension AgentTools {
         return [json(["applied": .array(keys.sorted().map { .string($0) }), "editedDuration": seconds(model.duration)])]
     }
 
-    // MARK: - Project
 
     static func undoRedo(_ arguments: AgentArguments, redo: Bool) async throws -> [JSONValue] {
         let model = try await AgentProjects.shared.model(for: arguments.recording())
@@ -598,10 +572,7 @@ extension AgentTools {
         return [text("Opened \(session.displayName) in Studio.")]
     }
 
-    // MARK: - Export
 
-    /// Where the last agent export ended up (it may have been moved to an
-    /// output_path), by project path.
     private static var exportNotes: [String: String] = [:]
 
     static func exportVideo(_ arguments: AgentArguments, progress: @escaping AgentProgress) async throws -> [JSONValue] {
@@ -615,6 +586,14 @@ extension AgentTools {
         let destination = try outputURL(arguments)
 
         model.exportState = .idle
+        if let patch = arguments.raw["options"] {
+            do {
+                let merged = try JSONValue(encoding: model.exportDeliveryOptions).merging(patch)
+                model.exportDeliveryOptions = try merged.decode(as: RecordingExportDeliveryOptions.self)
+            } catch {
+                throw AgentToolError.message("Invalid export options: \(describe(error)). See get_editing_guide.")
+            }
+        }
         if let patch = arguments.raw["settings"], patch.objectValue?.isEmpty == false {
             let merged = try JSONValue(encoding: model.exportSettings).merging(patch)
             let settings: VideoCompressionSettings
@@ -623,7 +602,8 @@ extension AgentTools {
             } catch {
                 throw AgentToolError.message("Invalid export settings: \(describe(error)). See get_editing_guide.")
             }
-            model.export(settings: settings)
+            model.exportSettings = settings
+            model.export()
         } else {
             model.export()
         }
@@ -765,7 +745,6 @@ extension AgentTools {
         return ["path": .string(url.path), "bytes": .number(size), "durationSeconds": seconds(duration)]
     }
 
-    // MARK: - Helpers
 
     private static func itemKind(_ arguments: AgentArguments) throws -> AgentItemKind {
         let raw = try arguments.string("kind")
@@ -776,7 +755,6 @@ extension AgentTools {
         return kind
     }
 
-    /// Moves an item's time fields onto the clock its kind is stored on.
     private static func convertTimes(
         _ fields: [String: JSONValue],
         kind: AgentItemKind,
@@ -860,7 +838,6 @@ extension AgentTools {
         value?.stringValue?.caseInsensitiveCompare(id) == .orderedSame
     }
 
-    /// DecodingError's own description buries the field; lead with it.
     static func describe(_ error: Error) -> String {
         guard let error = error as? DecodingError else { return error.localizedDescription }
         func path(_ context: DecodingError.Context) -> String {
