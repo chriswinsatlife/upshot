@@ -71,9 +71,19 @@ nonisolated enum AnnotationWatermarkPlacement {
         guard naturalSize.width > 0, naturalSize.height > 0 else { return }
         let margin = min(rect.width, rect.height) * 0.025
         let desiredWidth = image == nil ? naturalSize.width : rect.width * min(0.9, max(0.02, settings.imageWidth))
-        let scale = min(desiredWidth / naturalSize.width, max(1, rect.width - margin * 2) / naturalSize.width,
+        var scale = min(desiredWidth / naturalSize.width, max(1, rect.width - margin * 2) / naturalSize.width,
                         max(1, rect.height - margin * 2) / naturalSize.height)
+        let angle = settings.rotationDegrees * .pi / 180
+        let cosine = abs(cos(angle))
+        let sine = abs(sin(angle))
+        let rotatedWidth = (naturalSize.width * cosine + naturalSize.height * sine) * scale
+        let rotatedHeight = (naturalSize.width * sine + naturalSize.height * cosine) * scale
+        scale *= min(1, max(1, rect.width - margin * 2) / max(1, rotatedWidth),
+                     max(1, rect.height - margin * 2) / max(1, rotatedHeight))
         let size = CGSize(width: naturalSize.width * scale, height: naturalSize.height * scale)
+        let rotatedSize = CGSize(width: size.width * cosine + size.height * sine,
+                                 height: size.width * sine + size.height * cosine)
+
         let centers: [CGPoint]
         if settings.position == .tiled {
             let rows = max(2, Int(settings.density.rounded()))
@@ -89,8 +99,8 @@ nonisolated enum AnnotationWatermarkPlacement {
         } else {
             let anchor = settings.position.anchor
             centers = [CGPoint(
-                x: rect.minX + margin + size.width / 2 + max(0, rect.width - margin * 2 - size.width) * anchor.x,
-                y: rect.minY + margin + size.height / 2 + max(0, rect.height - margin * 2 - size.height) * anchor.y
+                x: rect.minX + margin + rotatedSize.width / 2 + max(0, rect.width - margin * 2 - rotatedSize.width) * anchor.x,
+                y: rect.minY + margin + rotatedSize.height / 2 + max(0, rect.height - margin * 2 - rotatedSize.height) * anchor.y
             )]
         }
         context.saveGState()
