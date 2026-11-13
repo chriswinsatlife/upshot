@@ -1,26 +1,13 @@
-//
-//  RecordingAreaSelectionSheet.swift
-//  Upshot
-//
-//  One screen's share of the area picker: the dim, the selection cut out of
-//  it with its handles, and the pointer handling that draws, moves and
-//  resizes it. The Start Recording pill and the first-use hint are SwiftUI,
-//  laid over the top; they only draw, and the sheet decides what a click on
-//  them means.
-//
 
 import AppKit
 import SwiftUI
 
 final class RecordingAreaSelectionSheet: NSView {
     let displayID: CGDirectDisplayID
-    /// Global AppKit coordinates.
     let screenFrame: CGRect
     let scale: CGFloat
 
     private enum Drag {
-        /// Waits for the pointer to travel a few points before replacing
-        /// the selection, so a stray click never throws one away.
         case drawing(anchor: CGPoint, previous: RecordingAreaSelectionPresenter.Selection?, hasStarted: Bool)
         case moving(start: CGPoint, original: CGRect)
         case resizing(RecordingAreaHandle, original: CGRect)
@@ -30,8 +17,6 @@ final class RecordingAreaSelectionSheet: NSView {
     private var drag: Drag?
     private var presenter: RecordingAreaSelectionPresenter { .shared }
 
-    /// Sheet coordinates are top-left, the same as the SwiftUI overlay's,
-    /// so the pill's reported frame can be hit-tested without converting.
     override var isFlipped: Bool { true }
 
     init(displayID: CGDirectDisplayID, screenFrame: CGRect, scale: CGFloat) {
@@ -43,8 +28,6 @@ final class RecordingAreaSelectionSheet: NSView {
 
         let overlay = NSHostingView(rootView: RecordingAreaSheetOverlay(displayID: displayID, screenFrame: screenFrame))
         overlay.frame = bounds
-        // Sized by the panel, never the other way round - see
-        // RecordingBarPresenter.makePanel.
         overlay.sizingOptions = []
         overlay.autoresizingMask = [.width, .height]
         addSubview(overlay)
@@ -61,7 +44,6 @@ final class RecordingAreaSelectionSheet: NSView {
         }
     }
 
-    // MARK: Coordinates
 
     private func local(_ rect: CGRect) -> CGRect {
         CGRect(
@@ -72,13 +54,11 @@ final class RecordingAreaSelectionSheet: NSView {
         )
     }
 
-    /// The selection on this screen, if that's where it is.
     private var selection: RecordingAreaSelectionPresenter.Selection? {
         guard let selection = presenter.selection, selection.displayID == displayID else { return nil }
         return selection
     }
 
-    // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.32).setFill()
@@ -111,9 +91,6 @@ final class RecordingAreaSelectionSheet: NSView {
         }
     }
 
-    /// L-shaped brackets on the corners and short bars on the edges, set
-    /// just outside the border so they frame the selection rather than
-    /// covering what's in it.
     private func drawHandles(around rect: CGRect) {
         let thickness: CGFloat = 4
         let outset = thickness / 2 - 0.5
@@ -137,8 +114,6 @@ final class RecordingAreaSelectionSheet: NSView {
         }
         corners.stroke()
 
-        // Edge grips only where there's room between the brackets for them
-        // to read as separate handles.
         let grip: CGFloat = 20
         NSColor.white.setFill()
         if rect.width >= grip + arm * 2 + 24 {
@@ -161,7 +136,6 @@ final class RecordingAreaSelectionSheet: NSView {
         }
     }
 
-    /// Thirds while adjusting, for lining a subject up.
     private func drawThirds(in rect: CGRect) {
         NSColor.white.withAlphaComponent(0.3).setStroke()
         let guides = NSBezierPath()
@@ -177,29 +151,12 @@ final class RecordingAreaSelectionSheet: NSView {
         guides.stroke()
     }
 
-    /// The exact pixel size by the selection while it's being adjusted - the
-    /// bar has it too, but the pointer is here.
     private func drawSizeBadge(for rect: CGRect) {
         guard let selection else { return }
         let size = selection.pixelSize
-        let label = NSMutableAttributedString(
-            string: "\(size.width) × \(size.height)",
-            attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: NSColor.white
-            ]
-        )
-        if let aspect = presenter.aspect {
-            label.append(NSAttributedString(
-                string: "  \(aspect.title)",
-                attributes: [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.6)
-                ]
-            ))
-        }
-
-        let textSize = label.size()
+        let dimensions = OverlayTextLayout("\(size.width) × \(size.height)", font: OverlayTextLayout.selectionSizeFont)
+        let aspect = presenter.aspect.map { OverlayTextLayout("  \($0.title)", font: OverlayTextLayout.selectionAspectFont, color: CGColor(gray: 1, alpha: 0.6)) }
+        let textSize = CGSize(width: dimensions.size.width + (aspect?.size.width ?? 0), height: max(dimensions.size.height, aspect?.size.height ?? 0))
         let padding = CGSize(width: 8, height: 4)
         let badgeSize = CGSize(width: textSize.width + padding.width * 2, height: textSize.height + padding.height * 2)
         let gap: CGFloat = 8
@@ -214,12 +171,13 @@ final class RecordingAreaSelectionSheet: NSView {
         let badge = CGRect(origin: origin, size: badgeSize)
         NSColor.black.withAlphaComponent(0.72).setFill()
         NSBezierPath(roundedRect: badge, xRadius: 6, yRadius: 6).fill()
-        label.draw(at: CGPoint(x: badge.minX + padding.width, y: badge.minY + padding.height))
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let textOrigin = CGPoint(x: badge.minX + padding.width, y: badge.minY + padding.height)
+        dimensions.draw(at: textOrigin, in: context, flipped: isFlipped)
+        aspect?.draw(at: CGPoint(x: textOrigin.x + dimensions.size.width, y: textOrigin.y), in: context, flipped: isFlipped)
     }
 
-    // MARK: Hit testing
 
-    /// Every click on this screen is the sheet's; the overlay only draws.
     override func hitTest(_ point: NSPoint) -> NSView? {
         frame.contains(point) ? self : nil
     }
@@ -231,8 +189,6 @@ final class RecordingAreaSelectionSheet: NSView {
         return pill.contains(convert(event.locationInWindow, from: nil))
     }
 
-    /// Corners take priority and are generous; edges are grabbable along
-    /// their whole length, not just at the grip.
     private func handle(at point: CGPoint, in rect: CGRect) -> RecordingAreaHandle? {
         let corner: CGFloat = 12
         let edge: CGFloat = 6
@@ -252,7 +208,6 @@ final class RecordingAreaSelectionSheet: NSView {
         return nil
     }
 
-    // MARK: Pointer
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -280,10 +235,6 @@ final class RecordingAreaSelectionSheet: NSView {
         updateCursor()
     }
 
-    /// The pointer says what a press will do: draw, move, or resize along
-    /// which axis. Set from the tracking area, which this panel gets whether
-    /// or not Upshot is active, rather than from cursor rects, which it
-    /// only gets while key.
     private func updateCursor() {
         guard let window, window.isVisible else { return }
         let point = NSEvent.mouseLocation
@@ -343,7 +294,6 @@ final class RecordingAreaSelectionSheet: NSView {
                 self.drag = .drawing(anchor: anchor, previous: previous, hasStarted: true)
                 presenter.setInteracting(true)
             }
-            // Shift squares a freeform selection; a locked ratio wins.
             let ratio = presenter.ratio ?? (flags.contains(.shift) ? 1 : nil)
             presenter.update(
                 rect: RecordingAreaGeometry.drawn(
@@ -365,7 +315,6 @@ final class RecordingAreaSelectionSheet: NSView {
                 on: self
             )
         case let .resizing(handle, original):
-            // Shift keeps a freeform selection's current shape.
             let ratio = presenter.ratio
                 ?? (flags.contains(.shift) && original.height > 0 ? original.width / original.height : nil)
             presenter.update(
@@ -383,7 +332,6 @@ final class RecordingAreaSelectionSheet: NSView {
 
         switch drag {
         case let .drawing(_, previous, hasStarted):
-            // Too small to be meant: put back whatever was there.
             if hasStarted, let rect = presenter.selection?.rect, !RecordingAreaGeometry.isLargeEnough(rect) {
                 presenter.restore(previous)
             }
@@ -420,10 +368,7 @@ private extension RecordingAreaHandle {
     }
 }
 
-// MARK: - Overlay
 
-/// The Start Recording pill beside the selection, and the hint on the bar's
-/// screen before there is one.
 private struct RecordingAreaSheetOverlay: View {
     let displayID: CGDirectDisplayID
     let screenFrame: CGRect
@@ -454,9 +399,6 @@ private struct RecordingAreaSheetOverlay: View {
         .allowsHitTesting(false)
     }
 
-    /// Solid rather than glass, like the Display and Window pickers' pill:
-    /// glass in this never-active panel renders untinted, and the pill has to
-    /// read over any content.
     private var startPill: some View {
         HStack(spacing: 6) {
             Image(systemName: "record.circle")
@@ -506,9 +448,6 @@ private struct RecordingAreaSheetOverlay: View {
         .fixedSize()
     }
 
-    /// Below the selection, where it doesn't cover what's being framed;
-    /// above when there's no room below (or the bar or its area pill is there); inside along
-    /// the bottom edge when the selection fills the screen.
     private func pillCenter(for rect: CGRect, in size: CGSize) -> CGPoint {
         let gap = Self.pillGap
         let margin = Self.margin

@@ -1,11 +1,3 @@
-//
-//  RecordingClipTimelineView.swift
-//  Upshot
-//
-//  Compact, segment-aware Studio video lane. The AppKit control gives mouse
-//  tracking, contextual split locations, cursor control, and edge trimming
-//  pixel-level precision while SwiftUI owns the surrounding editor chrome.
-//
 
 import AppKit
 import SwiftUI
@@ -23,20 +15,11 @@ struct RecordingClipTimelineView: NSViewRepresentable {
     let onSplit: (TimeInterval) -> Void
     let onDelete: () -> Void
     let onTrim: (RecordingClipSegment) -> Void
-    /// Pinch or ⌘-scroll over the lane: `(factor, anchor editor time)`. The
-    /// anchor is the time under the pointer, which the caller keeps pinned to
-    /// its current screen position while the scale changes.
     let onZoom: (Double, TimeInterval) -> Void
-    /// Arrow-key nudge of the playhead by a signed number of seconds.
     let onStep: (TimeInterval) -> Void
-    /// A speed picked from a clip's context menu: `(clip, rate)`.
     let onSetSpeed: (UUID, Double) -> Void
-    /// Named along the top of every clip wide enough to carry it.
     var title: String?
-    /// A press on the clips starts (true) or stops (false) moving the
-    /// playhead, so the timeline can open the playhead's readout.
     var onScrubbing: ((Bool) -> Void)?
-    /// Offered from the clips' context menu while the cut has edits.
     var onResetAll: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -214,14 +197,9 @@ final class RecordingClipTimelineControl: NSView {
         static let selectionHandleGrooveWidth: CGFloat = 3
         static let selectionHandleGrooveHeight: CGFloat = 18
         static let thumbnailWidth: CGFloat = 58
-        /// The dark wash behind the title, fading down into the picture.
         static let titleShadeHeight: CGFloat = 24
-        /// Narrowest clip that still names itself.
         static let minimumTitledWidth: CGFloat = 56
-        /// Scroll distance that equals one doubling of the timeline scale
-        /// under ⌘-scroll.
         static let zoomScrollPointsPerDoubling: CGFloat = 220
-        /// Arrow-key steps: one frame at 30 fps, or a second with Shift.
         static let frameStep: TimeInterval = 1.0 / 30.0
         static let coarseStep: TimeInterval = 1
     }
@@ -267,8 +245,6 @@ final class RecordingClipTimelineControl: NSView {
         self.sourceDuration = sourceDuration
         if self.thumbnails !== thumbnails {
             self.thumbnails = thumbnails
-            // Newly sampled tiles arrive outside SwiftUI's update cycle, so
-            // the lane refreshes itself rather than invalidating the editor.
             thumbnails.onChange = { [weak self] in
                 self?.needsDisplay = true
             }
@@ -395,8 +371,6 @@ final class RecordingClipTimelineControl: NSView {
         needsDisplay = true
     }
 
-    /// ⌘-scroll zooms around the pointer; a plain scroll is left to the
-    /// enclosing scroll view so two-finger swipes still pan the timeline.
     override func scrollWheel(with event: NSEvent) {
         guard event.modifierFlags.contains(.command), zoomRequested != nil else {
             super.scrollWheel(with: event)
@@ -583,10 +557,6 @@ final class RecordingClipTimelineControl: NSView {
             return
         }
 
-        // The drag distance is measured against the timeline's editor-space
-        // width, but sourceStart/sourceEnd are source-space - a clip playing
-        // at 2x covers twice as many source seconds per dragged editor
-        // second, so the delta must be rescaled by the clip's own speed.
         let editorDelta = Double((point.x - dragStartPoint.x) / max(timelineRect.width, 1))
             * startTimeline.duration
         let delta = editorDelta * original.speed
@@ -677,16 +647,12 @@ final class RecordingClipTimelineControl: NSView {
                 yRadius: clipRadius(for: rect)
             ).addClip()
             drawThumbnails(in: rect, clip: clip, dirtyRect: dirtyRect)
-            // The picture shows as it is; the selection chrome alone marks
-            // the selected clip.
             let isSelected = clip.id == selectedClipID
             if showsTitle(on: clip, in: rect) {
                 drawTitleShade(in: rect)
             }
             NSGraphicsContext.restoreGraphicsState()
 
-            // A hairline inner edge so neighbouring clips and the track read
-            // apart even where the thumbnails are dark.
             NSColor.white.withAlphaComponent(isSelected ? 0.0 : 0.10).setStroke()
             let edge = NSBezierPath(
                 roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
@@ -698,7 +664,6 @@ final class RecordingClipTimelineControl: NSView {
         }
     }
 
-    /// Darkens the top of a clip so its title reads over any picture.
     private func drawTitleShade(in rect: CGRect) {
         let shade = NSGradient(
             starting: NSColor.black.withAlphaComponent(0.5),
@@ -710,20 +675,13 @@ final class RecordingClipTimelineControl: NSView {
             width: rect.width,
             height: min(rect.height, Metrics.titleShadeHeight)
         )
-        // The view is flipped, so 90° runs from the top edge downward.
         shade?.draw(in: band, angle: 90)
     }
 
     private func drawThumbnails(in rect: CGRect, clip: RecordingClipSegment, dirtyRect: CGRect) {
-        // The striped placeholder stays underneath, so tiles still being
-        // sampled read as "loading" rather than as holes in the strip.
         drawPlaceholder(in: rect, dirtyRect: dirtyRect)
         guard let thumbnails, clip.duration > 0, rect.width > 0 else { return }
 
-        // Tiles live on the store's source-time grid rather than on a pixel
-        // grid of this rect: that keeps a tile anchored to the same moment
-        // while the lane is zoomed or the clip is trimmed, instead of the whole
-        // strip re-flowing on every scale change.
         let pointsPerSourceSecond = rect.width / CGFloat(clip.duration)
         guard pointsPerSourceSecond > 0 else { return }
         let grid = thumbnails.grid(
@@ -758,9 +716,6 @@ final class RecordingClipTimelineControl: NSView {
         }
     }
 
-    /// Only the tiles the current redraw actually touches. A zoomed lane can
-    /// be tens of thousands of points wide, so drawing every tile on every
-    /// scroll step would be wasted work.
     private func tileIndices(
         in rect: CGRect,
         tileWidth: CGFloat,
@@ -820,22 +775,15 @@ final class RecordingClipTimelineControl: NSView {
         )
     }
 
-    /// A speed badge on every clip that plays faster than recorded, and the
-    /// selected clip's edited length - each only where the clip is wide
-    /// enough to carry it without covering the picture.
     private func drawBadges(in dirtyRect: CGRect) {
         for clip in timeline.segments {
             guard let rect = clipRect(for: clip.id), rect.intersects(dirtyRect) else { continue }
             let content = rect.insetBy(dx: Metrics.selectionHandleInset * 2 + 2, dy: 5)
-            // A clip narrower than the insets leaves a null rect, whose
-            // infinite edges pass every fit check below.
             guard !content.isNull else { continue }
             var leadingX = content.minX
             let isSpedUp = abs(clip.speed - 1) > 0.001
             let speedText = RecordingClipSegment.speedTitle(clip.speed)
 
-            // The title gives way to the speed badge after it, truncating
-            // rather than pushing the badge off the clip.
             if let title, showsTitle(on: clip, in: rect) {
                 let reserved = isSpedUp ? Self.badgeSize(text: speedText, hasSymbol: true).width + 4 : 0
                 let titleWidth = drawTitle(
@@ -876,39 +824,18 @@ final class RecordingClipTimelineControl: NSView {
         }
     }
 
-    /// The recording's name is the same on every clip, so it shows only on
-    /// the clip that's selected or under the pointer, where it says which
-    /// one you're about to act on, and the picture stays clear elsewhere.
     private func showsTitle(on clip: RecordingClipSegment, in rect: CGRect) -> Bool {
         title != nil
             && rect.width >= Metrics.minimumTitledWidth
             && (clip.id == selectedClipID || clip.id == hoveredClipID)
     }
 
-    private static let titleAttributes: [NSAttributedString.Key: Any] = {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-        return [
-            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: NSColor.white,
-            .paragraphStyle: paragraph
-        ]
-    }()
-
-    /// Draws `title` on one line, vertically centred on `origin.y` and cut
-    /// short with an ellipsis past `maxWidth`. Returns the width it took.
-    private func drawTitle(_ title: String, at origin: CGPoint, maxWidth: CGFloat) -> CGFloat {
-        guard maxWidth > 16 else { return 0 }
-        let text = title as NSString
-        let size = text.size(withAttributes: Self.titleAttributes)
-        let width = min(ceil(size.width), maxWidth)
-        text.draw(
-            with: CGRect(x: origin.x, y: origin.y - size.height / 2, width: width, height: size.height),
-            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-            attributes: Self.titleAttributes
-        )
-        return width
-    }
+private func drawTitle(_ title: String, at origin: CGPoint, maxWidth: CGFloat) -> CGFloat {
+    guard maxWidth > 16, let context = NSGraphicsContext.current?.cgContext else { return 0 }
+    let layout = OverlayTextLayout(title, font: OverlayTextLayout.timelineTitleFont, maximumWidth: maxWidth)
+    layout.draw(at: CGPoint(x: origin.x, y: origin.y - layout.size.height / 2), in: context, flipped: isFlipped)
+    return layout.size.width
+}
 
     private struct BadgeLayout {
         let frame: CGRect
@@ -916,13 +843,12 @@ final class RecordingClipTimelineControl: NSView {
         let symbol: String?
     }
 
-    private static let badgeFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
     private static let badgeHeight: CGFloat = 16
     private static let badgePadding: CGFloat = 6
     private static let badgeSymbolWidth: CGFloat = 11
 
     private static func badgeSize(text: String, hasSymbol: Bool) -> CGSize {
-        let textWidth = (text as NSString).size(withAttributes: [.font: badgeFont]).width
+        let textWidth = OverlayTextLayout(text, font: OverlayTextLayout.timelineBadgeFont).size.width
         let symbolWidth = hasSymbol ? badgeSymbolWidth + 3 : 0
         return CGSize(width: ceil(textWidth + symbolWidth + badgePadding * 2), height: badgeHeight)
     }
@@ -964,15 +890,9 @@ final class RecordingClipTimelineControl: NSView {
             x += Self.badgeSymbolWidth + 3
         }
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: Self.badgeFont,
-            .foregroundColor: NSColor.white
-        ]
-        let textSize = (badge.text as NSString).size(withAttributes: attributes)
-        (badge.text as NSString).draw(
-            at: CGPoint(x: x, y: frame.midY - textSize.height / 2),
-            withAttributes: attributes
-        )
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let layout = OverlayTextLayout(badge.text, font: OverlayTextLayout.timelineBadgeFont)
+        layout.draw(at: CGPoint(x: x, y: frame.midY - layout.size.height / 2), in: context, flipped: isFlipped)
     }
 
     private static func durationText(_ seconds: TimeInterval) -> String {
@@ -984,8 +904,6 @@ final class RecordingClipTimelineControl: NSView {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    /// Matches the zoom blocks and playhead so the timeline has a single
-    /// selection color.
     private var selectionColor: NSColor {
         .controlAccentColor
     }
@@ -998,8 +916,6 @@ final class RecordingClipTimelineControl: NSView {
         guard let selectedClipID,
               let baseRect = clipRect(for: selectedClipID),
               baseRect.width > 1 else { return nil }
-        // Kept inside the lane: the first and last clips sit against the
-        // enclosing scroll view's clip, which would cut an outset edge off.
         let outerRect = baseRect.insetBy(
             dx: -Metrics.selectionPadding,
             dy: -Metrics.selectionPadding

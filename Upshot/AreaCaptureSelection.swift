@@ -725,12 +725,12 @@ final class AreaCaptureSelectionView: NSView {
         }
         guard !selector.isAllInOne else { return }
         let text = selector.instruction
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white]
-        let size = (text as NSString).size(withAttributes: attributes)
+        let layout = OverlayTextLayout(text, font: OverlayTextLayout.instructionFont)
+        let size = layout.size
         let rect = CGRect(x: (bounds.width - size.width) / 2 - 16, y: 36, width: size.width + 32, height: 36)
         NSColor.black.withAlphaComponent(0.85).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).fill()
-        (text as NSString).draw(at: CGPoint(x: rect.minX + 16, y: rect.minY + 10), withAttributes: attributes)
+        layout.draw(at: CGPoint(x: rect.minX + 16, y: rect.minY + 10), in: context)
     }
 }
 

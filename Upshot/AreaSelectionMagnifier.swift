@@ -70,8 +70,8 @@ enum AreaSelectionMagnifier {
             crosshair(in: context, bounds: bounds, point: point)
             context.restoreGState()
         }
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white]
-        let readoutSize = (readout as NSString).size(withAttributes: attributes)
+        let layout = OverlayTextLayout(readout, font: OverlayTextLayout.magnifierFont)
+        let readoutSize = layout.size
         let width = max(132, readoutSize.width + 20)
         let height: CGFloat = showsMagnifier ? 148 : 32
         let x = min(max(8, point.x + 22 + width <= bounds.maxX - 8 ? point.x + 22 : point.x - width - 22), max(8, bounds.maxX - width - 8))
@@ -95,7 +95,7 @@ enum AreaSelectionMagnifier {
             crosshair(in: context, bounds: loupe, point: CGPoint(x: loupe.minX + samplePosition.x * loupe.width, y: loupe.minY + samplePosition.y * loupe.height))
             context.restoreGState()
         }
-        (readout as NSString).draw(at: CGPoint(x: frame.midX - readoutSize.width / 2, y: frame.minY + 10), withAttributes: attributes)
+        layout.draw(at: CGPoint(x: frame.midX - readoutSize.width / 2, y: frame.minY + 10), in: context)
     }
 
     private static func crosshair(in context: CGContext, bounds: CGRect, point: CGPoint) {
