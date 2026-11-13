@@ -92,7 +92,7 @@ struct InterfaceRowLabel: View {
             if let detail {
                 Text(detail)
                     .font(.dsCaption)
-                    .foregroundStyle(detailIsCritical ? Palette.destructive : Palette.secondaryLabel)
+                    .foregroundStyle(detailIsCritical ? Palette.destructiveLabel : Palette.secondaryLabel)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -126,7 +126,7 @@ struct InterfaceRow<Trailing: View>: View {
         HStack(alignment: .center, spacing: InterfaceMetrics.rowControlSpacing) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: IconSize.row, weight: .medium))
                     .foregroundStyle(isEnabled ? Palette.secondaryLabel : Palette.disabledLabel)
                     .frame(width: 18)
             }
@@ -229,7 +229,11 @@ struct InterfaceFolderRow: View {
 
     var body: some View {
         InterfaceRow(title, detail: detail) {
-            HStack(spacing: Space.xs + 1) {
+            if let onReset {
+                InterfaceResetButton(help: "Use the default folder", action: onReset)
+            }
+
+            HStack(spacing: Space.xs) {
                 Image(nsImage: NSWorkspace.shared.icon(for: .folder))
                     .resizable()
                     .interpolation(.high)
@@ -245,10 +249,6 @@ struct InterfaceFolderRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(folderDisplayName)
             .accessibilityValue(folderURL.path)
-
-            if let onReset {
-                InspectorResetButton(help: "Use the default folder", action: onReset)
-            }
 
             Button("Choose…", action: onChoose)
                 .buttonStyle(.interfaceAction)
@@ -296,7 +296,7 @@ struct InterfaceShortcutRow: View {
     var body: some View {
         InterfaceRow(title, detail: failure ?? detail, detailIsCritical: failure != nil) {
             if isCustomized, !isRecording, let onReset {
-                InspectorResetButton(help: "Restore the default shortcut", action: onReset)
+                InterfaceResetButton(help: "Restore the default shortcut", action: onReset)
             }
             InterfaceShortcutField(keys: keys, isRecording: isRecording, onRecord: onRecord, onClear: onClear)
         }
@@ -319,25 +319,13 @@ struct InterfaceShortcutField: View {
         let interaction = presentedState.resolvedInteraction(isHovering: isHovering, isPressed: false)
         ZStack(alignment: .trailing) {
             Button(action: onRecord) {
-                HStack(spacing: 3) {
-                    if isRecording {
-                        Text("Press keys…")
-                            .foregroundStyle(Palette.accent)
-                    } else if let keys {
-                        ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
-                            Text(key)
-                        }
-                        .foregroundStyle(isEnabled ? Palette.label : Palette.disabledLabel)
-                    } else {
-                        Text("Record Shortcut")
-                            .foregroundStyle(isEnabled ? Palette.secondaryLabel : Palette.disabledLabel)
-                    }
-                }
-                .font(.dsBody)
-                .lineLimit(1)
-                .padding(.leading, InterfaceMetrics.fieldHorizontalPadding + 2)
-                .padding(.trailing, showsClearButton ? 24 : InterfaceMetrics.fieldHorizontalPadding + 2)
-                .frame(minWidth: 112, minHeight: InterfaceMetrics.controlHeight)
+                Text(fieldText)
+                    .foregroundStyle(fieldTextStyle)
+                    .font(.dsBody)
+                    .lineLimit(1)
+                    .padding(.leading, InterfaceMetrics.fieldHorizontalPadding)
+                    .padding(.trailing, showsClearButton ? InterfaceMetrics.shortcutFieldClearButtonWidth + Space.xs : InterfaceMetrics.fieldHorizontalPadding)
+                    .frame(width: InterfaceMetrics.shortcutFieldWidth, height: InterfaceMetrics.controlHeight)
                 .background(
                     interaction.isHovered && isEnabled ? Palette.controlHoverFill : Palette.fieldFill,
                     in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
@@ -355,18 +343,54 @@ struct InterfaceShortcutField: View {
             if showsClearButton, let onClear {
                 Button(action: onClear) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.tertiaryLabel)
-                        .frame(width: 20, height: InterfaceMetrics.controlHeight)
+                        .font(.system(size: IconSize.searchField))
+                        .foregroundStyle(Palette.secondaryLabel)
+                        .frame(width: InterfaceMetrics.shortcutFieldClearButtonWidth, height: InterfaceMetrics.controlHeight)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 3)
+                .padding(.trailing, Space.xxs)
                 .help("Clear shortcut")
                 .accessibilityLabel("Clear shortcut")
             }
         }
         .fixedSize()
+    }
+
+    private var fieldText: String {
+        if isRecording { return "Press keys…" }
+        return keys?.joined() ?? "Record Shortcut"
+    }
+
+    private var fieldTextStyle: Color {
+        guard isEnabled else { return Palette.disabledLabel }
+        if isRecording { return Palette.accent }
+        return keys == nil ? Palette.secondaryLabel : Palette.label
+    }
+}
+
+struct InterfaceResetButton: View {
+    let help: String
+    let action: () -> Void
+
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.interfacePresentedControlState) private var presentedState
+    @State private var isHovering = false
+
+    var body: some View {
+        let interaction = presentedState.resolvedInteraction(isHovering: isHovering, isPressed: false)
+        Button(action: action) {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: IconSize.actionButton, weight: .semibold))
+                .foregroundStyle(isEnabled ? Palette.secondaryLabel : Palette.disabledLabel)
+                .frame(width: InterfaceMetrics.resetButtonSize, height: InterfaceMetrics.resetButtonSize)
+                .background(interaction.isHovered && isEnabled ? Palette.controlHoverFill : Color.clear, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -411,7 +435,7 @@ private struct InterfaceActionButtonBody: View {
     }
 
     private func foreground(isDestructive: Bool) -> Color {
-        if isDestructive { return Palette.destructive.opacity(isEnabled ? 1 : 0.45) }
+        if isDestructive { return Palette.destructiveLabel.opacity(isEnabled ? 1 : 0.45) }
         return isEnabled ? Palette.label : Palette.disabledLabel
     }
 
@@ -430,7 +454,7 @@ private struct InterfaceActionLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: InterfaceMetrics.actionButtonIconToLabelSpacing) {
             configuration.icon
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: IconSize.actionButton, weight: .semibold))
             configuration.title
         }
     }
@@ -590,7 +614,7 @@ struct InterfaceSidebar<Content: View>: View {
             }
             .scrollIndicators(.never)
         }
-        .padding(.horizontal, Space.m + 2)
+        .padding(.horizontal, Space.ml)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
@@ -607,7 +631,7 @@ struct InterfaceSidebarSearchField: View {
         let showsFocus = presentedState.map { $0 == .selected } ?? isFocused
         HStack(spacing: Space.s) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: IconSize.searchField, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
             TextField("", text: $text, prompt: Text(prompt))
                 .labelsHidden()
@@ -622,15 +646,15 @@ struct InterfaceSidebarSearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.tertiaryLabel)
+                        .font(.system(size: IconSize.searchField))
+                        .foregroundStyle(Palette.secondaryLabel)
                 }
                 .buttonStyle(.plain)
                 .help("Clear search")
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, Space.m + 1)
+        .padding(.horizontal, Space.m)
         .frame(height: InterfaceMetrics.searchFieldHeight)
         .background(Palette.controlFill, in: Capsule())
         .overlay {

@@ -77,6 +77,7 @@ private struct InterfaceStyleGalleryWindowRegion: View {
                 VStack(alignment: .leading, spacing: Space.xxl) {
                     InterfaceStyleGallerySidebarColumn()
                     InterfaceStyleGalleryActionButtonGrid()
+                    InterfaceStyleGalleryWindowModeSwitch()
                 }
                 .frame(width: 520, alignment: .leading)
 
@@ -359,22 +360,15 @@ private struct InterfaceStyleGalleryControlRow: View {
                     .fixedSize()
                 }
             }
-            InterfaceStyleGallerySample(state: "Mode switch: selected", onBackdrop: true) {
-                InterfacePanel(.pill, padding: Space.xs) {
-                    InterfaceModeSwitch("Filter", selection: .constant("all"), options: Self.filterOptions)
-                }
+            InterfaceStyleGallerySample(state: "Mode switch: All selected", onBackdrop: true) {
+                InterfaceModeSwitch("Filter", selection: .constant("all"), options: Self.filterOptions, surface: .floating)
             }
-            InterfaceStyleGallerySample(state: "Mode switch: hover", onBackdrop: true) {
-                InterfacePanel(.pill, padding: Space.xs) {
-                    InterfaceModeSwitch("Filter", selection: .constant("videos"), options: Self.filterOptions)
-                        .interfacePresentedControlState(.hover)
-                }
+            InterfaceStyleGallerySample(state: "Mode switch: Screenshots hover", onBackdrop: true) {
+                InterfaceModeSwitch("Filter", selection: .constant("all"), options: Self.filterOptions, surface: .floating, presentedHoverValue: "screenshots")
             }
             InterfaceStyleGallerySample(state: "Mode switch: disabled", onBackdrop: true) {
-                InterfacePanel(.pill, padding: Space.xs) {
-                    InterfaceModeSwitch("Filter", selection: .constant("all"), options: Self.filterOptions)
-                        .interfacePresentedControlState(.disabled)
-                }
+                InterfaceModeSwitch("Filter", selection: .constant("all"), options: Self.filterOptions, surface: .floating)
+                    .interfacePresentedControlState(.disabled)
             }
         }
     }
@@ -457,4 +451,30 @@ private struct InterfaceStyleGalleryToastRow: View {
             }
         }
     }
+}
+
+private struct InterfaceStyleGalleryWindowModeSwitch: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            InterfaceStyleGalleryComponentTitle(title: "Mode Switch in a Window")
+            HStack(alignment: .top, spacing: Space.l) {
+                InterfaceStyleGallerySample(state: "Medium selected") {
+                    InterfaceModeSwitch("Length", selection: .constant("medium"), options: Self.lengthOptions)
+                }
+                InterfaceStyleGallerySample(state: "Long hover") {
+                    InterfaceModeSwitch("Length", selection: .constant("medium"), options: Self.lengthOptions, presentedHoverValue: "long")
+                }
+                InterfaceStyleGallerySample(state: "Disabled") {
+                    InterfaceModeSwitch("Length", selection: .constant("medium"), options: Self.lengthOptions)
+                        .interfacePresentedControlState(.disabled)
+                }
+            }
+        }
+    }
+
+    static let lengthOptions: [InterfaceModeSwitchOption<String>] = [
+        InterfaceModeSwitchOption(value: "short", title: "Short"),
+        InterfaceModeSwitchOption(value: "medium", title: "Medium"),
+        InterfaceModeSwitchOption(value: "long", title: "Long")
+    ]
 }

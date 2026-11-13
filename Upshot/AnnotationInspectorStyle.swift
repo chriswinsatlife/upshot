@@ -399,7 +399,7 @@ struct InspectorToggle: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .opacity(isEnabled ? 1 : 0.4)
+        .opacity(isEnabled ? 1 : 0.5)
         .onHover { isHovering = $0 }
         .help(title)
         .accessibilityLabel(title)

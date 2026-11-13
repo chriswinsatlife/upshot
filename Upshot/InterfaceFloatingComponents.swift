@@ -10,7 +10,7 @@ enum InterfacePanelShape: Sendable {
         switch self {
         case .panel: Radius.panel
         case .flyout: Radius.flyout
-        case .pill: InterfaceMetrics.toolbarButtonHeight
+        case .pill: Radius.pill
         }
     }
 }
@@ -125,16 +125,22 @@ struct InterfaceToolbarButton: View {
 
     private var titleStyle: Color {
         guard isEnabled else { return Palette.disabledLabel }
-        return isSelected ? Palette.label : Palette.secondaryLabel
+        return Palette.label
     }
 }
 
 struct InterfaceFloatingButtonStyle: ButtonStyle {
     var isSelected = false
     var cornerRadius: CGFloat = Radius.toolbarButton
+    var pressedScale: CGFloat = 0.96
 
     func makeBody(configuration: Configuration) -> some View {
-        InterfaceFloatingButtonBody(configuration: configuration, isSelected: isSelected, cornerRadius: cornerRadius)
+        InterfaceFloatingButtonBody(
+            configuration: configuration,
+            isSelected: isSelected,
+            cornerRadius: cornerRadius,
+            pressedScale: pressedScale
+        )
     }
 }
 
@@ -142,6 +148,7 @@ private struct InterfaceFloatingButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let isSelected: Bool
     let cornerRadius: CGFloat
+    let pressedScale: CGFloat
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.interfacePresentedControlState) private var presentedState
@@ -154,7 +161,7 @@ private struct InterfaceFloatingButtonBody: View {
         configuration.label
             .background(fill(interaction), in: shape)
             .contentShape(shape)
-            .scaleEffect(interaction.isPressed && isEnabled && !reduceMotion ? 0.96 : 1)
+            .scaleEffect(interaction.isPressed && isEnabled && !reduceMotion ? pressedScale : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: interaction.isPressed)
             .onHover { isHovering = $0 }
     }
@@ -175,26 +182,43 @@ struct InterfaceModeSwitchOption<Value: Hashable>: Identifiable {
     var id: Value { value }
 }
 
+enum InterfaceModeSwitchSurface: Sendable {
+    case window
+    case floating
+}
+
 struct InterfaceModeSwitch<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
     let options: [InterfaceModeSwitchOption<Value>]
+    var surface: InterfaceModeSwitchSurface = .window
+    var presentedHoverValue: Value? = nil
 
     @Namespace private var selectionNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ title: String, selection: Binding<Value>, options: [InterfaceModeSwitchOption<Value>]) {
+    init(
+        _ title: String,
+        selection: Binding<Value>,
+        options: [InterfaceModeSwitchOption<Value>],
+        surface: InterfaceModeSwitchSurface = .window,
+        presentedHoverValue: Value? = nil
+    ) {
         self.title = title
         self._selection = selection
         self.options = options
+        self.surface = surface
+        self.presentedHoverValue = presentedHoverValue
     }
 
     var body: some View {
-        HStack(spacing: Space.xxs) {
+        let segments = HStack(spacing: Space.xxs) {
             ForEach(options) { option in
                 InterfaceModeSwitchSegment(
                     option: option,
                     isSelected: option.value == selection,
+                    isPresentedHovered: option.value == presentedHoverValue,
+                    selectionFill: surface == .window ? Palette.modeSwitchSelectionFill : Palette.floatingSelectionFill,
                     selectionNamespace: selectionNamespace
                 ) {
                     withAnimation(reduceMotion ? nil : .morphQuick) {
@@ -204,7 +228,15 @@ struct InterfaceModeSwitch<Value: Hashable>: View {
             }
         }
         .padding(Space.xxs)
-        .background(Palette.controlFill, in: Capsule())
+
+        Group {
+            switch surface {
+            case .window:
+                segments.background(Palette.controlFill, in: Capsule())
+            case .floating:
+                segments.interfacePanelSurface(.pill)
+            }
+        }
         .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
@@ -214,6 +246,8 @@ struct InterfaceModeSwitch<Value: Hashable>: View {
 private struct InterfaceModeSwitchSegment<Value: Hashable>: View {
     let option: InterfaceModeSwitchOption<Value>
     let isSelected: Bool
+    let isPresentedHovered: Bool
+    let selectionFill: Color
     let selectionNamespace: Namespace.ID
     let action: () -> Void
 
@@ -222,26 +256,28 @@ private struct InterfaceModeSwitchSegment<Value: Hashable>: View {
     @State private var isHovering = false
 
     var body: some View {
-        let interaction = presentedState.resolvedInteraction(isHovering: isHovering, isPressed: false)
+        let isHovered = isPresentedHovered || (presentedState == nil && isHovering)
         Button(action: action) {
             HStack(spacing: Space.xs) {
                 if let systemImage = option.systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: IconSize.segment, weight: .semibold))
                 }
                 Text(option.title)
-                    .font(.dsSegment)
+                    .font(isSelected ? .dsSegmentSelected : .dsSegment)
                     .lineLimit(1)
             }
             .foregroundStyle(foreground)
-            .padding(.horizontal, Space.m + 2)
+            .padding(.horizontal, Space.ml)
             .frame(height: InterfaceMetrics.modeSwitchHeight - Space.xxs * 2)
             .background {
                 if isSelected {
                     Capsule()
-                        .fill(isEnabled ? Palette.accent : Palette.controlHoverFill)
+                        .fill(selectionFill)
+                        .shadow(color: .black.opacity(isEnabled ? 0.12 : 0), radius: 1, y: 1)
+                        .opacity(isEnabled ? 1 : 0.5)
                         .matchedGeometryEffect(id: "selectedSegment", in: selectionNamespace)
-                } else if interaction.isHovered, isEnabled {
+                } else if isHovered, isEnabled {
                     Capsule().fill(Palette.floatingHoverFill)
                 }
             }
@@ -254,7 +290,7 @@ private struct InterfaceModeSwitchSegment<Value: Hashable>: View {
 
     private var foreground: Color {
         guard isEnabled else { return Palette.disabledLabel }
-        return isSelected ? Palette.onAccent : Palette.label
+        return Palette.label
     }
 }
 
@@ -286,9 +322,9 @@ struct InterfaceSizeFieldsPill<AspectMenu: View>: View {
             } label: {
                 HStack(spacing: Space.xs) {
                     Image(systemName: aspectSystemImage)
-                        .font(.system(size: 15, weight: .regular))
+                        .font(.system(size: IconSize.sizeMenu, weight: .regular))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: IconSize.disclosureChevron, weight: .bold))
                         .foregroundStyle(Palette.secondaryLabel)
                 }
                 .foregroundStyle(Palette.label)
@@ -322,7 +358,7 @@ private struct InterfaceSizeField: View {
         TextField("", value: $value, format: .number.grouping(.never))
             .labelsHidden()
             .textFieldStyle(.plain)
-            .font(.system(size: 14, weight: .medium).monospacedDigit())
+            .font(.dsSizeField)
             .multilineTextAlignment(.center)
             .foregroundStyle(isEnabled ? Palette.label : Palette.disabledLabel)
             .focused($isFocused)
@@ -345,7 +381,7 @@ struct InterfaceFlyoutMenu<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .padding(InterfaceMetrics.floatingPanelPadding - 1)
+        .padding(InterfaceMetrics.flyoutPadding)
         .frame(minWidth: InterfaceMetrics.flyoutMinimumWidth)
         .fixedSize()
         .interfacePanelSurface(.flyout)
@@ -357,7 +393,7 @@ struct InterfaceFlyoutDivider: View {
         Rectangle()
             .fill(Palette.floatingDivider)
             .frame(height: 1)
-            .padding(.horizontal, Space.m + 1)
+            .padding(.horizontal, Space.m)
             .padding(.vertical, Space.xs)
             .accessibilityHidden(true)
     }
@@ -382,9 +418,9 @@ struct InterfaceFlyoutRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: Space.m + 2) {
+            HStack(spacing: Space.ml) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: IconSize.flyout, weight: .medium))
                     .frame(width: InterfaceMetrics.flyoutIconSlotWidth)
                 Text(title)
                     .font(.dsBodyEmphasis)
@@ -392,19 +428,20 @@ struct InterfaceFlyoutRow: View {
                 Spacer(minLength: Space.xl)
                 if let keyHint {
                     Text(keyHint)
-                        .font(.system(size: 12.5))
+                        .font(.dsKeyHint)
                         .foregroundStyle(isEnabled ? Palette.secondaryLabel : Palette.disabledLabel)
                         .accessibilityLabel("Shortcut \(keyHint)")
                 }
             }
             .foregroundStyle(isEnabled ? Palette.label : Palette.disabledLabel)
-            .padding(.horizontal, Space.m + 1)
+            .padding(.horizontal, Space.m)
             .frame(height: InterfaceMetrics.flyoutRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(InterfaceFloatingButtonStyle(
             isSelected: isHighlighted,
-            cornerRadius: Radius.flyout - (InterfaceMetrics.floatingPanelPadding - 1)
+            cornerRadius: Radius.flyout - InterfaceMetrics.flyoutPadding,
+            pressedScale: 1
         ))
         .accessibilityAddTraits(isHighlighted ? .isSelected : [])
     }
@@ -436,7 +473,7 @@ struct InterfaceCard<Content: View>: View {
             .clipShape(shape)
             .overlay {
                 shape
-                    .strokeBorder(interaction.isHovered && isEnabled ? Palette.strongHairline : Palette.floatingStroke, lineWidth: 0.5)
+                    .strokeBorder(interaction.isHovered && isEnabled ? Palette.strongHairline : Palette.floatingStroke, lineWidth: interaction.isHovered && isEnabled ? 1 : 0.5)
                     .allowsHitTesting(false)
             }
             .overlay {
@@ -446,7 +483,7 @@ struct InterfaceCard<Content: View>: View {
                     .opacity(isSelected ? 1 : 0)
                     .allowsHitTesting(false)
             }
-            .shadow(color: .black.opacity(interaction.isHovered ? 0.22 : 0.16), radius: interaction.isHovered ? 12 : 8, y: interaction.isHovered ? 5 : 3)
+            .shadow(color: .black.opacity(interaction.isHovered ? 0.30 : 0.16), radius: interaction.isHovered ? 16 : 8, y: interaction.isHovered ? 8 : 3)
             .opacity(isEnabled ? 1 : 0.5)
             .scaleEffect(isPressed && !reduceMotion ? 0.98 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: interaction)
@@ -493,9 +530,9 @@ struct InterfaceToast: View {
     }
 
     var body: some View {
-        HStack(spacing: Space.m + 2) {
+        HStack(spacing: Space.ml) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: IconSize.toast, weight: .semibold))
                 .foregroundStyle(tone.color)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
@@ -516,8 +553,8 @@ struct InterfaceToast: View {
             }
         }
         .padding(.leading, Space.l)
-        .padding(.trailing, actionTitle == nil ? Space.l + 2 : Space.m)
-        .padding(.vertical, Space.s + 1)
+        .padding(.trailing, actionTitle == nil ? Space.xl : Space.m)
+        .padding(.vertical, Space.s)
         .frame(minHeight: InterfaceMetrics.toastMinimumHeight)
         .fixedSize()
         .interfacePanelSurface(.flyout)
