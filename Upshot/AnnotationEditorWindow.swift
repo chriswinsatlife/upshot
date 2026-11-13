@@ -1,9 +1,3 @@
-//
-//  AnnotationEditorWindow.swift
-//  Upshot
-//
-//  Created by Codex on 27/04/26.
-//
 
 import AppKit
 import SwiftUI
@@ -16,8 +10,6 @@ struct AnnotationEditorWindow: View {
     @State private var wallpaperStore = AnnotationWallpaperStore.shared
     @State private var backgroundPresetStore = AnnotationBackgroundPresetStore.shared
     @State private var isInspectorPresented = true
-    /// The tool dock and the crop bar share glass, so one morphs into the
-    /// other.
     @Namespace private var toolbarGlass
     @State private var isFinishing = false
     @State private var isSaving = false
@@ -33,6 +25,7 @@ struct AnnotationEditorWindow: View {
 
     var body: some View {
         mainContent
+            .modifier(AnnotationEditorWindowLevel())
             .disabled(model.isCommitting)
             .allowsHitTesting(!model.isCommitting)
             .modifier(CaptureLibraryEditorRegistration(url: url))
@@ -80,8 +73,6 @@ struct AnnotationEditorWindow: View {
                 if didCopyLink { withAnimation(.morphQuickIfAllowed) { didCopyLink = false } }
             }
             .onChange(of: model.baseImageURL) { _, _ in
-                // Cropping replaces the base image rather than touching the
-                // engine, so it never bumps `revision`.
                 closeGuard.refreshDocumentEdited()
             }
             .background(AnnotationKeyCommandHandler(
@@ -119,12 +110,7 @@ struct AnnotationEditorWindow: View {
             }
     }
 
-    // MARK: Toolbar actions
 
-    /// Save and the inspector toggle. Crop lives at the end of the tool
-    /// dock, which morphs into the crop bar. Share, Save As and Done live in
-    /// the inspector's footer, and move up here while the inspector is
-    /// hidden rather than floating over the canvas.
     @ViewBuilder
     private var toolbarActions: some View {
         if !isInspectorPresented {
@@ -150,8 +136,6 @@ struct AnnotationEditorWindow: View {
         .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
     }
 
-    /// The footer's actions as toolbar buttons, for when the inspector and
-    /// its footer are hidden.
     @ViewBuilder
     private var finishingToolbarActions: some View {
         let isDisabled = isBusy || model.isCropping
@@ -195,7 +179,6 @@ struct AnnotationEditorWindow: View {
         .help("Save and close")
     }
 
-    /// Share, Save As and Done, built like Studio's Share/Export footer.
     private var actionFooter: some View {
         AnnotationActionFooter(
             canShare: CloudUploader.shared.isConfigured,
@@ -222,8 +205,6 @@ struct AnnotationEditorWindow: View {
 
     private func applyCropAction() {
         clearInspectorFocus()
-        // Not animated: the crop first lands where its box was, and the canvas
-        // animates the fit from there (`canvasRevealID`).
         model.applyCrop()
     }
 
@@ -238,9 +219,6 @@ struct AnnotationEditorWindow: View {
                     onEditorInteraction: clearInspectorFocus
                 )
             } else if let errorMessage = model.errorMessage {
-                // A load failure (missing/unreadable source file, e.g. a stale
-                // URL replayed by macOS window restoration) should never sit
-                // behind an unexplained spinner with no way out.
                 AnnotationLoadFailureView(message: errorMessage, onClose: closeAfterLoadFailure)
             } else {
                 ProgressView()
@@ -254,9 +232,6 @@ struct AnnotationEditorWindow: View {
                 bottomChrome
             }
         }
-        // The canvas reframes here; overshoot on the image reads as a whip.
-        // Crop changes animate where they are made, not here: applying a crop
-        // must land on the box before it moves.
         .motion(.canvasMove, value: isInspectorPresented)
     }
 
@@ -264,9 +239,6 @@ struct AnnotationEditorWindow: View {
         model.previewImage != nil && model.imageSize != .zero
     }
 
-    /// The row floating along the bottom of the canvas: zoom on the left,
-    /// the tool dock - or, while cropping, the crop bar - in the middle, and
-    /// the crop size on the right. Messages rise above the middle.
     private var bottomChrome: some View {
         ZStack(alignment: .bottom) {
             HStack(spacing: 8) {
@@ -322,13 +294,11 @@ struct AnnotationEditorWindow: View {
                         )
                     }
                 }
-                // The canvas moves on `canvasMove`; the bars keep the morph.
                 .motion(.morph, value: model.isCropping)
             }
         }
         .padding(.bottom, AnnotationToolDock.bottomPadding)
         .motion(.morph, value: toastMessage?.text)
-        // Every message leaves on its own; errors stay long enough to read.
         .task(id: toastMessage?.text) {
             guard let message = toastMessage else { return }
             try? await Task.sleep(for: .seconds(message.isError ? 5 : 2.6))
@@ -337,7 +307,6 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    /// Clears whichever message the toast is showing.
     private func clearToast() {
         withAnimation(.morphIfAllowed) {
             if model.errorMessage != nil, model.previewImage != nil {
@@ -348,7 +317,6 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    /// Inline save or upload failures, then automatic-redaction results.
     private var toastMessage: (text: String, isError: Bool)? {
         if let error = model.errorMessage, model.previewImage != nil { return (error, true) }
         if let message = model.smartRedactionMessage { return (message, false) }
@@ -416,9 +384,6 @@ struct AnnotationEditorWindow: View {
         Task {
             defer { isUploading = false }
             do {
-                // Persist the current annotations first so the uploaded file
-                // matches what's saved in history, then upload that file. The
-                // editor stays open.
                 guard let sourceURL = model.sourceURL else { return }
                 let resultURL = try await model.commitEdits() ?? sourceURL
 
@@ -443,12 +408,8 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    /// Cmd-S. Commits without closing, so long editing sessions have a
-    /// checkpoint that isn't "press Done and start over".
     private func saveEdits() {
         clearInspectorFocus()
-        // Committing re-renders the composite, so a Cmd-S with nothing
-        // changed should cost nothing.
         guard model.sourceURL != nil, model.hasUnsavedChanges, !isBusy else { return }
 
         isSaving = true
@@ -509,11 +470,8 @@ struct AnnotationEditorWindow: View {
     private func configureCloseGuard() {
         closeGuard.canClose = { [weak model] in model?.isCommitting != true }
         closeGuard.hasUnsavedChanges = { [weak model] in model?.hasUnsavedChanges ?? false }
-        // A screenshot is already in History whether or not it is annotated,
-        // so there is no "delete the whole thing" case here.
         closeGuard.offersDelete = { false }
         closeGuard.projectName = { [weak model] in model?.sourceURL?.lastPathComponent ?? "this screenshot" }
-        // Capture only the model, not this view and its @State close guard.
         closeGuard.onDecision = { [weak model] decision, done in
             guard let model else { return }
             switch decision {
