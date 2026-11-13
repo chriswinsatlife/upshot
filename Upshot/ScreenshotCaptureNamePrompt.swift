@@ -2,25 +2,23 @@ import AppKit
 import Foundation
 
 enum ScreenshotCaptureNamePrompt {
+    static func makeNameField(name: String) -> NSTextField {
+        let field = NSTextField(string: name)
+        field.frame = NSRect(x: 0, y: 0, width: 228, height: 22)
+        field.placeholderString = "Screenshot name"
+        field.setAccessibilityLabel("Screenshot name")
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.isScrollable = true
+        return field
+    }
+
     static func fileName(suggested: String, outputScale: CGFloat) -> String {
         guard UpshotPreferences.screenshotAskForName else { return suggested }
         let suggestedURL = URL(fileURLWithPath: suggested)
-        let field = NSTextField(string: suggestedURL.deletingPathExtension().lastPathComponent)
-        field.frame = NSRect(x: 0, y: 0, width: 380, height: 24)
-        field.placeholderString = "Screenshot name"
-        field.setAccessibilityLabel("Screenshot name")
-        let alert = NSAlert()
-        alert.messageText = "Name Screenshot"
-        alert.informativeText = "Enter the screenshot name. The PNG extension is added automatically."
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Use Name")
-        alert.addButton(withTitle: "Keep Generated Name")
-        alert.buttons[1].keyEquivalent = "\u{1b}"
-        alert.window.initialFirstResponder = field
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        let field = makeNameField(name: suggestedURL.deletingPathExtension().lastPathComponent)
         field.selectText(nil)
         AppLog.event("capture", "screenshot_output_capture_name_prompt_shown")
-        guard alert.runModal() == .alertFirstButtonReturn,
+        guard AppAlerts.screenshotName.runModal(accessoryView: field, initialFirstResponder: field) == .save,
               !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             AppLog.event("capture", "screenshot_output_generated_capture_name_retained")
             return suggested
