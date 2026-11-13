@@ -14,6 +14,7 @@ nonisolated enum RecordingZoomAnimationStyle: String, Codable, CaseIterable, Sen
 
 nonisolated struct RecordingExportAppearance: Codable, Equatable, Sendable {
     var zoomAnimationStyle: RecordingZoomAnimationStyle = .smooth
+    var keystrokes = RecordingKeystrokeAppearance()
 }
 
 nonisolated enum RecordingExportAppearanceStore {

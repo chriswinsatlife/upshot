@@ -377,6 +377,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             showsPressEffects: configuration.showsPressEffects,
             keystrokeTimeline: configuration.keystrokeTimeline,
             keystrokePlacement: configuration.keystrokePlacement,
+            keystrokeAppearance: configuration.appearance.keystrokes,
             speedBadgeTimeline: configuration.speedBadgeTimeline,
             speedBadgePlacement: configuration.speedBadgePlacement,
             subtitleTimeline: configuration.subtitleTimeline,
@@ -829,6 +830,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let showsPressEffects: Bool
     private let keystrokeTimeline: KeystrokeCaptionTimeline?
     private let keystrokePlacement: RecordingKeystrokePlacement
+    private let keystrokeAppearance: RecordingKeystrokeAppearance
     private let speedBadgeTimeline: SpeedBadgeTimeline?
     private let speedBadgePlacement: RecordingKeystrokePlacement
     private let subtitleTimeline: SubtitleTimeline?
@@ -868,6 +870,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         showsPressEffects: Bool,
         keystrokeTimeline: KeystrokeCaptionTimeline?,
         keystrokePlacement: RecordingKeystrokePlacement,
+        keystrokeAppearance: RecordingKeystrokeAppearance = RecordingKeystrokeAppearance(),
         speedBadgeTimeline: SpeedBadgeTimeline? = nil,
         speedBadgePlacement: RecordingKeystrokePlacement = .topRight,
         subtitleTimeline: SubtitleTimeline?,
@@ -912,6 +915,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         self.showsPressEffects = showsPressEffects
         self.keystrokeTimeline = keystrokeTimeline
         self.keystrokePlacement = keystrokePlacement
+        self.keystrokeAppearance = keystrokeAppearance
         self.speedBadgeTimeline = speedBadgeTimeline
         self.speedBadgePlacement = speedBadgePlacement
         self.subtitleTimeline = subtitleTimeline
@@ -1863,70 +1867,11 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     }
 
     private func drawKeystrokeCaption(at time: TimeInterval, in context: CGContext) {
-        guard let keystrokeTimeline,
-              let caption = keystrokeTimeline.frame(at: time) else {
-            return
-        }
-
-        let metrics = KeystrokeCaptionMetrics(cardHeight: layout.cardRect.height)
-        let font = Self.captionFont(size: metrics.fontSize)
-        let (modifierText, keyText) = KeystrokeCaptionMetrics.text(for: caption)
-
-        let text = NSMutableAttributedString()
-        if !modifierText.isEmpty {
-            text.append(NSAttributedString(string: modifierText, attributes: [
-                NSAttributedString.Key(kCTFontAttributeName as String): font,
-                NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-                    CGColor(gray: 1, alpha: KeystrokeCaptionMetrics.modifierAlpha)
-            ]))
-        }
-        text.append(NSAttributedString(string: keyText, attributes: [
-            NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-                CGColor(gray: 1, alpha: 1)
-        ]))
-
-        let line = CTLineCreateWithAttributedString(text)
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-        guard textWidth > 0 else { return }
-
-        let pillSize = CGSize(
-            width: textWidth + metrics.paddingHorizontal * 2,
-            height: ascent + descent + metrics.paddingVertical * 2
+        guard let caption = keystrokeTimeline?.frame(at: time) else { return }
+        RecordingKeystrokeCaptionRenderer.draw(
+            caption, appearance: keystrokeAppearance, fallbackPlacement: keystrokePlacement,
+            card: layout.cardRect, canvasHeight: canvasSize.height, opacity: Double(overlayOpacity), in: context
         )
-        let origin = metrics.pillOrigin(
-            pillSize: pillSize,
-            cardRect: layout.cardRect,
-            placement: keystrokePlacement
-        )
-        let pillRect = flipped(CGRect(origin: origin, size: pillSize))
-
-        context.saveGState()
-        context.setAlpha(CGFloat(caption.opacity) * overlayOpacity)
-        context.translateBy(x: pillRect.midX, y: pillRect.midY)
-        context.scaleBy(x: CGFloat(caption.scale), y: CGFloat(caption.scale))
-        context.translateBy(x: -pillRect.midX, y: -pillRect.midY)
-
-        let radius = min(metrics.cornerRadius, pillRect.height / 2)
-        context.addPath(CGPath(
-            roundedRect: pillRect,
-            cornerWidth: radius,
-            cornerHeight: radius,
-            transform: nil
-        ))
-        context.setFillColor(CGColor(gray: 0, alpha: KeystrokeCaptionMetrics.backgroundAlpha))
-        context.fillPath()
-
-        context.textMatrix = .identity
-        context.textPosition = CGPoint(
-            x: pillRect.minX + metrics.paddingHorizontal,
-            y: pillRect.midY - (ascent - descent) / 2
-        )
-        CTLineDraw(line, context)
-        context.restoreGState()
     }
 
     private func drawSpeedBadge(at time: TimeInterval, in context: CGContext) {

@@ -12,6 +12,7 @@ enum RecordingExportAgentGuide {
     separateAudioTracks: true retains microphone and system audio as independent movie tracks. Added audio gets its own mixed track. A replacement soundtrack replaces the recorded tracks.
     motionBlurLevel: "Off", "Low", "Medium", "High" selects a zero, quarter, half, or full-frame shutter. This takes precedence over settings.motionBlurEnabled.
     export_video appearance.zoomAnimationStyle: "Smooth" or "Dynamic" selects the zoom spring. Stored in export-appearance.json.
+    appearance.keystrokes: size "Small"|"Medium"|"Large", style "Dark"|"Light", position topLeft|topCenter|topRight|middleLeft|middleCenter|middleRight|bottomLeft|bottomCenter|bottomRight, filter "Command Keys Only"|"All Keys". Typed keys are hidden by default. Their capture must be explicitly enabled before recording.
     get_recording returns the current options as exportOptions.
     """
 }

@@ -235,7 +235,7 @@ struct StudioInspector: View {
         if model.hasKeystrokes {
             InspectorSection(
                 "Keystrokes",
-                summary: model.showsKeystrokes ? placementSummary(model.keystrokePlacement) : nil,
+                summary: model.showsKeystrokes ? model.exportAppearance.keystrokes.resolvedPosition(fallback: model.keystrokePlacement).title : nil,
                 isOn: $model.showsKeystrokes,
                 toggleTitle: "Show keystrokes",
                 isExpanded: expansion("Keystrokes")
@@ -980,15 +980,7 @@ struct StudioInspector: View {
 
 
     private var keystrokeControls: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            InspectorRow("Top") {
-                keystrokePlacementRow([.topLeft, .topCenter, .topRight])
-            }
-            InspectorRow("Bottom") {
-                keystrokePlacementRow([.bottomLeft, .bottomCenter, .bottomRight])
-            }
-        }
-        .help("Shortcuts you pressed while recording appear as a caption")
+        RecordingKeystrokeAppearanceControls(model: model)
     }
 
     private var speedBadgeControls: some View {
@@ -1210,6 +1202,7 @@ struct StudioInspector: View {
     private var audioControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
             if model.hasAudio {
+                InspectorToggleRow("Mono export", isOn: $model.exportDeliveryOptions.monoAudio)
                 InspectorHalfField {
                     InspectorSlider("Volume", value: $model.audioVolume, range: 0...2, format: .percent())
                 }

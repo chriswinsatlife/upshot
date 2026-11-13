@@ -1,16 +1,3 @@
-//
-//  RecordingKeystrokeCapture.swift
-//  Upshot
-//
-//  Captures keyboard shortcuts during recording as timestamped events on the
-//  host clock, mirroring PointerActivityRecorder. Nothing is drawn while
-//  recording - Studio decides later whether (and where) the captured chords
-//  appear in the preview and export.
-//
-//  Only special keys (Tab, Esc, arrows, F-keys, …) and modifier shortcuts
-//  (⌘C, ⌃⌥→, …) are recorded. Plain typing - including shifted letters -
-//  never lands in the sidecar.
-//
 
 import AppKit
 import Foundation
@@ -32,6 +19,7 @@ final class RecordingKeystrokeRecorder {
     private var pauseStartedUptime: TimeInterval?
     private var pauseIntervals: [PauseInterval] = []
     private var isCapturing = false
+    private var capturesTypedKeys = false
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -39,8 +27,6 @@ final class RecordingKeystrokeRecorder {
     private var localMonitor: Any?
 
     private var lastModifierFlags: NSEvent.ModifierFlags = []
-    /// Same physical keystroke can arrive from both the CGEventTap and the
-    /// NSEvent monitors. Drop duplicates within `duplicateEventWindow`.
     private var lastProcessedEventTimes: [Int: TimeInterval] = [:]
     private static let duplicateEventWindow: TimeInterval = 0.05
 
@@ -52,9 +38,9 @@ final class RecordingKeystrokeRecorder {
         lastModifierFlags = []
         lastProcessedEventTimes = [:]
         isCapturing = true
+        capturesTypedKeys = UpshotPreferences.recordingCapturesTypedKeys
+        NSLog("[Upshot] Keystroke capture started typedKeys=%@", String(capturesTypedKeys))
 
-        // Listen access is already requested by the pointer recorder at the
-        // same moment; asking again is a no-op when granted.
         if !CGPreflightListenEventAccess() {
             _ = CGRequestListenEventAccess()
         }
@@ -109,8 +95,6 @@ final class RecordingKeystrokeRecorder {
         self.pauseStartedUptime = nil
     }
 
-    /// Converts raw host-clock events onto the written movie timeline, like
-    /// PointerActivityRecorder.finish. Pause offsets are computed per event.
     func finish(sessionStartUptime: TimeInterval, duration: TimeInterval) -> [RecordingKeystrokeEvent] {
         var completedPauses = pauseIntervals
         if let pauseStartedUptime {
@@ -140,10 +124,7 @@ final class RecordingKeystrokeRecorder {
         return mapped
     }
 
-    // MARK: - Event sources
 
-    /// Listen-only session-level CGEventTap. Required to observe Tab and a
-    /// few other keys NSEvent's global monitor doesn't reliably deliver.
     private func installEventTap() {
         let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
@@ -210,13 +191,11 @@ final class RecordingKeystrokeRecorder {
             let changedFlags = currentFlags.symmetricDifference(lastModifierFlags)
             lastModifierFlags = currentFlags
 
-            // Caps Lock toggles in/out - record the toggle as its own event.
             if changedFlags.contains(.capsLock) {
                 record(modifiers: [], key: "⇪", uptime: uptime)
             }
 
         case .keyDown:
-            // Skip auto-repeats so a held key doesn't spam the timeline.
             guard !event.isARepeat else { return }
 
             let modifiers = Self.effectiveModifiers(
@@ -233,11 +212,8 @@ final class RecordingKeystrokeRecorder {
                 return
             }
 
-            // Letters/numbers/punctuation are only meaningful as part of a
-            // shortcut. Shift alone is just typing a capital letter, so it
-            // never forms a recorded chord.
             let chordModifiers = modifiers.subtracting(.shift)
-            guard !chordModifiers.isEmpty,
+            guard Self.capturesCharacter(modifiers: chordModifiers, capturesTypedKeys: capturesTypedKeys),
                   let raw = event.charactersIgnoringModifiers,
                   let first = raw.first,
                   !first.isWhitespace,
@@ -263,7 +239,10 @@ final class RecordingKeystrokeRecorder {
         }
     }
 
-    // MARK: - Key identification
+
+    static func capturesCharacter(modifiers: NSEvent.ModifierFlags, capturesTypedKeys: Bool) -> Bool {
+        capturesTypedKeys || !modifiers.subtracting(.shift).isEmpty
+    }
 
     private static let trackedModifierMask: NSEvent.ModifierFlags = [
         .command, .shift, .option, .control, .function, .capsLock
@@ -273,15 +252,9 @@ final class RecordingKeystrokeRecorder {
         .command, .shift, .option, .control, .function
     ]
 
-    /// Apple keyboards report these key codes with `.function` already set
-    /// in the event's modifier flags whether or not the user is actually
-    /// holding fn. Treat the bit as a hardware artefact for these keys.
     private static let implicitFunctionKeyCodes: Set<UInt16> = [
-        // Arrow cluster
         123, 124, 125, 126,
-        // Navigation cluster
         115, 116, 117, 119, 121,
-        // Function row F1–F19
         96, 97, 98, 99, 100, 101, 103, 105, 106, 107,
         109, 111, 113, 118, 120, 122, 64, 79, 80
     ]
@@ -297,7 +270,6 @@ final class RecordingKeystrokeRecorder {
         return modifiers
     }
 
-    /// Modifier symbols in left-to-right keyboard order.
     static func modifierSymbols(for modifiers: NSEvent.ModifierFlags) -> [String] {
         var symbols: [String] = []
         if modifiers.contains(.control) { symbols.append("\u{2303}") }
@@ -308,22 +280,20 @@ final class RecordingKeystrokeRecorder {
         return symbols
     }
 
-    /// Display label for special keys (Return, Tab, arrows, F-keys, …).
-    /// Returns nil for letter/number/punctuation keys.
     static func specialKeyLabel(for keyCode: UInt16) -> String? {
         switch keyCode {
-        case 36: return "\u{23CE}"           // Return
-        case 48: return "\u{21E5}"           // Tab
+        case 36: return "\u{23CE}"
+        case 48: return "\u{21E5}"
         case 49: return "space"
-        case 51: return "\u{232B}"           // Delete
+        case 51: return "\u{232B}"
         case 53: return "esc"
         case 71: return "clear"
-        case 76: return "\u{2305}"           // Enter
-        case 115: return "\u{2196}"          // Home
-        case 116: return "\u{21DE}"          // Page Up
-        case 117: return "\u{2326}"          // Forward Delete
-        case 119: return "\u{2198}"          // End
-        case 121: return "\u{21DF}"          // Page Down
+        case 76: return "\u{2305}"
+        case 115: return "\u{2196}"
+        case 116: return "\u{21DE}"
+        case 117: return "\u{2326}"
+        case 119: return "\u{2198}"
+        case 121: return "\u{21DF}"
         case 123: return "\u{2190}"
         case 124: return "\u{2192}"
         case 125: return "\u{2193}"

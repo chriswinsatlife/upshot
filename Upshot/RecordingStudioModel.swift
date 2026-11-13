@@ -114,6 +114,7 @@ final class RecordingStudioModel {
                 }
             }
             rebuildMotionTimeline()
+            keystrokeTimeline = KeystrokeCaptionTimeline(events: pointerCapture.keystrokes.filter(exportAppearance.keystrokes.filter.includes))
         }
     }
     var exportDeliveryOptions = RecordingExportDeliveryOptions() {
@@ -369,7 +370,7 @@ final class RecordingStudioModel {
             recordedPressTimes = pointerCapture.presses
                 .filter { $0.phase == .down }
                 .map(\.time)
-            keystrokeTimeline = KeystrokeCaptionTimeline(events: pointerCapture.keystrokes)
+            keystrokeTimeline = KeystrokeCaptionTimeline(events: pointerCapture.keystrokes.filter(exportAppearance.keystrokes.filter.includes))
         }
 
         if let session, session.hasCamera {
@@ -2301,7 +2302,7 @@ final class RecordingStudioModel {
     }
 
     var hasKeystrokes: Bool {
-        !keystrokeTimeline.isEmpty
+        !pointerCapture.keystrokes.isEmpty
     }
 
 

@@ -84,3 +84,10 @@ nonisolated enum RecordingExportOptionStore {
         try JSONEncoder().encode(options).write(to: url(for: recording), options: .atomic)
     }
 }
+
+extension UpshotPreferences {
+    static var recordingCapturesTypedKeys: Bool {
+        get { UserDefaults.standard.bool(forKey: "recordingCapturesTypedKeys") }
+        set { UserDefaults.standard.set(newValue, forKey: "recordingCapturesTypedKeys") }
+    }
+}

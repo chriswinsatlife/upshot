@@ -177,7 +177,7 @@ enum RecordingSessionRenderer {
                 : nil,
             showsPressEffects: showsPressEffects,
             keystrokeTimeline: showsKeystrokes
-                ? KeystrokeCaptionTimeline(events: capture.keystrokes)
+                ? KeystrokeCaptionTimeline(events: capture.keystrokes.filter(appearance.keystrokes.filter.includes))
                 : nil,
             keystrokePlacement: document?.keystrokePlacement ?? .bottomCenter,
             speedBadgeTimeline: document?.showsSpeedBadge == true
