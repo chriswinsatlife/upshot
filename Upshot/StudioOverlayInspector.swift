@@ -1,13 +1,3 @@
-//
-//  StudioOverlayInspector.swift
-//  Upshot
-//
-//  The inspector pages for a text and for a pixelated region picked on the
-//  timeline or the canvas. Built from the shared Inspector* controls, like
-//  every other Studio page. A text's enter and exit effects are tiles that
-//  play themselves on hover, drawn by the same renderer as the canvas.
-//
-
 import AppKit
 import SwiftUI
 
@@ -49,7 +39,7 @@ private struct StudioOverlayColorRow: View {
     let onPick: (RecordingOverlayColor) -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Space.xs) {
             ForEach(presets, id: \.self) { color in
                 InspectorTile(title: "Color", isSelected: color == selection) {
                     onPick(color)
@@ -99,7 +89,6 @@ struct StudioTextInspectorControls: View {
     let text: RecordingTextOverlay
 
     @State private var side: Side = .enter
-    @State private var isAnimationExpanded = false
 
     private enum Side: Hashable, CaseIterable {
         case enter
@@ -109,33 +98,33 @@ struct StudioTextInspectorControls: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
+        VStack(alignment: .leading, spacing: Space.xxl) {
             TextField("Type something…", text: binding(\.text, action: "Edit Text"), axis: .vertical)
                 .lineLimit(1...6)
-                .inspectorTextField()
+                .font(.dsBody)
+                .padding(.vertical, Space.xs)
+                .interfaceFieldChrome()
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Font")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+            StudioInspectorGroup("Font") {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.xs), count: 3), spacing: Space.xs) {
                     ForEach(RecordingTextFont.allCases) { font in
                         InspectorTile(title: font.title, aspectRatio: 2.4, isSelected: text.font == font) {
                             edit("Change Font") { $0.font = font }
                         } content: {
                             Rectangle()
-                                .fill(Color.primary.opacity(0.05))
+                                .fill(Palette.fill)
                                 .overlay {
                                     Text(font.title)
                                         .font(Font(font.font(size: 12, isBold: text.isBold)))
+                                        .foregroundStyle(Palette.label)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.7)
-                                        .padding(.horizontal, 4)
+                                        .padding(.horizontal, Space.xs)
                                 }
                         }
                     }
                 }
-            }
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
                 InspectorFieldPair {
                     InspectorSlider(
                         "Size",
@@ -148,7 +137,7 @@ struct StudioTextInspectorControls: View {
                     )
                     .help("Font size as a share of the video's height")
                 } trailing: {
-                    InspectorToggleRow("Bold", isOn: Binding(
+                    InterfaceToggleRow("Bold", isOn: Binding(
                         get: { text.isBold },
                         set: { isBold in edit("Change Text Weight") { $0.isBold = isBold } }
                     ))
@@ -159,11 +148,14 @@ struct StudioTextInspectorControls: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorToggleRow("Background", isOn: Binding(
+            StudioInspectorGroup(
+                "Background",
+                isOn: Binding(
                     get: { text.hasBackground },
                     set: { hasBackground in edit("Change Text Background") { $0.hasBackground = hasBackground } }
-                ))
+                ),
+                toggleTitle: "Show text background"
+            ) {
                 if text.hasBackground {
                     StudioOverlayColorRow(presets: StudioOverlaySwatches.background, selection: text.backgroundColor) { color in
                         edit("Change Text Background") { $0.backgroundColor = color }
@@ -172,122 +164,83 @@ struct StudioTextInspectorControls: View {
                 }
             }
 
-            animationControls
+            StudioInspectorGroup("Animation") {
+                InterfaceModeSwitch(
+                    "Animation phase",
+                    selection: $side,
+                    options: Side.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.title) }
+                )
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.xs), count: 3), spacing: Space.s) {
+                    ForEach(RecordingTextAnimation.Effect.allCases) { effect in
+                        StudioTextEffectTile(
+                            text: text,
+                            isExit: side == .exit,
+                            effect: effect,
+                            isSelected: animation.effect == effect
+                        ) {
+                            editAnimation("Change Text Animation") { $0.effect = effect }
+                        }
+                    }
+                }
+
+                StudioInspectorModeSwitchRow(
+                    "Animate",
+                    selection: Binding(
+                        get: { animation.unit },
+                        set: { unit in editAnimation("Change Text Animation") { $0.unit = unit } }
+                    ),
+                    options: RecordingTextAnimation.Unit.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.title) }
+                )
+                .help("Animate the whole text at once, word by word, or letter by letter")
+
+                if animation.unit != .all {
+                    StudioInspectorPickerRow("Order", selection: Binding(
+                        get: { animation.order },
+                        set: { order in editAnimation("Change Text Animation") { $0.order = order } }
+                    )) {
+                        ForEach(RecordingTextAnimation.Order.allCases, id: \.self) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                    .transition(.opacity)
+                }
+
+                InspectorFieldPair {
+                    InspectorSlider(
+                        "Duration",
+                        value: animationBinding(\.duration),
+                        range: CGFloat(RecordingTextAnimation.durationRange.lowerBound)...CGFloat(RecordingTextAnimation.durationRange.upperBound),
+                        format: .seconds
+                    )
+                } trailing: {
+                    InspectorSlider(
+                        "Stagger",
+                        value: animationBinding(\.delay),
+                        range: CGFloat(RecordingTextAnimation.delayRange.lowerBound)...CGFloat(RecordingTextAnimation.delayRange.upperBound),
+                        format: .seconds
+                    )
+                    .disabled(animation.unit == .all)
+                    .help("Time between one word or letter starting and the next")
+                }
+                .disabled(animation.effect == .none && animation.unit == .all)
+
+                StudioInspectorPickerRow("Easing", selection: Binding(
+                    get: { animation.ease },
+                    set: { ease in editAnimation("Change Text Animation") { $0.ease = ease } }
+                )) {
+                    ForEach(RecordingTextAnimation.Ease.allCases, id: \.self) { ease in
+                        Text(ease.title).tag(ease)
+                    }
+                }
+                .disabled(animation.effect == .none)
+            }
         }
     }
-
-    // MARK: Animation
 
     private var animation: RecordingTextAnimation {
         side == .enter ? text.animationIn : text.animationOut
     }
-
-    private var animationControls: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            animationHeader
-
-            if isAnimationExpanded {
-                animationDetails
-                    .transition(.opacity)
-            }
-        }
-    }
-
-    /// The section folded to one line naming both effects; a click opens
-    /// the pickers.
-    private var animationHeader: some View {
-        Button {
-            withAnimation(.fold) { isAnimationExpanded.toggle() }
-        } label: {
-            HStack(spacing: 6) {
-                InspectorGroupLabel("Animation")
-                Spacer(minLength: 8)
-                Text("In: \(text.animationIn.effect.title) · Out: \(text.animationOut.effect.title)")
-                    .font(.inspectorLabel)
-                    .foregroundStyle(Palette.secondaryLabel)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Palette.tertiaryLabel)
-                    .rotationEffect(.degrees(isAnimationExpanded ? 90 : 0))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(isAnimationExpanded ? "Hide the animation settings" : "Show the animation settings")
-    }
-
-    private var animationDetails: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            InspectorSegmented(
-                options: Side.allCases,
-                isSelected: { $0 == side },
-                onTap: { side = $0 },
-                label: { Text($0.title).font(.inspectorSegment) }
-            )
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 6) {
-                ForEach(RecordingTextAnimation.Effect.allCases) { effect in
-                    StudioTextEffectTile(
-                        text: text,
-                        isExit: side == .exit,
-                        effect: effect,
-                        isSelected: animation.effect == effect
-                    ) {
-                        editAnimation("Change Text Animation") { $0.effect = effect }
-                    }
-                }
-            }
-
-            InspectorSegmented(
-                options: RecordingTextAnimation.Unit.allCases,
-                isSelected: { $0 == animation.unit },
-                onTap: { unit in editAnimation("Change Text Animation") { $0.unit = unit } },
-                label: { Text($0.title).font(.inspectorSegment) }
-            )
-            .help("Animate the whole text at once, word by word, or letter by letter")
-
-            if animation.unit != .all {
-                InspectorSegmented(
-                    options: RecordingTextAnimation.Order.allCases,
-                    isSelected: { $0 == animation.order },
-                    onTap: { order in editAnimation("Change Text Animation") { $0.order = order } },
-                    label: { Text($0.title).font(.inspectorSegment) }
-                )
-                .transition(.opacity)
-            }
-
-            InspectorFieldPair {
-                InspectorSlider(
-                    "Duration",
-                    value: animationBinding(\.duration),
-                    range: CGFloat(RecordingTextAnimation.durationRange.lowerBound)...CGFloat(RecordingTextAnimation.durationRange.upperBound),
-                    format: .seconds
-                )
-            } trailing: {
-                InspectorSlider(
-                    "Stagger",
-                    value: animationBinding(\.delay),
-                    range: CGFloat(RecordingTextAnimation.delayRange.lowerBound)...CGFloat(RecordingTextAnimation.delayRange.upperBound),
-                    format: .seconds
-                )
-                .disabled(animation.unit == .all)
-                .help("Time between one word or letter starting and the next")
-            }
-            .disabled(animation.effect == .none && animation.unit == .all)
-
-            InspectorSegmented(
-                options: RecordingTextAnimation.Ease.allCases,
-                isSelected: { $0 == animation.ease },
-                onTap: { ease in editAnimation("Change Text Animation") { $0.ease = ease } },
-                label: { Text($0.shortTitle).font(.inspectorSegment) }
-            )
-            .disabled(animation.effect == .none)
-        }
-    }
-
-    // MARK: Editing
 
     private func edit(_ action: String, _ change: (inout RecordingTextOverlay) -> Void) {
         var edited = text
@@ -320,19 +273,6 @@ struct StudioTextInspectorControls: View {
     }
 }
 
-private extension RecordingTextAnimation.Ease {
-    var shortTitle: String {
-        switch self {
-        case .linear: "Linear"
-        case .out: "Out"
-        case .inOut: "In Out"
-        case .spring: "Spring"
-        }
-    }
-}
-
-/// One effect in the picker. At rest it holds a frame partway through the
-/// effect, as a hint of its motion; hovered, it plays on a loop.
 private struct StudioTextEffectTile: View {
     let text: RecordingTextOverlay
     let isExit: Bool
@@ -365,7 +305,7 @@ private struct StudioTextEffectTile: View {
                 }
             }
             Text(effect.title)
-                .font(.system(size: 10))
+                .font(.dsCaption)
                 .foregroundStyle(isSelected ? Palette.label : Palette.secondaryLabel)
                 .lineLimit(1)
         }
@@ -413,67 +353,64 @@ private struct StudioTextEffectTile: View {
     }
 }
 
-// MARK: - Pixelate
 
 struct StudioRedactionInspectorControls: View {
     @Bindable var model: RecordingStudioModel
     let redaction: RecordingRedaction
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            InspectorSegmented(
-                options: RecordingRedaction.Style.allCases,
-                isSelected: { $0 == redaction.style },
-                onTap: { style in edit("Change Pixelate Style") { $0.style = style } },
-                label: { style in
-                    Label(style.title, systemImage: style.systemImage)
-                        .font(.inspectorSegment)
+        StudioInspectorGroup("Effect") {
+            StudioInspectorModeSwitchRow(
+                "Style",
+                selection: Binding(
+                    get: { redaction.style },
+                    set: { style in edit("Change Pixelate Style") { $0.style = style } }
+                ),
+                options: RecordingRedaction.Style.allCases.map {
+                    InterfaceModeSwitchOption(value: $0, title: $0.title, systemImage: $0.systemImage)
                 }
             )
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorFieldPair {
-                    InspectorSlider(
-                        "Strength",
-                        value: Binding(
-                            get: { CGFloat(redaction.amount) },
-                            set: { value in edit("Change Pixelate Strength") { $0.amount = Double(value) } }
-                        ),
-                        range: 0...1,
-                        format: .percent()
-                    )
-                } trailing: {
-                    InspectorSlider(
-                        "Corners",
-                        value: Binding(
-                            get: { CGFloat(redaction.cornerRadius) },
-                            set: { value in edit("Change Pixelate Corners") { $0.cornerRadius = Double(value) } }
-                        ),
-                        range: CGFloat(RecordingRedaction.cornerRadiusRange.lowerBound)...CGFloat(RecordingRedaction.cornerRadiusRange.upperBound),
-                        format: .pixels
-                    )
-                    .help("Corner radius, measured on a 1080p picture")
-                }
-
-                InspectorFieldPair {
-                    InspectorSlider(
-                        "Fade In",
-                        value: fadeBinding(\.fadeIn),
-                        range: CGFloat(RecordingRedaction.fadeRange.lowerBound)...CGFloat(RecordingRedaction.fadeRange.upperBound),
-                        format: .seconds
-                    )
-                } trailing: {
-                    InspectorSlider(
-                        "Fade Out",
-                        value: fadeBinding(\.fadeOut),
-                        range: CGFloat(RecordingRedaction.fadeRange.lowerBound)...CGFloat(RecordingRedaction.fadeRange.upperBound),
-                        format: .seconds
-                    )
-                }
+            InspectorFieldPair {
+                InspectorSlider(
+                    "Strength",
+                    value: Binding(
+                        get: { CGFloat(redaction.amount) },
+                        set: { value in edit("Change Pixelate Strength") { $0.amount = Double(value) } }
+                    ),
+                    range: 0...1,
+                    format: .percent()
+                )
+            } trailing: {
+                InspectorSlider(
+                    "Corners",
+                    value: Binding(
+                        get: { CGFloat(redaction.cornerRadius) },
+                        set: { value in edit("Change Pixelate Corners") { $0.cornerRadius = Double(value) } }
+                    ),
+                    range: CGFloat(RecordingRedaction.cornerRadiusRange.lowerBound)...CGFloat(RecordingRedaction.cornerRadiusRange.upperBound),
+                    format: .pixels
+                )
+                .help("Corner radius, measured on a 1080p picture")
             }
 
-            InspectorHint("Drag the box on the paused canvas to move it, or its handles to resize it. It stays on the picture through zooms and crops.")
+            InspectorFieldPair {
+                InspectorSlider(
+                    "Fade in",
+                    value: fadeBinding(\.fadeIn),
+                    range: CGFloat(RecordingRedaction.fadeRange.lowerBound)...CGFloat(RecordingRedaction.fadeRange.upperBound),
+                    format: .seconds
+                )
+            } trailing: {
+                InspectorSlider(
+                    "Fade out",
+                    value: fadeBinding(\.fadeOut),
+                    range: CGFloat(RecordingRedaction.fadeRange.lowerBound)...CGFloat(RecordingRedaction.fadeRange.upperBound),
+                    format: .seconds
+                )
+            }
         }
+        .help("Drag the box on the paused canvas to move it, or its handles to resize it")
     }
 
     private func edit(_ action: String, _ change: (inout RecordingRedaction) -> Void) {
@@ -490,15 +427,13 @@ struct StudioRedactionInspectorControls: View {
     }
 }
 
-// MARK: - Image
-
 struct StudioImageInspectorControls: View {
     @Bindable var model: RecordingStudioModel
     let image: RecordingImageOverlay
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+        VStack(alignment: .leading, spacing: Space.xxl) {
+            StudioInspectorGroup("Appearance") {
                 InspectorFieldPair {
                     InspectorSlider(
                         "Size",
@@ -531,8 +466,7 @@ struct StudioImageInspectorControls: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorGroupLabel("Fades")
+            StudioInspectorGroup("Fades") {
                 InspectorFieldPair {
                     InspectorSlider(
                         "In",
@@ -566,36 +500,37 @@ struct StudioImageInspectorControls: View {
     }
 }
 
-// MARK: - Audio
-
 struct StudioAudioClipInspectorControls: View {
     @Bindable var model: RecordingStudioModel
     let clip: RecordingAudioClip
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorHalfField {
-                    InspectorSlider("Volume", value: value(\.volume, action: "Change Audio Volume"), range: 0...1, format: .percent())
-                }
-                InspectorFieldPair {
-                    InspectorSlider(
-                        "Fade In",
-                        value: value(\.fadeIn, action: "Change Audio Fade"),
-                        range: CGFloat(RecordingAudioClip.fadeRange.lowerBound)...CGFloat(RecordingAudioClip.fadeRange.upperBound),
-                        format: .seconds
-                    )
-                } trailing: {
-                    InspectorSlider(
-                        "Fade Out",
-                        value: value(\.fadeOut, action: "Change Audio Fade"),
-                        range: CGFloat(RecordingAudioClip.fadeRange.lowerBound)...CGFloat(RecordingAudioClip.fadeRange.upperBound),
-                        format: .seconds
-                    )
-                }
+        StudioInspectorGroup("Sound") {
+            InterfaceRow("Plays") {
+                Text("\(Self.clock(clip.duration)) of \(Self.clock(clip.fileDuration)), from \(Self.clock(clip.start))")
+                    .font(.dsFieldNumeric)
+                    .foregroundStyle(Palette.secondaryLabel)
             }
+            .help("Drag its edges on the timeline to trim it. It stays put when the recording is cut.")
 
-            InspectorHint("Plays \(Self.clock(clip.duration)) of \(Self.clock(clip.fileDuration)) from \(Self.clock(clip.start)) in the video. Drag its edges on the timeline to trim it. It stays put when the recording is cut.")
+            InspectorHalfField {
+                InspectorSlider("Volume", value: value(\.volume, action: "Change Audio Volume"), range: 0...1, format: .percent())
+            }
+            InspectorFieldPair {
+                InspectorSlider(
+                    "Fade in",
+                    value: value(\.fadeIn, action: "Change Audio Fade"),
+                    range: CGFloat(RecordingAudioClip.fadeRange.lowerBound)...CGFloat(RecordingAudioClip.fadeRange.upperBound),
+                    format: .seconds
+                )
+            } trailing: {
+                InspectorSlider(
+                    "Fade out",
+                    value: value(\.fadeOut, action: "Change Audio Fade"),
+                    range: CGFloat(RecordingAudioClip.fadeRange.lowerBound)...CGFloat(RecordingAudioClip.fadeRange.upperBound),
+                    format: .seconds
+                )
+            }
         }
     }
 
