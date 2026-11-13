@@ -42,6 +42,7 @@ enum StateRenderCatalog {
                     UpshotStorage.defaults.set(false, forKey: UpshotPreferences.lowResolutionEditorPreviewKey)
                 }
                 return AnyView(NavigationStack { SettingsAnnotatePane().navigationTitle("Annotate") })
+            }
         }
         for variant in ["", "-expanded", "-shortcuts-access-required"] {
             add("settings-quick-access\(variant)", "SettingsQuickAccessPane", "struct SettingsQuickAccessPane", 800, variant == "-expanded" ? 1340 : 820) {
