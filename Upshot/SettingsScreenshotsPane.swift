@@ -8,7 +8,6 @@ struct ScreenshotsSettingsPane: View {
             WindowScreenshotSettingsSection()
             ScreenshotBackgroundPresetSettingsSection()
             AfterCaptureActionsSection(type: .screenshot, title: "After Capture")
-            ScreenshotAnnotationEditorSettingsSection()
         }
     }
 }
@@ -59,21 +58,3 @@ private struct ScreenshotCaptureSettingsSection: View {
     }
 }
 
-private struct ScreenshotAnnotationEditorSettingsSection: View {
-    @AppStorage(UpshotPreferences.annotationStartingToolKey) private var startingTool = AnnotationTool.select.rawValue
-    @AppStorage(UpshotPreferences.lowResolutionEditorPreviewKey) private var lowResolutionEditorPreview = true
-
-    var body: some View {
-        InterfaceSection("Annotation Editor") {
-            InterfacePickerRow("Starting tool", selection: $startingTool) {
-                Text("Last Used").tag(UpshotPreferences.startingToolLastUsed)
-                Divider()
-                ForEach(AnnotationTool.allCases) { tool in
-                    Text(tool.title).tag(tool.rawValue)
-                }
-            }
-            InterfaceToggleRow("Use low-resolution preview to save memory", isOn: $lowResolutionEditorPreview)
-            AnnotationEditorSettingsSection()
-        }
-    }
-}

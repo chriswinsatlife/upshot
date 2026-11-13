@@ -259,7 +259,7 @@ extension AnnoEditor {
             if let properties = document.shape(id)?.arrowProps, properties.isMeasurement == true {
                 AppLog.event("annotation", "annotation_measure_committed", fields: ["distance": String(describing: AnnotationMeasurement.distance(properties))])
             } else {
-                AppLog.event("annotation", "annotation_arrow_committed", fields: ["inverse": String(describing: String(pointer.alt))])
+                AppLog.event("annotation", "annotation_arrow_committed", fields: ["inverse": String(describing: UpshotPreferences.annotationArrowDirectionIsInverted(optionHeld: pointer.alt))])
             }
             if let shape = document.shape(id), let props = shape.arrowProps,
                Vec.distMin(props.start, props.end, 4) {
@@ -383,10 +383,11 @@ extension AnnoEditor {
 
     func updateCreationArrowDirection(optionHeld: Bool) {
         guard tool == .arrow, case let .creatingArrow(id) = interaction else { return }
+        let inverted = UpshotPreferences.annotationArrowDirectionIsInverted(optionHeld: optionHeld)
         document.update(id) { shape in
             guard case var .arrow(props) = shape.kind else { return }
-            props.arrowheadStart = optionHeld ? currentArrowheadEnd : currentArrowheadStart
-            props.arrowheadEnd = optionHeld ? currentArrowheadStart : currentArrowheadEnd
+            props.arrowheadStart = inverted ? currentArrowheadEnd : currentArrowheadStart
+            props.arrowheadEnd = inverted ? currentArrowheadStart : currentArrowheadEnd
             shape.kind = .arrow(props)
         }
         notifyChanged()

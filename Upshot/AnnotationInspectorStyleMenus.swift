@@ -11,6 +11,7 @@ struct AnnotationSwatchStrip: View {
     private static let customWellID = "custom-well"
 
     @State private var edgeOverflow = EdgeOverflow(leading: 0, trailing: 0)
+    @AppStorage(UpshotPreferences.annotationShowColorNamesKey) private var showColorNames = true
 
     private struct EdgeOverflow: Equatable {
         var leading: CGFloat
@@ -99,9 +100,11 @@ struct AnnotationSwatchStrip: View {
                     fill: AnyShapeStyle(swatch.color),
                     isSelected: selectedSwatch == swatch
                 )
-                Text(swatch.title)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                if showColorNames {
+                    Text(swatch.title)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(minWidth: 42)
         }
@@ -131,9 +134,11 @@ struct AnnotationSwatchStrip: View {
                       )),
                 isSelected: isCustomSelected
                 )
-                Text("Custom")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                if showColorNames {
+                    Text("Custom")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(minWidth: 42)
         }

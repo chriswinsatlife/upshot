@@ -81,11 +81,7 @@ enum StateRenderCatalog {
         }
         let sections: [(String, String, () -> AnyView)] = [
             ("area-selection", "AreaSelectionSettingsSection", { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
-            ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection() }) }),
-        }
             ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() }) }),
-            ("text-recognition", "TextRecognitionSettingsSection", { AnyView(InterfaceFormPage { TextRecognitionSettingsSection() }) }),
-            ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(InterfaceFormPage { AnnotationEditorSettingsSection() }) }),
             ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
             ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
             ("after-screenshot", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
