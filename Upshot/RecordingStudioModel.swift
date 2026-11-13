@@ -2819,7 +2819,8 @@ final class RecordingStudioModel {
             cues: zoomEnabled ? zoomCues : [],
             capture: pointerCapture,
             clipTimeline: clipTimeline,
-            zoomAnimationStyle: exportAppearance.zoomAnimationStyle
+            zoomAnimationStyle: exportAppearance.zoomAnimationStyle,
+            reframe: reframe
         )
     }
 

@@ -29,7 +29,8 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
         cues: [ZoomCue],
         capture: PointerCaptureFile,
         clipTimeline: RecordingClipTimeline,
-        zoomAnimationStyle: RecordingZoomAnimationStyle = .smooth
+        zoomAnimationStyle: RecordingZoomAnimationStyle = .smooth,
+        reframe: ReframeTrack? = nil
     ) -> RecordingStudioMotionTimeline {
         let duration = clipTimeline.duration
         guard duration.isFinite, duration > 0, canvasSize.width > 0, canvasSize.height > 0 else { return .none }
@@ -74,7 +75,8 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
 
         for index in 0..<count {
             let time = min(Double(index) * dt, duration)
-            let target = targets.target(at: time) ?? ViewportTarget(
+            let reframed = reframe?.frame(at: time)
+            let target = reframed.map { ViewportTarget(magnification: $0.magnification, point: $0.anchor, boundsBias: 0) } ?? targets.target(at: time) ?? ViewportTarget(
                 magnification: 1, point: CGPoint(x: crop.midX, y: crop.midY), boundsBias: 0
             )
             let zoomed = target.magnification > 1.0001
@@ -111,7 +113,7 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
             }
             draw = contained(draw, in: destination.screenRect, crop: crop)
             let drawnCrop = cropRect(draw, crop: crop)
-            if targets.snaps(at: time) {
+            if targets.snaps(at: time) || (reframe != nil && index == 0) {
                 layoutSpring = StudioLayoutSpring(destination)
                 drawSpring = StudioRectSpring(drawnCrop)
             } else if index > 0 {

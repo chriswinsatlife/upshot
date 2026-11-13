@@ -44,3 +44,14 @@ struct RecordingKeystrokeAppearanceControls: View {
         }
     }
 }
+
+struct RecordingExportShotPicker: View {
+    @Bindable var model: RecordingStudioModel
+
+    var body: some View {
+        Picker("3D shot", selection: $model.exportAppearance.shot) {
+            ForEach(RecordingExportShot.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .help("Apply perspective to the screen card during export. Orbit animates the perspective. Camera and canvas overlays retain their placement.")
+    }
+}

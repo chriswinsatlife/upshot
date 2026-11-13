@@ -521,6 +521,7 @@ struct StudioInspector: View {
 
     private var canvasControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            RecordingExportShotPicker(model: model)
             InspectorSegmented(
                 options: ExportAspectPreset.allCases,
                 isSelected: { $0 == model.exportAspect },

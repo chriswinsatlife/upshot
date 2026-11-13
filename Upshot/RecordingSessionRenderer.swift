@@ -159,7 +159,8 @@ enum RecordingSessionRenderer {
             cues: zoomEnabled ? zoomCues : [],
             capture: capture,
             clipTimeline: clipTimeline,
-            zoomAnimationStyle: appearance.zoomAnimationStyle
+            zoomAnimationStyle: appearance.zoomAnimationStyle,
+            reframe: reframe
         )
 
         var configuration = RecordingStudioExporter.Configuration(

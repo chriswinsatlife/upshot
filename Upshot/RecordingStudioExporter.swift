@@ -181,7 +181,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        Self.logger.info("Zoom animation style=\(configuration.appearance.zoomAnimationStyle.rawValue)")
+        Self.logger.info("Export appearance zoom=\(configuration.appearance.zoomAnimationStyle.rawValue) shot=\(configuration.appearance.shot.rawValue) reframe=\(configuration.reframe != nil) keystrokeSize=\(configuration.appearance.keystrokes.size.rawValue) keystrokeStyle=\(configuration.appearance.keystrokes.style.rawValue) keystrokePosition=\(configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue) keystrokeFilter=\(configuration.appearance.keystrokes.filter.rawValue)")
         let timing = RecordingExportTiming(settings: configuration.exportSettings, motionBlurLevel: configuration.deliveryOptions.motionBlurLevel)
         let sourceAsset = AVURLAsset(url: configuration.screenURL)
         let sourceDuration = try await sourceAsset.load(.duration).seconds
@@ -378,6 +378,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             keystrokeTimeline: configuration.keystrokeTimeline,
             keystrokePlacement: configuration.keystrokePlacement,
             keystrokeAppearance: configuration.appearance.keystrokes,
+            shot: configuration.appearance.shot,
             speedBadgeTimeline: configuration.speedBadgeTimeline,
             speedBadgePlacement: configuration.speedBadgePlacement,
             subtitleTimeline: configuration.subtitleTimeline,
@@ -831,6 +832,8 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let keystrokeTimeline: KeystrokeCaptionTimeline?
     private let keystrokePlacement: RecordingKeystrokePlacement
     private let keystrokeAppearance: RecordingKeystrokeAppearance
+    private let shot: RecordingExportShot
+    private let shotRenderer = RecordingExportShotRenderer()
     private let speedBadgeTimeline: SpeedBadgeTimeline?
     private let speedBadgePlacement: RecordingKeystrokePlacement
     private let subtitleTimeline: SubtitleTimeline?
@@ -871,6 +874,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         keystrokeTimeline: KeystrokeCaptionTimeline?,
         keystrokePlacement: RecordingKeystrokePlacement,
         keystrokeAppearance: RecordingKeystrokeAppearance = RecordingKeystrokeAppearance(),
+        shot: RecordingExportShot = .flat,
         speedBadgeTimeline: SpeedBadgeTimeline? = nil,
         speedBadgePlacement: RecordingKeystrokePlacement = .topRight,
         subtitleTimeline: SubtitleTimeline?,
@@ -916,6 +920,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         self.keystrokeTimeline = keystrokeTimeline
         self.keystrokePlacement = keystrokePlacement
         self.keystrokeAppearance = keystrokeAppearance
+        self.shot = shot
         self.speedBadgeTimeline = speedBadgeTimeline
         self.speedBadgePlacement = speedBadgePlacement
         self.subtitleTimeline = subtitleTimeline
@@ -1019,7 +1024,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         layout: RecordingStudioLayout, settled: SettledLayout?, sampleRects: [CGRect],
         editorTime: TimeInterval, sourceTime: TimeInterval
     ) -> ComposedFrameState? {
-        guard !bypassFrameCache, settled != nil, sampleRects.count <= 1 else { return nil }
+        guard shot != .orbit, !bypassFrameCache, settled != nil, sampleRects.count <= 1 else { return nil }
         guard !textOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }),
               !imageOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }) else { return nil }
         let showsScreen = layout.screenOpacity > 0.001
@@ -1225,7 +1230,16 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             drawSpeedBadge(at: editorTime, in: context)
         }
 
+        if screenOpacity > 0.001, shot != .flat {
+            try shotRenderer.draw(
+                shot: shot, card: layout.cardRect, cornerRadius: layout.cardCornerRadius,
+                canvasSize: canvasSize, background: plainBackdrop, shadow: style.shadow,
+                time: editorTime, in: context
+            )
+        }
+
         if let cameraFrame, layout.bubbleRect.width > 0, layout.cameraOpacity > 0.001 {
+
             if layout.cameraCutout > 0.001 {
                 context.flush()
                 CVPixelBufferUnlockBaseAddress(destination, [])

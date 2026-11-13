@@ -13,6 +13,7 @@ enum RecordingExportAgentGuide {
     motionBlurLevel: "Off", "Low", "Medium", "High" selects a zero, quarter, half, or full-frame shutter. This takes precedence over settings.motionBlurEnabled.
     export_video appearance.zoomAnimationStyle: "Smooth" or "Dynamic" selects the zoom spring. Stored in export-appearance.json.
     appearance.keystrokes: size "Small"|"Medium"|"Large", style "Dark"|"Light", position topLeft|topCenter|topRight|middleLeft|middleCenter|middleRight|bottomLeft|bottomCenter|bottomRight, filter "Command Keys Only"|"All Keys". Typed keys are hidden by default. Their capture must be explicitly enabled before recording.
+    appearance.shot: "Flat", "Tilt Left", "Tilt Right", "Tilt Up", "Orbit" applies export-only screen-card perspective. Orbit animates the angle. Canvas overlays and the camera remain in canvas coordinates. Aspect presets and fit/fill remain controlled through update_project patch.exportAspect and patch.exportAspectMode.
     get_recording returns the current options as exportOptions.
     """
 }
