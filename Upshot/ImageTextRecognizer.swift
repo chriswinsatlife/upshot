@@ -73,7 +73,20 @@ nonisolated enum ImageTextRecognizer {
     static func recognizeText(in image: CGImage) async throws -> String {
         let options = await TextRecognitionOptions.current
         let lines = try await recognizeLines(in: image, options: options)
-        return formattedText(lines.map(\.text), keepLineBreaks: options.keepLineBreaks)
+        let text = formattedText(lines.map(\.text), keepLineBreaks: options.keepLineBreaks)
+        let codes: [DetectedCaptureCode]
+        do {
+            codes = try await CaptureCodeRecognizer.detect(in: image)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            NSLog("Capture code detection failed during text recognition: %@", String(describing: error))
+            if text.isEmpty { throw error }
+            codes = []
+        }
+        let detection = try CaptureCodeRecognizer.detection(codes: codes, text: text, detectLinks: options.detectLinks)
+        await CaptureCodeFeedbackPresenter.shared.present(detection, displayID: nil)
+        return text.isEmpty ? formattedText(codes.map(\.displayPayload), keepLineBreaks: options.keepLineBreaks) : text
     }
 
     static func recognizeLines(in image: CGImage, requiresBounds: Bool = false, includeCharacterBounds: Bool = false) async throws -> [ImageTextLine] {

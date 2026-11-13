@@ -43,12 +43,16 @@ final class CaptureTextFeedbackPresenter {
 
     func showFailure(title: String, displayID: CGDirectDisplayID?) {
         NSLog("Text recognition feedback presented: %@", title)
+        let detail = switch title {
+        case "Capture failed": "The screenshot could not be captured or read."
+        case "Text recognition failed": "The capture succeeded, but text recognition failed."
+        case "Code recognition failed": "The capture succeeded, but code recognition failed."
+        default: "Try again."
+        }
         present(
             symbol: "exclamationmark.triangle",
             title: title,
-            detail: title == "Capture failed"
-                ? "The screenshot could not be captured or read."
-                : "The capture succeeded, but recognition failed.",
+            detail: detail,
             displayID: displayID
         )
     }
