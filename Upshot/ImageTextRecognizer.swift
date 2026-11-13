@@ -41,6 +41,23 @@ enum ImageTextRecognizer {
         }
     }
 
+    static func recognizeText(in image: CGImage) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = true
+                do {
+                    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+                    let lines = readingOrder(request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    continuation.resume(returning: lines.joined(separator: "\n"))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Vision returns observations in no documented order, which scrambles
     /// anything laid out in columns. Groups them into visual lines top to
     /// bottom, then orders each line left to right.

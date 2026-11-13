@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import ImageIO
 import ScreenCaptureKit
 import SwiftUI
 
@@ -15,6 +16,8 @@ import SwiftUI
 enum CaptureTextOutcome {
     case cancelled
     case noTextFound
+    case captureFailed
+    case recognitionFailed
     case copied(String)
 }
 
@@ -30,6 +33,8 @@ final class CaptureCoordinator {
     var onShowPreview: ((URL, CGDirectDisplayID?, CaptureSource?) -> URL)?
     
     private init() {}
+
+    private var textCaptureInProgress = false
     
     // MARK: - Capture Actions
 
@@ -136,16 +141,43 @@ final class CaptureCoordinator {
     /// after the area is drawn, matching Capture Area.
     @discardableResult
     private func performCaptureText() async -> CaptureTextOutcome {
-        guard let url = await ScreenshotManager.shared.captureArea(
-            delaySeconds: UpshotPreferences.captureDelaySeconds
-        ) else { return .cancelled }
-        defer { try? FileManager.default.removeItem(at: url) }
+        guard !textCaptureInProgress else { return .cancelled }
+        textCaptureInProgress = true
+        defer { textCaptureInProgress = false }
+        let image: CGImage
+        do {
+            if UpshotPreferences.captureDelaySeconds > 0 {
+                guard let url = await ScreenshotManager.shared.captureArea(
+                    delaySeconds: UpshotPreferences.captureDelaySeconds
+                ) else { return .cancelled }
+                defer { try? FileManager.default.removeItem(at: url) }
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let captured = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                image = captured
+            } else {
+                guard let selected = try await TextCaptureSelection().select() else { return .cancelled }
+                image = selected
+            }
+        } catch {
+            NSLog("Capture Text capture failed: %@", String(describing: error))
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return .captureFailed
+        }
 
         // Resolved before recognition runs, so the toast lands on the display
         // the user was just drawing on rather than wherever the pointer
         // drifted to while Vision worked.
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
-        let text = await ImageTextRecognizer.recognizeText(at: url)
+        let text: String
+        do {
+            text = try await ImageTextRecognizer.recognizeText(in: image)
+        } catch {
+            NSLog("Capture Text recognition failed: %@", String(describing: error))
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Text recognition failed", displayID: displayID)
+            return .recognitionFailed
+        }
 
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             CaptureTextFeedbackPresenter.shared.showNoTextFound(displayID: displayID)

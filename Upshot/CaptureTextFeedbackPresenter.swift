@@ -59,6 +59,10 @@ final class CaptureTextFeedbackPresenter {
         )
     }
 
+    func showFailure(title: String, displayID: CGDirectDisplayID?) {
+        present(symbol: "exclamationmark.triangle", title: title, detail: "Try capturing again.", displayID: displayID)
+    }
+
     private func present(
         symbol: String,
         title: String,

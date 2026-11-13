@@ -103,6 +103,8 @@ nonisolated struct CaptureTextIntent: AppIntent {
             throw UpshotIntentError.captureCancelled
         case .noTextFound:
             throw UpshotIntentError.noTextRecognized
+        case .captureFailed, .recognitionFailed:
+            throw NSError(domain: "Upshot.CaptureText", code: 1, userInfo: [NSLocalizedDescriptionKey: "Capture Text failed."])
         case .copied(let text):
             return .result(value: text)
         }
