@@ -44,7 +44,7 @@ struct OverlayTextLayout {
             context.scaleBy(x: 1, y: -1)
             context.textPosition = .zero
         } else {
-            context.textPosition = CGPoint(x: origin.x, y: origin.y + descent)
+            context.textPosition = CGPoint(x: origin.x, y: origin.y + ceil(descent))
         }
         CTLineDraw(line, context)
     }
