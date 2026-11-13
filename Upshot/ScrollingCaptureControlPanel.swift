@@ -89,12 +89,12 @@ final class ScrollingCaptureControlPanel: NSObject, NSWindowDelegate {
         onCancel = nil
     }
 
-    func update(height: Int, status: String, running: Bool, hasFrames: Bool, finishing: Bool = false) {
+    func update(height: Int, status: String, running: Bool, hasFrames: Bool, finishing: Bool = false, canStart: Bool = true) {
         heightLabel.stringValue = "Height: \(height) px"
         statusLabel.stringValue = status
-        startButton.isEnabled = !running && !finishing
+        startButton.isEnabled = !running && !finishing && canStart
         stopButton.isEnabled = hasFrames && !finishing
-        modeControl.isEnabled = !running && !finishing
+        modeControl.isEnabled = !running && !finishing && canStart
     }
 
     private func position(around rect: CGRect) {

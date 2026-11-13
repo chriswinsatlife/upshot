@@ -30,6 +30,7 @@ final class ScrollingCaptureSession {
     private var height = 0
     private var stopRequested = false
     private var finishing = false
+    private var maximumLengthReached = false
 
     func capture(selection: AreaCaptureSelectionResult? = nil) async -> Result? {
         guard !active, !Task.isCancelled else { return nil }
@@ -64,6 +65,7 @@ final class ScrollingCaptureSession {
             height = 0
             stopRequested = false
             finishing = false
+            maximumLengthReached = false
             autoScroll = ScrollingCaptureAutoScroll(rect: rect)
             return await withTaskCancellationHandler {
                 await withCheckedContinuation { continuation in
@@ -91,7 +93,7 @@ final class ScrollingCaptureSession {
     }
 
     private func start(mode: ScrollingCaptureControlPanel.Mode) {
-        guard continuation != nil, task == nil, !finishing else { return }
+        guard continuation != nil, task == nil, !finishing, !maximumLengthReached else { return }
         if mode == .automatic, !CGPreflightPostEventAccess(), !CGRequestPostEventAccess() {
             update(status: "Enable Accessibility for Auto-Scroll, or choose Manual.", running: false)
             NSLog("Scrolling capture auto-scroll unavailable: event posting permission denied")
@@ -118,8 +120,9 @@ final class ScrollingCaptureSession {
             }
             guard let frameSource else { return }
             if height == 0 {
-                _ = try await captureFrame()
-                update(status: "Capture started. Stop saves the image.", running: true)
+                let update = try await captureFrame()
+                if update.kind == .maximumLengthReached { return }
+                self.update(status: "Capture started. Stop saves the image.", running: true)
             }
             var unchangedFrames = 0
             var failedFrames = 0
@@ -134,6 +137,7 @@ final class ScrollingCaptureSession {
                 do {
                     let update = try await captureFrame()
                     if stopRequested { break }
+                    if update.kind == .maximumLengthReached { return }
                     failedFrames = 0
                     unchangedFrames = update.kind == .unchanged ? unchangedFrames + 1 : 0
                     if update.kind == .reversed {
@@ -155,6 +159,9 @@ final class ScrollingCaptureSession {
             try Task.checkCancellation()
             if stopRequested { await save() }
         } catch is CancellationError {
+        } catch ScrollingCaptureError.maximumLengthReached {
+            guard !Task.isCancelled, continuation != nil else { return }
+            reachMaximumLength()
         } catch let error as ScrollingCaptureAutoScroll.Failure {
             guard !Task.isCancelled, continuation != nil else { return }
             NSLog("Scrolling capture auto-scroll stopped: window=%u height=%ld reason=%@", autoScroll?.windowID ?? 0, height, error.localizedDescription)
@@ -178,11 +185,19 @@ final class ScrollingCaptureSession {
         let result = try await processor.append(image)
         try Task.checkCancellation()
         height = result.height
-        if result.kind == .firstFrame || result.kind == .appended {
+        if result.addedRows > 0 {
             NSLog("Scrolling capture frame verified: kind=%@ addedRows=%ld overlapRows=%ld meanError=%.6f height=%ld",
                   result.kind.rawValue, result.addedRows, result.overlapRows, result.meanError, height)
         }
+        if result.kind == .maximumLengthReached { reachMaximumLength() }
         return result
+    }
+
+    private func reachMaximumLength() {
+        maximumLengthReached = true
+        NSLog("Scrolling capture maximum length reached: height=%ld maximumHeight=%ld maximumPixels=%ld", height,
+              ScrollingCaptureOutputLimits.maximumHeight, ScrollingCaptureOutputLimits.maximumPixelCount)
+        update(status: "Maximum length reached", running: false)
     }
 
     private func postScroll(in rect: CGRect) throws {
@@ -249,6 +264,7 @@ final class ScrollingCaptureSession {
     }
 
     private func update(status: String, running: Bool, finishing: Bool = false) {
-        panel?.update(height: height, status: status, running: running, hasFrames: height > 0, finishing: finishing)
+        panel?.update(height: height, status: status, running: running, hasFrames: height > 0,
+                      finishing: finishing, canStart: !maximumLengthReached)
     }
 }

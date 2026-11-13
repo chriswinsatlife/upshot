@@ -2,6 +2,16 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
+nonisolated enum ScrollingCaptureOutputLimits {
+    static let maximumHeight = 32_000
+    static let maximumPixelCount = 200_000_000
+
+    static func maximumHeight(forWidth width: Int) -> Int {
+        guard width > 0 else { return 0 }
+        return min(maximumHeight, maximumPixelCount / width)
+    }
+}
+
 nonisolated struct ScrollingCaptureRaster: Sendable {
     let width: Int
     let height: Int
@@ -64,6 +74,7 @@ nonisolated enum ScrollingCaptureError: LocalizedError {
     case unverifiedOverlap
     case ambiguousOverlap
     case displayChanged
+    case maximumLengthReached
 
     var errorDescription: String? {
         switch self {
@@ -72,6 +83,7 @@ nonisolated enum ScrollingCaptureError: LocalizedError {
         case .unverifiedOverlap: "Overlap unavailable. Scroll back slowly, then press Start."
         case .ambiguousOverlap: "Overlap is ambiguous. Select an area with more distinct content."
         case .displayChanged: "The display arrangement changed. Start a new scrolling capture."
+        case .maximumLengthReached: "Maximum length reached"
         }
     }
 }
@@ -83,6 +95,7 @@ nonisolated struct ScrollingCaptureStitcher: Sendable {
             case appended
             case unchanged
             case reversed
+            case maximumLengthReached
         }
 
         let kind: Kind
@@ -107,6 +120,14 @@ nonisolated struct ScrollingCaptureStitcher: Sendable {
     private var footer = Data()
 
     mutating func append(_ image: CGImage) throws -> Update {
+        if let previous, image.width != width || image.height != previous.height {
+            throw ScrollingCaptureError.dimensionsChanged
+        }
+        let maximumHeight = ScrollingCaptureOutputLimits.maximumHeight(forWidth: image.width)
+        guard image.height <= maximumHeight else { throw ScrollingCaptureError.maximumLengthReached }
+        if previous != nil, height >= maximumHeight {
+            return Update(kind: .maximumLengthReached, height: height, addedRows: 0, overlapRows: 0, meanError: 0)
+        }
         let current = try ScrollingCaptureRaster(image: image)
         guard let previous else {
             width = current.width
@@ -115,10 +136,8 @@ nonisolated struct ScrollingCaptureStitcher: Sendable {
             self.previous = current
             previousHashes = current.rowHashes()
             strips = [current.pixels]
-            return Update(kind: .firstFrame, height: height, addedRows: height, overlapRows: 0, meanError: 0)
-        }
-        guard current.width == width, current.height == previous.height else {
-            throw ScrollingCaptureError.dimensionsChanged
+            return Update(kind: height == maximumHeight ? .maximumLengthReached : .firstFrame,
+                          height: height, addedRows: height, overlapRows: 0, meanError: 0)
         }
         if current.pixels == previous.pixels {
             return Update(kind: .unchanged, height: height, addedRows: 0, overlapRows: current.height, meanError: 0)
@@ -130,6 +149,7 @@ nonisolated struct ScrollingCaptureStitcher: Sendable {
             return Update(kind: match.displacement == 0 ? .unchanged : .reversed, height: height,
                           addedRows: 0, overlapRows: overlap, meanError: match.error)
         }
+        let addedRows = min(match.displacement, maximumHeight - height)
         let rowBytes = width * 4
         let footerRows = current.height - match.contentRows.upperBound
         let previousFooterRows = footer.count / rowBytes
@@ -142,20 +162,24 @@ nonisolated struct ScrollingCaptureStitcher: Sendable {
         }
         let lastByte = match.contentRows.upperBound * rowBytes
         let firstByte = lastByte - match.displacement * rowBytes
-        strips.append(current.pixels.subdata(in: firstByte..<lastByte))
+        strips.append(current.pixels.subdata(in: firstByte..<(firstByte + addedRows * rowBytes)))
         footer = current.pixels.subdata(in: lastByte..<current.pixels.count)
-        height += match.displacement
+        height += addedRows
         frameCount += 1
         self.previous = current
         previousHashes = hashes
         if match.contentRows.lowerBound > 0 || footerRows > 0 {
             NSLog("Scrolling capture fixed rows verified: headerRows=%ld footerRows=%ld", match.contentRows.lowerBound, footerRows)
         }
-        return Update(kind: .appended, height: height, addedRows: match.displacement, overlapRows: overlap, meanError: match.error)
+        return Update(kind: height == maximumHeight ? .maximumLengthReached : .appended,
+                      height: height, addedRows: addedRows, overlapRows: overlap, meanError: match.error)
     }
 
     func image() throws -> CGImage {
         guard frameCount > 0 else { throw ScrollingCaptureError.invalidImage }
+        guard height <= ScrollingCaptureOutputLimits.maximumHeight(forWidth: width) else {
+            throw ScrollingCaptureError.maximumLengthReached
+        }
         var pixels = Data()
         pixels.reserveCapacity(width * height * 4)
         for strip in strips { pixels.append(strip) }
