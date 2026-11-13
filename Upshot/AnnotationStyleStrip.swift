@@ -259,6 +259,11 @@ struct AnnotationStyleStrip: View {
         .padding(Space.xl)
         .frame(width: Self.nameEditorWidth)
         .presentationBackground(Palette.panel)
+        .onWindowChange { window in
+            guard let window else { return }
+            window.makeFirstResponder(nil)
+            DispatchQueue.main.async { [weak window] in window?.makeFirstResponder(nil) }
+        }
     }
 
     private func savePreset() {
