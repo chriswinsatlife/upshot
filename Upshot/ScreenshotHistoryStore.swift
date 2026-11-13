@@ -1,9 +1,3 @@
-//
-//  ScreenshotHistoryStore.swift
-//  Upshot
-//
-//  Created by Codex on 01/05/26.
-//
 
 import AppKit
 import AVFoundation
@@ -20,14 +14,9 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
     var kind: PreviewMediaKind
     var duration: Double?
     var cloudURL: String?
-    /// Whether this screenshot has an editable annotation sidecar document.
     var hasEdits: Bool
-    /// Absolute path to the non-destructive recording package, when this video
-    /// belongs to the new Studio workflow. Older video items remain bare files.
     var recordingSessionPath: String?
-    /// A Library title, kept separate from the file name and editable sidecars.
     var displayName: String?
-    /// The app the screenshot was taken from, when it could be told.
     var source: CaptureSource?
 
     var recordingSession: RecordingSession? {
@@ -49,8 +38,6 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
 
     var isVideo: Bool { kind == .video }
 
-    // Backward-compatible decoding: existing history.json entries have no
-    // `kind` or `duration` fields, so they default to .image / nil.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -118,14 +105,10 @@ final class ScreenshotHistoryStore {
         applicationSupportDirectory.appendingPathComponent("history.json")
     }
 
-    /// Location of the editable annotation sidecar document for a display image,
-    /// e.g. `Upshot_2026.png` -> `Upshot_2026.png.upshot`.
     static func editDocumentURL(for displayURL: URL) -> URL {
         displayURL.appendingPathExtension("upshot")
     }
 
-    /// Location of the untouched base image for a display image,
-    /// e.g. `Upshot_2026.png` -> `Upshot_2026.base.png`.
     static func baseImageURL(for displayURL: URL) -> URL {
         let ext = displayURL.pathExtension
         let stem = displayURL.deletingPathExtension().lastPathComponent
@@ -134,7 +117,6 @@ final class ScreenshotHistoryStore {
         return directory.appendingPathComponent(fileName)
     }
 
-    /// Loads the editable annotation document for a screenshot, if one exists.
     func loadEditDocument(for displayURL: URL) -> AnnotationDocument? {
         let documentURL = Self.editDocumentURL(for: displayURL)
         guard let data = try? Data(contentsOf: documentURL),
@@ -156,6 +138,7 @@ final class ScreenshotHistoryStore {
 
     private init() {
         load()
+        Task { CaptureHistoryRetention.shared.start() }
     }
 
     @discardableResult
@@ -224,9 +207,6 @@ final class ScreenshotHistoryStore {
         }
     }
 
-    /// Adds a Studio recording to history without copying its potentially huge
-    /// screen master. History owns the package and reopens the complete project
-    /// (camera, event sidecar, and project edits), not a detached movie.
     @discardableResult
     func importRecordingSession(_ session: RecordingSession) async -> URL {
         let standardizedPath = session.directoryURL.standardizedFileURL.path
@@ -237,9 +217,6 @@ final class ScreenshotHistoryStore {
             return session.screenURL
         }
 
-        // The recorder has already persisted this metadata before invoking
-        // the completion handler. Prefer it so the preview/editor can appear
-        // immediately instead of opening the movie with AVFoundation again.
         let manifest = session.loadCaptureManifest()
         let metadata: (width: Int, height: Int, duration: Double?)
         if let manifest,
@@ -274,13 +251,6 @@ final class ScreenshotHistoryStore {
         return session.deliverableURL
     }
 
-    /// Non-destructive annotation commit.
-    ///
-    /// - Preserves the untouched base image (lazily, on first edit) so future
-    ///   edits always re-render from the original pixels.
-    /// - Overwrites the display image with the freshly rendered composite.
-    /// - Writes the editable `.upshot` sidecar document so the annotations
-    ///   can be re-opened and edited later.
     @discardableResult
     func commitAnnotations(
         displayURL: URL,
@@ -323,13 +293,11 @@ final class ScreenshotHistoryStore {
         return displayURL
     }
 
-    /// Restores the base and removes the editable files as one recoverable save.
     @discardableResult
     func removeAnnotations(displayURL: URL) throws -> URL {
         guard isHistoryURL(displayURL) else { return displayURL }
         let baseDestination = Self.baseImageURL(for: displayURL)
         let documentURL = Self.editDocumentURL(for: displayURL)
-        // Missing base pixels are a failed restore, not a successful clear.
         guard FileManager.default.fileExists(atPath: baseDestination.path) else {
             throw CocoaError(.fileReadNoSuchFile)
         }
@@ -368,20 +336,14 @@ final class ScreenshotHistoryStore {
             }
         }
 
-        // Checked via the stored path, not `recordingSession`: the package
-        // has already been removed by this point, so the lookup would fail.
         let wasRecordingProject = item.recordingSessionPath != nil
         items.removeAll { $0.id == item.id }
         saveMetadata()
         if wasRecordingProject {
-            // The package is gone, so the Projects browser must stop listing it.
             RecordingProjectStore.shared.reload()
         }
     }
 
-    /// Drops the History row for a recording project. The package itself is
-    /// owned by `RecordingProjectStore`, which calls this so a deleted
-    /// project can't linger in History as a dead entry.
     func deleteRecordingSession(_ session: RecordingSession) {
         let standardizedPath = session.directoryURL.standardizedFileURL.path
         guard items.contains(where: { $0.recordingSessionPath == standardizedPath }) else {
@@ -412,7 +374,6 @@ final class ScreenshotHistoryStore {
         saveMetadata()
     }
 
-    /// Clears a previously-set cloud URL, e.g. after deleting the upload from the cloud.
     func clearCloudURL(for fileURL: URL) {
         let standardized = fileURL.standardizedFileURL
         guard let index = items.firstIndex(where: { $0.url.standardizedFileURL == standardized }) else {
@@ -429,9 +390,6 @@ final class ScreenshotHistoryStore {
         ])
     }
 
-    /// Resolves a flattened recording URL back to its non-destructive project
-    /// package. Every editor entry point uses this so overlay cards, History,
-    /// and after-capture actions cannot accidentally open different editors.
     func editorURL(for mediaURL: URL) -> URL {
         let standardizedURL = mediaURL.standardizedFileURL
         return items.first(where: { $0.url.standardizedFileURL == standardizedURL })?.editorURL
@@ -450,7 +408,6 @@ final class ScreenshotHistoryStore {
         saveMetadata()
     }
 
-    /// Called only after Library has successfully moved the owned files to Trash.
     func removeTrashedItems(ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
         items.removeAll { ids.contains($0.id) }
