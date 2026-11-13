@@ -126,6 +126,11 @@ enum AnnotationRenderer {
             }
 
             CGImageDestinationAddImage(destination, renderedImage, options)
+            guard CGImageDestinationFinalize(destination) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+
+            NSLog("Annotation export completed width=%ld height=%ld annotations=%ld", renderedImage.width, renderedImage.height, shapes.count)
             if !backgroundSettings.colorAdjustments.isDefault {
                 let adjustments = backgroundSettings.colorAdjustments
                 NSLog("Annotation color export applied exposure=%.2f contrast=%.2f saturation=%.2f temperature=%.1f",
@@ -136,9 +141,6 @@ enum AnnotationRenderer {
                 NSLog("Annotation watermark exported kind=%@ position=%@ opacity=%.2f",
                       backgroundSettings.watermark.imageData == nil ? "text" : "image",
                       backgroundSettings.watermark.position.rawValue, backgroundSettings.watermark.opacity)
-            }
-            guard CGImageDestinationFinalize(destination) else {
-                throw CocoaError(.fileWriteUnknown)
             }
         }
 
