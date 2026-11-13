@@ -181,7 +181,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        Self.logger.info("Export appearance zoom=\(configuration.appearance.zoomAnimationStyle.rawValue) shot=\(configuration.appearance.shot.rawValue) reframe=\(configuration.reframe != nil) keystrokeSize=\(configuration.appearance.keystrokes.size.rawValue) keystrokeStyle=\(configuration.appearance.keystrokes.style.rawValue) keystrokePosition=\(configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue) keystrokeFilter=\(configuration.appearance.keystrokes.filter.rawValue)")
+        Self.logger.info("Export appearance zoom=\(configuration.appearance.zoomAnimationStyle.rawValue, privacy: .public) shot=\(configuration.appearance.shot.rawValue, privacy: .public) reframe=\(configuration.reframe != nil) keystrokeSize=\(configuration.appearance.keystrokes.size.rawValue, privacy: .public) keystrokeStyle=\(configuration.appearance.keystrokes.style.rawValue, privacy: .public) keystrokePosition=\(configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue, privacy: .public) keystrokeFilter=\(configuration.appearance.keystrokes.filter.rawValue, privacy: .public)")
         let timing = RecordingExportTiming(
             settings: configuration.exportSettings,
             motionBlurLevel: configuration.deliveryOptions.motionBlurLevel,
@@ -503,7 +503,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         var cameraSeconds = 0.0
         var renderedFrames = 0
         defer {
-            Self.logger.info("Export frames=\(renderedFrames) fps=\(timing.framesPerSecond) motionBlur=\(timing.motionBlurLevel.rawValue) Metal blur frames=\(compositor.metalFrameCount) reusedScreenFrames=\(compositor.reusedScreenFrameCount) reusedComposedFrames=\(compositor.reusedComposedFrameCount) renderSeconds=\(renderSeconds) metalSeconds=\(compositor.metalSeconds) cutoutWaitSeconds=\(compositor.cutoutWaitSeconds) decodeSeconds=\(decodeSeconds) cameraSeconds=\(cameraSeconds) writerWaitSeconds=\(writerWaitSeconds)")
+            Self.logger.info("Export frames=\(renderedFrames) fps=\(timing.framesPerSecond) motionBlur=\(timing.motionBlurLevel.rawValue, privacy: .public) Metal blur frames=\(compositor.metalFrameCount) reusedScreenFrames=\(compositor.reusedScreenFrameCount) reusedComposedFrames=\(compositor.reusedComposedFrameCount) renderSeconds=\(renderSeconds) metalSeconds=\(compositor.metalSeconds) cutoutWaitSeconds=\(compositor.cutoutWaitSeconds) decodeSeconds=\(decodeSeconds) cameraSeconds=\(cameraSeconds) writerWaitSeconds=\(writerWaitSeconds)")
         }
 
         var cachedPool: CVPixelBufferPool?
