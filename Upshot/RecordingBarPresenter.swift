@@ -1,16 +1,3 @@
-//
-//  RecordingBarPresenter.swift
-//  Upshot
-//
-//  One floating bar, two modes. Before recording it picks the source and the
-//  capture inputs; during recording it drives the session. They share a
-//  single panel so the handoff is a morph - the bar's rounded rect animates
-//  to the new width while the controls cross-fade - rather than one window
-//  vanishing and another appearing somewhere near it.
-//
-//  RecordingPickerPresenter and RecordingControlPresenter are the entry
-//  points callers still use; both forward here.
-//
 
 import AppKit
 import SwiftUI
@@ -26,17 +13,10 @@ final class RecordingBarPresenter {
     }
 
     private(set) var mode: Mode = .picker
-    /// Whether the bar is unfolded into the teleprompter's script editor.
-    /// Picker mode only.
     private(set) var isTeleprompterOpen = false
 
-    /// The bar's frame inside the panel's content view, reported by SwiftUI.
-    /// The panel is deliberately much larger than the bar, so this is what
-    /// tells the hosting view which part of itself is real and satellite
-    /// windows where to anchor.
     var barFrameInPanel: CGRect = .zero
     var visibilityBannerFrameInPanel: CGRect = .zero
-    /// The area pill beside the bar, while the area picker is up.
     var areaPillFrameInPanel: CGRect?
 
     func containsPanelPoint(_ point: CGPoint) -> Bool {
@@ -51,12 +31,9 @@ final class RecordingBarPresenter {
 
     private init() {}
 
-    // MARK: Teleprompter
 
     func toggleTeleprompter() {
         withAnimation(BarMetrics.modeChange) { isTeleprompterOpen.toggle() }
-        // Typing goes to the key window; the panel is nonactivating, so
-        // this never activates Upshot.
         if isTeleprompterOpen { panel?.makeKey() }
     }
 
@@ -65,7 +42,6 @@ final class RecordingBarPresenter {
         withAnimation(BarMetrics.modeChange) { isTeleprompterOpen = false }
     }
 
-    // MARK: Picker
 
     func togglePicker() {
         if let panel, panel.isVisible, mode == .picker {
@@ -82,24 +58,18 @@ final class RecordingBarPresenter {
             await RecordingSourceCatalog.shared.refresh()
         }
         mode = .picker
+        panel.level = .floating
         position(panel, displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: false))
         panel.orderFrontRegardless()
-        // Key without activating (the panel is nonactivating): pointer styles
-        // and Esc both resolve against the key window. Key-ness is dormant
-        // while Upshot isn't the active app, so this never pulls
-        // keystrokes out of the app being recorded.
         panel.makeKey()
         warmCameraPreviewIfEnabled()
     }
 
-    // MARK: Recording
 
-    /// Called once capture is actually starting. If the bar is already up on
-    /// the recording's display it morphs in place; otherwise it has to move,
-    /// and there's nothing to morph from.
     func showRecording(displayID: CGDirectDisplayID?) {
         let panel = panel ?? makePanel()
         PreviewWindowCaptureExclusion.shared.register(window: panel)
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
         RecordingSourceTargetPresenter.shared.cancel()
         RecordingAreaSelectionPresenter.shared.cancel()
 
@@ -122,18 +92,12 @@ final class RecordingBarPresenter {
         if mode == .picker { CaptureCountdownPresenter.shared.cancel() }
         RecordingSourceTargetPresenter.shared.cancel()
         RecordingAreaSelectionPresenter.shared.cancel()
-        // `orderOut` sends no exit events, so a hover that's live when the
-        // bar hides has to be ended by hand, or its puck would linger.
         BarControlHoverView.endActiveHover()
         panel?.orderOut(nil)
-        // Next appearance should always start as the folded picker, and
-        // without animating out of a mode nobody can see.
         mode = .picker
         isTeleprompterOpen = false
     }
 
-    /// Takes the keyboard back from a sheet that's going away, so the next
-    /// Esc reaches the bar and closes it.
     func reclaimKey() {
         guard let panel, panel.isVisible else { return }
         panel.makeKey()
@@ -147,15 +111,9 @@ final class RecordingBarPresenter {
         ))
     }
 
-    // MARK: Geometry
 
-    /// Where the bar currently sits on screen, so satellite windows can
-    /// anchor to it even after the user drags it around. This is the visible bar, not the panel: the panel is padded
-    /// out with transparent slack for the tooltips and shadows, and anchoring
-    /// to that would leave satellites floating clear of the bar.
     var barFrame: CGRect? {
         guard let panel, panel.isVisible, barFrameInPanel != .zero else { return nil }
-        // SwiftUI reports a top-left origin; screen coordinates are bottom-up.
         return CGRect(
             x: panel.frame.minX + barFrameInPanel.minX,
             y: panel.frame.maxY - barFrameInPanel.maxY,
@@ -164,8 +122,6 @@ final class RecordingBarPresenter {
         )
     }
 
-    /// The area pill on screen, so the area sheet can keep its Start
-    /// Recording pill clear of it.
     var areaPillFrame: CGRect? {
         guard let panel, panel.isVisible, let frame = areaPillFrameInPanel else { return nil }
         return CGRect(
@@ -187,18 +143,11 @@ final class RecordingBarPresenter {
         let size = CGSize(width: BarMetrics.panelWidth, height: BarMetrics.panelHeight)
         let origin = CGPoint(
             x: visibleFrame.midX - size.width / 2,
-            // Dropped by the bottom slack so the bar - not the panel - lands
-            // 48pt above the visible frame.
             y: visibleFrame.minY + 48 - BarMetrics.bottomSlack
         )
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
     }
 
-    /// The bar's hosting view is created once and just reordered in/out on
-    /// every show/hide, so its SwiftUI `.task` never reruns after the first
-    /// appearance. Reading the camera preference here - on every real
-    /// `showPicker()` - is what makes a camera left on from a previous
-    /// session warm up immediately instead of needing an off/on toggle.
     private func warmCameraPreviewIfEnabled() {
         let cameraID = UpshotPreferences.recordingCameraDeviceID
         guard !cameraID.isEmpty else { return }
@@ -219,13 +168,6 @@ final class RecordingBarPresenter {
 
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        // Shadows are drawn in SwiftUI, not by AppKit. The window shadow is
-        // derived from the window's alpha silhouette and recomputed lazily,
-        // so anything that fades or resizes inside the panel - the tooltip,
-        // the morph - leaves its shadow outline hanging for a frame or two
-        // after the fill has moved on. The panel reserves slack on all four
-        // sides so SwiftUI's shadows aren't clipped by the panel edge, which
-        // was the original reason for using the AppKit one.
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isFloatingPanel = true
@@ -233,9 +175,6 @@ final class RecordingBarPresenter {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
-        // The controls track hover themselves so they still highlight while
-        // Upshot is in the background, which is the whole time a recording
-        // is running. Their tracking areas need the moved events.
         panel.acceptsMouseMovedEvents = true
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
@@ -243,10 +182,6 @@ final class RecordingBarPresenter {
 
         let hostingView = RecordingBarHostingView(rootView: RecordingBarView())
         hostingView.frame = CGRect(origin: .zero, size: size)
-        // The panel is sized explicitly and the bar inside it animates its own
-        // width during a morph. Left to bridge its ideal size onto the
-        // window, the hosting view and the window fight over sizing every
-        // frame until AppKit's constraint watchdog kills the app.
         hostingView.sizingOptions = []
         hostingView.translatesAutoresizingMaskIntoConstraints = true
         hostingView.autoresizingMask = [.width, .height]
@@ -273,16 +208,11 @@ private final class RecordingBarPanel: NSPanel {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        // Escape backs out of picking a source; it must not abandon a
-        // recording that's already running.
         guard RecordingBarPresenter.shared.mode == .picker else { return }
-        // The open teleprompter folds away first.
         if RecordingBarPresenter.shared.isTeleprompterOpen {
             RecordingBarPresenter.shared.closeTeleprompter()
             return
         }
-        // First Esc puts away the point-to-pick or area sheet; the next one
-        // closes the bar.
         if RecordingAreaSelectionPresenter.shared.isActive {
             RecordingAreaSelectionPresenter.shared.cancel()
             return
@@ -301,13 +231,7 @@ private final class RecordingBarHostingView<Content: View>: NSHostingView<Conten
         false
     }
 
-    /// The panel is much larger than the bar - fixed size, so a morph never
-    /// resizes the window, plus slack for tooltips and shadows. AppKit
-    /// hit-tests by view bounds, not alpha, so without this all that empty
-    /// space would silently swallow clicks meant for whatever is behind it.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // SwiftUI reports a top-left origin, and NSHostingView is flipped, so
-        // the two agree without conversion.
         guard RecordingBarPresenter.shared.containsPanelPoint(convert(point, from: superview)) else {
             return nil
         }
@@ -315,25 +239,17 @@ private final class RecordingBarHostingView<Content: View>: NSHostingView<Conten
     }
 }
 
-// MARK: - Bar
 
 private struct RecordingBarView: View {
     @State private var presenter = RecordingBarPresenter.shared
     @State private var area = RecordingAreaSelectionPresenter.shared
     @State private var tooltip = BarTooltipModel()
-    /// The control row's width, which the teleprompter matches so opening
-    /// it grows the bar upward only.
     @State private var rowWidth: CGFloat = 0
     @AppStorage(UpshotPreferences.includeAppWindowsInCapturesKey)
     private var includeAppWindowsInCaptures = false
 
     var body: some View {
         bar
-            // The panel is a fixed size both modes sit inside, so a morph only
-            // ever changes the bar's own width - never the window's. The bar
-            // sits at the bottom: the slack above it is the tooltip's room,
-            // the slack below holds the reminder and its shadow. Reserving
-            // it in both modes keeps the bar stationary when it disappears.
             .padding(.bottom, BarMetrics.bottomSlack)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .coordinateSpace(.named(BarCoordinateSpace.panel))
@@ -358,8 +274,6 @@ private struct RecordingBarView: View {
 
             controlRow
         }
-        // Clipped to the same shape the glass takes, so a morph reveals and
-        // hides content behind the moving edge instead of letting it spill.
         .clipShape(barShape)
         .glassEffect(.regular, in: barShape)
         .overlay {
@@ -372,8 +286,6 @@ private struct RecordingBarView: View {
                     .offset(y: BarMetrics.visibilityBannerHeight - BarMetrics.visibilityBannerOverlap)
             }
         }
-        // The area controls are a pill of their own hanging off the bar's
-        // trailing end, so choosing Area never reshapes or moves the bar.
         .overlay(alignment: .bottomTrailing) {
             if presenter.mode == .picker && area.isActive {
                 RecordingAreaBarPill()
@@ -392,15 +304,10 @@ private struct RecordingBarView: View {
                     }
             }
         }
-        // The tooltip rides on the control row, outside the clip, so it
-        // floats just above the controls whether or not the bar is unfolded.
         .overlay(alignment: .bottom) {
             tooltipLayer.frame(height: BarMetrics.height)
         }
-        // Controls report their frames here for the tooltip, which is laid
-        // out over the bar - including the area pill's, beyond its end.
         .coordinateSpace(.named(BarCoordinateSpace.bar))
-        // Satellite windows anchor to the bar itself, excluding the reminder.
         .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .named(BarCoordinateSpace.panel))
         } action: {
@@ -410,8 +317,6 @@ private struct RecordingBarView: View {
 
     private var controlRow: some View {
         HStack(spacing: 0) {
-            // The controls fill the bar edge to edge, so the background never
-            // shows to drag by; the grip is somewhere to take hold of it.
             BarDragHandle()
 
             Group {
@@ -422,10 +327,6 @@ private struct RecordingBarView: View {
                     RecordingSessionControls()
                 }
             }
-            // The outgoing controls leave instantly so the bar starts
-            // narrowing immediately; a fading-out set would hold its layout
-            // width and the bar would visibly bulge to fit both before
-            // collapsing.
             .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
         .padding(.leading, 2)
@@ -472,9 +373,6 @@ private struct RecordingBarView: View {
         )
     }
 
-    /// Positioned off the hovered control's measured frame rather than a
-    /// hardcoded index, so it keeps tracking when the bar's contents change -
-    /// a mode swap, or the display picker becoming a menu on a second monitor.
     private var tooltipLayer: some View {
         GeometryReader { _ in
             if let target = tooltip.visible {
@@ -486,9 +384,6 @@ private struct RecordingBarView: View {
             }
         }
         .allowsHitTesting(false)
-        // Keyed on the id as well as the text so sliding the pointer along
-        // the bar glides the pill from control to control rather than
-        // cross-fading it in place.
         .animation(.easeOut(duration: 0.12), value: tooltip.visible?.id)
         .animation(.easeOut(duration: 0.12), value: tooltip.visible?.text)
     }

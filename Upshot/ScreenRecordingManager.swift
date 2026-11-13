@@ -168,9 +168,7 @@ final class ScreenRecordingManager {
 
         CaptureShelfPresenter.shared.setTargetDisplay(targetDisplayID)
         RecordingControlPresenter.shared.show(displayID: targetDisplayID)
-        if case .area(let display, let rect) = source.kind {
-            RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
-        }
+        RecordingAreaHighlightPresenter.shared.show(source: source)
 
         Task {
             do {
@@ -618,6 +616,7 @@ final class ScreenRecordingManager {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
             Task { @MainActor in
                 ScreenRecordingManager.shared.updateElapsedTime()
+                RecordingAreaHighlightPresenter.shared.update()
             }
         }
     }
@@ -639,6 +638,7 @@ final class ScreenRecordingManager {
     }
 
     private func cleanupAfterRecording() {
+        RecordingAreaHighlightPresenter.shared.hide()
         timer?.invalidate()
         timer = nil
         capture.onVideoFrame = nil
@@ -857,7 +857,7 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
         try await stream.stopCapture()
     }
 
-    static func displayFilter(
+    @MainActor static func displayFilter(
         display: SCDisplay,
         content: SCShareableContent,
         includesAppWindows: Bool
@@ -868,6 +868,14 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
                 application.bundleIdentifier == Bundle.main.bundleIdentifier
             }
 
+        if includesAppWindows {
+            let excludedWindowIDs = RecordingAreaHighlightPresenter.shared.windowIDs
+            return SCContentFilter(
+                display: display,
+                including: content.applications,
+                exceptingWindows: content.windows.filter { excludedWindowIDs.contains($0.windowID) }
+            )
+        }
         return SCContentFilter(
             display: display,
             excludingApplications: excludedApps,
