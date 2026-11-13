@@ -5,7 +5,7 @@ struct VideoSettingsPane: View {
     @AppStorage(UpshotPreferences.revealExportInFinderKey) private var revealExportInFinder = true
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
             CaptureHotkeySettingsSection(actions: [.screenRecording])
 
             LiveRecordingSettingsSection()
@@ -16,7 +16,7 @@ struct VideoSettingsPane: View {
 
             Section("After Export") {
                 Toggle(isOn: $revealExportInFinder) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Reveal in Finder",
                         detail: "Select the exported file in Finder once the render finishes."
                     )
@@ -26,11 +26,11 @@ struct VideoSettingsPane: View {
 
             Section("Projects") {
                 LabeledContent {
-                    SettingsButton("Open Library", systemImage: "square.grid.2x2") {
+                    InterfaceActionButton("Open Library", systemImage: "square.grid.2x2") {
                         CaptureLibraryModel.shared.show(filter: .recordings)
                     }
                 } label: {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Recording projects",
                         detail: "Reopen a past recording with every edit intact."
                     )
@@ -48,14 +48,14 @@ struct OverlaySettingsPane: View {
     private let autoCloseOptions: [Int] = [0, 5, 10, 30, 60]
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
             Section("Capture Cards") {
                 Picker(selection: $previewPositionRaw) {
                     ForEach(PreviewOverlayPosition.allCases) { position in
                         Text(position.title).tag(position.rawValue)
                     }
                 } label: {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Screen edge",
                         detail: "The edge capture cards dock to after a screenshot or recording. Tucked away, they leave a handle there."
                     )
@@ -66,14 +66,14 @@ struct OverlaySettingsPane: View {
                         Text(seconds == 0 ? "Never" : "\(seconds) seconds").tag(seconds)
                     }
                 } label: {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Auto-close",
                         detail: "Dismiss a card after this delay, unless you're using it."
                     )
                 }
 
                 Toggle(isOn: $closeAfterDragging) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Close after dragging",
                         detail: "Dismiss a card once you drag it out to another app."
                     )

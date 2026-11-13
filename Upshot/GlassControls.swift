@@ -1,44 +1,17 @@
-//
-//  GlassControls.swift
-//  Upshot
-//
-//  Liquid Glass building blocks for chrome: editor toolbars and docks, the
-//  floating recording bar, HUDs, the Library's action bar and Settings'
-//  buttons. Each control is one glass shape; callers group them in a
-//  `GlassEffectContainer` and give each a `glassEffectID` so controls that
-//  appear or leave are born out of, and melt back into, their neighbours
-//  instead of fading in place.
-//
-//  The container's spacing must stay below the resting gap between shapes:
-//  glass closer than the container spacing merges, so a wider resting gap is
-//  what lets a shape settle as its own clean capsule after the morph.
-//
-//  A selected or prominent control is filled with the system accent
-//  (`Palette.accent`, called "inked" below); every other control is clear
-//  glass with label-colored glyphs.
-//
 
 import AppKit
 import SwiftUI
 
 enum GlassMetrics {
-    /// Glass closer than this melts together while shapes move.
     static let containerSpacing: CGFloat = 6
-    /// Resting gap between neighbouring glass shapes; wider than
-    /// `containerSpacing` so settled shapes stand apart.
     static let gap: CGFloat = 8
-    /// Small icon buttons in docks and floating bars.
     static let buttonSize: CGFloat = 30
-    /// Compact buttons inside forms and lists.
     static let compactHeight: CGFloat = 26
-    /// Primary actions, such as an inspector footer's export capsule.
     static let actionHeight: CGFloat = 34
-    /// Glyph size inside a `buttonSize` control.
     static let symbolSize: CGFloat = 12
 }
 
 private extension Glass {
-    /// Clear glass, accent glass when selected or prominent, or a functional tint.
     static func upshot(isInked: Bool, tint: Color?, isEnabled: Bool) -> Glass {
         var glass = Glass.regular
         if let tint {
@@ -56,18 +29,13 @@ private func glassForeground(isInked: Bool, tint: Color?, isEnabled: Bool) -> Co
     return isEnabled ? Palette.label : Palette.disabledLabel
 }
 
-// MARK: - Buttons
 
-/// A round glass icon button. `isOn` inks it solid, for the selected tool in
-/// a dock. Disabled buttons keep their glass but drop the interactive press
-/// response and dim their glyph.
 struct GlassIconButton: View {
     let systemImage: String
     let help: String
     var size: CGFloat = GlassMetrics.buttonSize
     var symbolSize: CGFloat = GlassMetrics.symbolSize
     var isOn = false
-    /// A functional color such as `Palette.record`; wins over `isOn`.
     var tint: Color? = nil
     let action: () -> Void
 
@@ -90,14 +58,11 @@ struct GlassIconButton: View {
     }
 }
 
-/// A glass capsule holding an optional icon and a title. `isProminent` inks
-/// it solid for the one primary action of a surface.
 struct GlassCapsuleButton: View {
     let title: String
     var systemImage: String? = nil
     var height: CGFloat = GlassMetrics.buttonSize
     var isProminent = false
-    /// A functional color such as `Palette.record`; wins over `isProminent`.
     var tint: Color? = nil
     let action: () -> Void
 
@@ -127,8 +92,6 @@ struct GlassCapsuleButton: View {
     }
 }
 
-/// A glass capsule that opens a menu, drawn like `GlassCapsuleButton` with a
-/// quiet chevron so it reads as a choice rather than an action.
 struct GlassMenuButton<Content: View>: View {
     let title: String
     var systemImage: String? = nil
@@ -169,9 +132,6 @@ struct GlassMenuButton<Content: View>: View {
     }
 }
 
-/// An action whose glyph confirms it: the icon blurs into a check for a
-/// moment after the action runs, then settles back. For Copy and friends,
-/// where the result is otherwise invisible.
 struct GlassConfirmButton: View {
     let systemImage: String
     let help: String
@@ -202,21 +162,12 @@ struct GlassConfirmButton: View {
     }
 }
 
-// MARK: - Action capsule
 
-/// A primary action that carries its own job. Idle it reads as a button;
-/// running, the capsule fills with ink as its own progress bar and offers
-/// Cancel on hover; when the job lands it flashes a check in green before
-/// settling back. Collapsed, it folds to an icon-only circle so a sibling
-/// action can take the room.
 struct GlassActionCapsule: View {
     let title: String
     let systemImage: String
-    /// Nil while idle; the job's 0...1 progress while it runs.
     var progress: Double? = nil
-    /// Names the running stage ahead of the percentage, e.g. "Uploading".
     var stage: String? = nil
-    /// A transient success message, shown with a check on green glass.
     var flash: String? = nil
     var isProminent = false
     var isCollapsed = false
@@ -244,8 +195,6 @@ struct GlassActionCapsule: View {
                     label.foregroundStyle(baseInk)
 
                     if isRunning {
-                        // The same label in reverse ink, revealed only over
-                        // the filled part of the capsule.
                         label
                             .foregroundStyle(Palette.onAccent)
                             .mask(alignment: .leading) {
@@ -338,9 +287,7 @@ struct GlassActionCapsule: View {
     }
 }
 
-// MARK: - Small pieces
 
-/// One keyboard key drawn as a small glass cap.
 struct KeyCap: View {
     let label: String
     var isSmall = false
@@ -355,7 +302,6 @@ struct KeyCap: View {
     }
 }
 
-/// A shortcut as a row of key caps that melt together.
 struct KeyCaps: View {
     let tokens: [String]
     var isSmall = false
@@ -373,7 +319,6 @@ struct KeyCaps: View {
     }
 }
 
-/// A quiet pill label, e.g. "Edited" or "Draft".
 struct Tag: View {
     let text: String
     var systemImage: String? = nil
@@ -395,7 +340,6 @@ struct Tag: View {
     }
 }
 
-/// A small status light, e.g. a setting that needs attention.
 struct StatusDot: View {
     var color: Color = Palette.success
 
@@ -407,22 +351,7 @@ struct StatusDot: View {
     }
 }
 
-// MARK: - HUD surface
 
-extension View {
-    /// The surface of floating HUDs and toasts: Liquid Glass with a hairline
-    /// so it keeps its edge over content of the same brightness.
-    func glassHUD(radius: CGFloat = Radius.hud) -> some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return glassEffect(.regular, in: shape)
-            .overlay { shape.strokeBorder(Color.ink.opacity(0.10), lineWidth: 0.5).allowsHitTesting(false) }
-    }
-}
-
-// MARK: - Empty state
-
-/// What a surface shows when it has nothing yet: a glyph on glass, a title,
-/// one line of guidance and the actions that fill it.
 struct EmptyStateView<Actions: View>: View {
     let systemImage: String
     let title: String

@@ -48,10 +48,10 @@ struct MCPSettingsPane: View {
     }
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
             Section("AI Agents") {
                 Toggle(isOn: $agentServerEnabled) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Allow AI agents",
                         detail: "Let Claude Code, Codex, and other MCP clients read, edit, and export your recordings. Everything stays on this Mac."
                     )
@@ -75,7 +75,7 @@ struct MCPSettingsPane: View {
                                     .textSelection(.enabled)
                             }
                             Spacer(minLength: 8)
-                            SettingsButton(
+                            InterfaceActionButton(
                                 copiedSetup == setup ? "Copied" : "Copy",
                                 systemImage: copiedSetup == setup ? "checkmark" : "doc.on.doc"
                             ) {

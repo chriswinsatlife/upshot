@@ -24,7 +24,7 @@ struct SettingsAboutPane: View {
     }
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
             Section {
                 VStack(spacing: Space.l) {
                     Image(nsImage: NSApp.applicationIconImage)
@@ -46,7 +46,7 @@ struct SettingsAboutPane: View {
 
                     GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
                         HStack(spacing: GlassMetrics.gap) {
-                            SettingsButton("Check for Updates", systemImage: "arrow.down.circle", isProminent: true) {
+                            InterfaceActionButton("Check for Updates", systemImage: "arrow.down.circle") {
                                 updaterManager.checkForUpdates()
                             }
                             .disabled(!updaterManager.canCheckForUpdates)
@@ -63,7 +63,7 @@ struct SettingsAboutPane: View {
                     get: { updaterManager.automaticallyChecksForUpdates },
                     set: { updaterManager.automaticallyChecksForUpdates = $0 }
                 )) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Check for updates automatically",
                         detail: "Upshot looks for a new version in the background and asks before installing it."
                     )

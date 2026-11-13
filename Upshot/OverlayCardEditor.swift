@@ -76,7 +76,7 @@ struct OverlayCardEditor: View {
     }
 
     private var footer: some View {
-        SettingsButton("Reset to Default", systemImage: "arrow.uturn.backward") {
+        InterfaceActionButton("Reset to Default", systemImage: "arrow.uturn.backward") {
             withAnimation(.morphIfAllowed) {
                 store.reset()
             }

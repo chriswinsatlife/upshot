@@ -34,7 +34,7 @@ struct CloudSettingsPane: View {
     }
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
 
             Section {
                 HStack(spacing: 12) {
@@ -80,7 +80,7 @@ struct CloudSettingsPane: View {
                 }
 
                 HStack(spacing: 8) {
-                    SettingsButton(
+                    InterfaceActionButton(
                         tokenCopied ? "Copied" : "Copy Token",
                         systemImage: tokenCopied ? "checkmark" : "doc.on.doc"
                     ) {
@@ -89,7 +89,7 @@ struct CloudSettingsPane: View {
                     .disabled(uploadToken.isEmpty)
                     .motion(.morphQuick, value: tokenCopied)
 
-                    SettingsButton("Regenerate", systemImage: "arrow.triangle.2.circlepath") {
+                    InterfaceActionButton("Regenerate", systemImage: "arrow.triangle.2.circlepath") {
                         regenerateToken()
                     }
 
@@ -98,7 +98,7 @@ struct CloudSettingsPane: View {
                     if case .checking = workerStatus {
                         connectionStatusIndicator(workerStatus)
                     }
-                    SettingsButton(
+                    InterfaceActionButton(
                         workerStatus == .connected ? "Connected" : "Verify Connection",
                         systemImage: workerStatus == .connected ? "checkmark.circle.fill" : "bolt.horizontal"
                     ) {
@@ -136,7 +136,7 @@ struct CloudSettingsPane: View {
                             }
                         }
                         Spacer()
-                        SettingsButton("How to Update") {
+                        InterfaceActionButton("How to Update") {
                             if let url = URL(string: updateGuideURL) {
                                 NSWorkspace.shared.open(url)
                             }
@@ -199,7 +199,7 @@ struct CloudSettingsPane: View {
                 HStack {
                     Text("Setup Guide")
                     Spacer()
-                    SettingsButton("View on GitHub") {
+                    InterfaceActionButton("View on GitHub") {
                         if let url = URL(string: "https://github.com/fayazara/screendrop-worker") {
                             NSWorkspace.shared.open(url)
                         }

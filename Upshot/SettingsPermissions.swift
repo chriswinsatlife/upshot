@@ -2,63 +2,6 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-struct SettingsPage<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        Form { content() }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.top, 8, for: .scrollContent)
-            .toggleStyle(.ink)
-    }
-}
-
-struct SettingsControlLabel: View {
-    let title: String
-    let detail: String
-
-    init(_ title: String, detail: String) {
-        self.title = title
-        self.detail = detail
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-struct SettingsButton: View {
-    let title: String
-    var systemImage: String? = nil
-    var isProminent = false
-    let action: () -> Void
-
-    init(_ title: String, systemImage: String? = nil, isProminent: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = systemImage
-        self.isProminent = isProminent
-        self.action = action
-    }
-
-    var body: some View {
-        GlassCapsuleButton(
-            title: title,
-            systemImage: systemImage,
-            height: GlassMetrics.compactHeight,
-            isProminent: isProminent,
-            action: action
-        )
-        .fixedSize()
-    }
-}
-
 @MainActor
 @Observable
 final class SettingsPermissions {
@@ -177,7 +120,7 @@ struct SettingsPermissionRow: View {
                 .foregroundStyle(granted ? Palette.label : (kind.isRequired ? Palette.warning : Palette.secondaryLabel))
                 .frame(width: 22)
 
-            SettingsControlLabel(kind.title, detail: kind.detail)
+            InterfaceRowLabel(kind.title, detail: kind.detail)
 
             Spacer(minLength: 8)
 
@@ -188,7 +131,7 @@ struct SettingsPermissionRow: View {
                         .foregroundStyle(.secondary)
                         .transition(.blurPop)
                 } else {
-                    SettingsButton("Allow", isProminent: kind.isRequired) {
+                    InterfaceActionButton("Allow") {
                         permissions.request(kind)
                     }
                     .transition(.blurPop)

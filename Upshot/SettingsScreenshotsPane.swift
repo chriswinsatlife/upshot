@@ -24,7 +24,7 @@ struct ScreenshotsSettingsPane: View {
     }
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
             CaptureHotkeySettingsSection(actions: [.allInOne, .fullscreen, .window, .area, .previousArea, .smartElement, .scrollingCapture, .textCapture])
 
             Section("Capture") {
@@ -33,14 +33,14 @@ struct ScreenshotsSettingsPane: View {
                         Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
                     }
                 } label: {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Self-timer",
                         detail: "Show a countdown before the capture is taken."
                     )
                 }
 
                 Toggle(isOn: $captureWindowShadow) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Capture window shadow",
                         detail: "Include the window's drop shadow when capturing a window."
                     )
@@ -48,7 +48,7 @@ struct ScreenshotsSettingsPane: View {
                 .toggleStyle(.ink)
 
                 Toggle(isOn: $trimFullscreenMenuBar) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Trim menu bar from fullscreen captures",
                         detail: "On notched Macs, removes the empty black bar at the top of a fullscreen capture. A visible menu bar is kept."
                     )
@@ -70,14 +70,14 @@ struct ScreenshotsSettingsPane: View {
                         Text(tool.title).tag(tool.rawValue)
                     }
                 } label: {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Starting tool",
                         detail: "The tool picked when the editor opens."
                     )
                 }
 
                 Toggle(isOn: $lowResolutionEditorPreview) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Use low-resolution preview to save memory",
                         detail: "Shows a downscaled image while editing to reduce memory use. Saved and exported screenshots are always full resolution."
                     )

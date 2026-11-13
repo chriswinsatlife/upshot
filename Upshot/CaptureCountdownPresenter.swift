@@ -182,7 +182,7 @@ struct CaptureCountdownView: View {
             .help("Cancel countdown (Esc)")
         }
         .frame(width: Self.size, height: Self.size)
-        .glassHUD()
+        .interfacePanelSurface(cornerRadius: Radius.hud)
         .padding(Self.shadowSlack)
         .onAppear { drain(from: model.remaining) }
         .onChange(of: model.remaining) { _, value in drain(from: value) }

@@ -28,7 +28,7 @@ struct TextRecognitionSettingsSection: View {
             Toggle("Keep line breaks", isOn: $keepLineBreaks)
                 .toggleStyle(.ink)
             Toggle(isOn: $detectLinks) {
-                SettingsControlLabel("Detect links", detail: "Offer to open links found in recognized text and QR codes or barcodes.")
+                InterfaceRowLabel("Detect links", detail: "Offer to open links found in recognized text and QR codes or barcodes.")
             }
             .toggleStyle(.ink)
         }

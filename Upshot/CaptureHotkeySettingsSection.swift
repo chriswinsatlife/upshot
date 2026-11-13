@@ -42,9 +42,9 @@ struct CaptureHotkeySettingsSection: View {
                         }
 
                         if shortcut(for: action) != nil, !isRecording(action) {
-                            SettingsButton("Clear") { apply(nil, to: action) }
+                            InterfaceActionButton("Clear") { apply(nil, to: action) }
                         }
-                        SettingsButton(isRecording(action) ? "Cancel" : "Record") {
+                        InterfaceActionButton(isRecording(action) ? "Cancel" : "Record") {
                             toggleRecording(for: action)
                         }
                     }

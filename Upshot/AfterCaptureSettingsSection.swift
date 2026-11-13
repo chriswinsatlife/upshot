@@ -35,7 +35,7 @@ private struct AfterCaptureToggleRow: View {
 
     var body: some View {
         Toggle(isOn: $isOn) {
-            SettingsControlLabel(title, detail: subtitle)
+            InterfaceRowLabel(title, detail: subtitle)
         }
         .toggleStyle(.ink)
         .disabled(action == .upload && !isOn && !CloudCredentialStore.shared.isConfigured)
@@ -47,7 +47,7 @@ private struct AfterCaptureToggleRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                SettingsButton("Set Up Cloud…") { SettingsWindowController.show(tab: .cloud) }
+                InterfaceActionButton("Set Up Cloud…") { SettingsWindowController.show(tab: .cloud) }
             }
         }
     }

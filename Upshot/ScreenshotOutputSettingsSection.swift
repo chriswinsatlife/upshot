@@ -40,7 +40,7 @@ struct ScreenshotOutputSettingsSection: View {
                     Text(mode.title).tag(mode.rawValue)
                 }
             }
-            SettingsButton("Toggle Desktop Icons") {
+            InterfaceActionButton("Toggle Desktop Icons") {
                 do {
                     try DesktopIconVisibilityService.toggleDesktopIcons()
                     desktopIconError = nil
@@ -78,7 +78,7 @@ struct ScreenshotOutputSettingsSection: View {
             }
             if windowBackground == WindowScreenshotBackgroundMode.customWallpaper.rawValue {
                 LabeledContent("Wallpaper") {
-                    SettingsButton(windowWallpaperPath.isEmpty ? "Choose Image…" : URL(fileURLWithPath: windowWallpaperPath).lastPathComponent) {
+                    InterfaceActionButton(windowWallpaperPath.isEmpty ? "Choose Image…" : URL(fileURLWithPath: windowWallpaperPath).lastPathComponent) {
                         let panel = NSOpenPanel()
                         panel.allowedContentTypes = [.image]
                         panel.allowsMultipleSelection = false

@@ -32,20 +32,20 @@ enum StateRenderCatalog {
             }
         }
         add("settings-shortcuts-expanded", "CaptureHotkeySettingsSection", "struct CaptureHotkeySettingsSection", 860, 4200) {
-            AnyView(SettingsPage { CaptureHotkeySettingsSection(actions: CaptureHotkeyAction.allCases) }.environment(SettingsPermissions()))
+            AnyView(InterfaceFormPage { CaptureHotkeySettingsSection(actions: CaptureHotkeyAction.allCases) }.environment(SettingsPermissions()))
         }
         let sections: [(String, String, () -> AnyView)] = [
-            ("area-selection", "AreaSelectionSettingsSection", { AnyView(SettingsPage { AreaSelectionSettingsSection() }) }),
-            ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(SettingsPage { ScreenshotOutputSettingsSection() }) }),
-            ("text-recognition", "TextRecognitionSettingsSection", { AnyView(SettingsPage { TextRecognitionSettingsSection() }) }),
-            ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(SettingsPage { AnnotationEditorSettingsSection() }) }),
-            ("capture-history", "CaptureHistorySettingsSection", { AnyView(SettingsPage { CaptureHistorySettingsSection() }) }),
-            ("live-recording", "LiveRecordingSettingsSection", { AnyView(SettingsPage { LiveRecordingSettingsSection() }) }),
-            ("recording-export", "RecordingExportSettingsSection", { AnyView(SettingsPage { RecordingExportSettingsSection() }) }),
-            ("quick-access", "QuickAccessSettingsSection", { AnyView(SettingsPage { QuickAccessSettingsSection() }) }),
-            ("after-screenshot", "AfterCaptureSettingsSection", { AnyView(SettingsPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
-            ("after-recording", "AfterCaptureSettingsSection", { AnyView(SettingsPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) }),
-            ("configuration", "AutomationSettingsSection", { AnyView(SettingsPage { AutomationSettingsSection() }) })
+            ("area-selection", "AreaSelectionSettingsSection", { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
+            ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection() }) }),
+            ("text-recognition", "TextRecognitionSettingsSection", { AnyView(InterfaceFormPage { TextRecognitionSettingsSection() }) }),
+            ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(InterfaceFormPage { AnnotationEditorSettingsSection() }) }),
+            ("capture-history", "CaptureHistorySettingsSection", { AnyView(InterfaceFormPage { CaptureHistorySettingsSection() }) }),
+            ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
+            ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
+            ("quick-access", "QuickAccessSettingsSection", { AnyView(InterfaceFormPage { QuickAccessSettingsSection() }) }),
+            ("after-screenshot", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
+            ("after-recording", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) }),
+            ("configuration", "AutomationSettingsSection", { AnyView(InterfaceFormPage { AutomationSettingsSection() }) })
         ]
         for (name, source, view) in sections {
             add("settings-section-\(name)-expanded", source, "struct ", 860, name == "screenshot-output" ? 1450 : 900) {

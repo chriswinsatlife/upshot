@@ -33,7 +33,7 @@ struct GeneralSettingsPane: View {
     @Environment(SettingsPermissions.self) private var permissions
 
     var body: some View {
-        SettingsPage {
+        InterfaceFormPage {
             CaptureHistorySettingsSection()
 
             AutomationSettingsSection()
@@ -69,14 +69,14 @@ struct GeneralSettingsPane: View {
                         .transition(.blurPop)
                     }
 
-                    SettingsButton("Change…") {
+                    InterfaceActionButton("Change…") {
                         chooseExportDirectory()
                     }
                 }
                 .motion(value: exportDirectoryPath.isEmpty)
 
                 Toggle(isOn: saveButtonUsesFolderBinding) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Save without choosing a location",
                         detail: "When you click Save, write straight to the export folder instead of asking where to put it."
                     )
@@ -86,7 +86,7 @@ struct GeneralSettingsPane: View {
 
             Section("Library") {
                 Toggle(isOn: $analyzeCaptures) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Analyze captures",
                         detail: "Read the text in screenshots and recordings so search can find it, and sort new captures into categories. Everything runs on this Mac."
                     )
@@ -95,7 +95,7 @@ struct GeneralSettingsPane: View {
 
                 if analyzeCaptures, CaptureLibraryAnalyzer.isModelAvailable {
                     Toggle(isOn: $sortExistingCaptures) {
-                        SettingsControlLabel(
+                        InterfaceRowLabel(
                             "Sort existing captures",
                             detail: "Use Apple Intelligence on captures taken before sorting was turned on. It works in the background and can take an hour or more for a large Library."
                         )
@@ -110,7 +110,7 @@ struct GeneralSettingsPane: View {
 
             Section("System") {
                 Toggle(isOn: launchAtLoginBinding) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Launch at login",
                         detail: "Start Upshot automatically when you sign in."
                     )
@@ -128,7 +128,7 @@ struct GeneralSettingsPane: View {
                 }
 
                 Toggle(isOn: $playSounds) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Play sounds",
                         detail: "Play the camera shutter sound when a screenshot is taken."
                     )
@@ -136,7 +136,7 @@ struct GeneralSettingsPane: View {
                 .toggleStyle(.ink)
 
                 Toggle(isOn: $showMenuBarIcon) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Show menu bar icon",
                         detail: "When hidden, reopen Upshot to get back to Settings."
                     )
@@ -144,7 +144,7 @@ struct GeneralSettingsPane: View {
                 .toggleStyle(.ink)
 
                 Toggle(isOn: $hideDockIcon) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Hide Dock icon",
                         detail: "Keep Upshot out of the Dock and Cmd-Tab, even while its windows are open. The menu bar won't show Upshot's menus."
                     )
@@ -154,7 +154,7 @@ struct GeneralSettingsPane: View {
 
             Section("Capture Visibility") {
                 Toggle(isOn: $includeAppWindowsInCaptures) {
-                    SettingsControlLabel(
+                    InterfaceRowLabel(
                         "Include Upshot windows in captures",
                         detail: "Show preview cards, recording controls, Settings, and other Upshot windows in screenshots and screen recordings."
                     )

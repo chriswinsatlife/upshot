@@ -9,11 +9,11 @@ struct AutomationSettingsSection: View {
             Text("Preferences and shortcuts synchronize with ~/.config/upshot/config.toml.")
                 .foregroundStyle(.secondary)
             HStack {
-                SettingsButton("Reveal Configuration") {
+                InterfaceActionButton("Reveal Configuration") {
                     AutomationConfiguration.shared.synchronize()
                     NSWorkspace.shared.activateFileViewerSelecting([UpshotPreferences.configurationFileURL])
                 }
-                SettingsButton("Reload Configuration") {
+                InterfaceActionButton("Reload Configuration") {
                     do {
                         try AutomationConfiguration.shared.reload()
                         errorMessage = nil

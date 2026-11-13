@@ -176,6 +176,6 @@ struct CaptureTextFeedbackView: View {
         }
         .padding(.horizontal, 11)
         .frame(width: size.width, height: size.height)
-        .glassHUD(radius: size.height / 2)
+        .interfacePanelSurface(cornerRadius: size.height / 2)
     }
 }
