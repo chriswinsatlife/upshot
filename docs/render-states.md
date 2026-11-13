@@ -32,7 +32,7 @@ Unknown names and invalid arguments return a nonzero exit status. Each image use
 
 ## Display Frames
 
-Every image is one display-sized frame of 1728 by 1117 points at two pixels per point (3456 by 2234 pixels). The main display must be at least that size at 2x; the renderer fails otherwise.
+Every image is one display-sized frame of 1728 by 1117 points at two pixels per point (3456 by 2234 pixels). The main display must be at least that size at 2x; the renderer fails otherwise. The `selector-all-in-one-narrow` state uses an 800 by 600 point frame (1600 by 1200 pixels), because the All-In-One toolbar stacks its size fields only on a display narrower than `AllInOneCaptureToolbar.singleRowMinimumWidth` (820 points).
 
 The wallpaper is the macOS Tahoe default, read from the Neptune One wallpaper extension because the Desktop Pictures folder does not contain the Tahoe images:
 
@@ -45,8 +45,8 @@ The square image fills the display and is centered, as the desktop shows it. The
 
 - Settings, Library, Annotate, Studio, Quick Look, and the style gallery use titled windows with the product's style mask and toolbar style, centered with `NSWindow.center()`. Settings has a 700 by 540 content area; Library 1180 by 760; Annotate 1100 by 760; Studio 1360 by 860. These sizes exclude the toolbar, so Settings is 700 by 592 like its autosaved product frame.
 - Floating UI uses a borderless panel at the frame its presenter computes. The presenters expose their frame math as static functions: `CaptureShelfPresenter.panelFrame`, `PinnedScreenshotPresenter.cascadedOrigin`, `CaptureHistoryPresenter.panelFrame`, `RecordingBarPresenter.panelFrame`, `CaptureCountdownPresenter.centeredOrigin`, `CaptureTextFeedbackPresenter.origin`, `CaptureCodeFeedbackPresenter.origin`, `TeleprompterOverlayPresenter.panelFrame`, `CameraRecordingManager.previewFrame`, and `ScrollingCaptureControlPanel.panelFrame`. Scrolling capture controls surround a Library window, and recording bar area states sit over the recording area sheet.
-- Selector, recording source, recording area, and live pen states cover the display. Their frozen screen image is the Tahoe wallpaper with the fixture window centered on it.
-- Alerts use the alert content from `NSAlert` in a window with the alert's glass frame style, positioned near the top of the Library, Annotate, or Studio window they belong to, or centered on the display when they belong to no window. AppKit keeps the real `_NSAlertPanel` off the window server outside a modal session, so the renderer removes those two modal style bits.
+- Selector, recording source, recording area, and live pen states cover the display. Their frozen screen image is the Tahoe wallpaper with the fixture window centered on it at whole-point coordinates, scaled down only when the display is narrower than the window plus 64-point margins. `StateRenderDesktop.selectorHighlight` gives the selection each selector mode draws: the fixture window frame for Window and the armed Timer, the fixture window's Recordings card for Element, the whole display for Fullscreen, and for the Capture Area drag a whole-point rectangle with the pointer at its lower-right corner. `AreaSelectionMagnifier.placement` rejects a panel whose rounded frame overlaps the selection, so selections use whole points.
+- Alerts use the alert content from `NSAlert` in a window with the alert's glass frame style, positioned near the top of the Library, Annotate, or Studio window they belong to (the never-saved recording alert belongs to the Studio window), or centered on the display when they belong to no window. AppKit keeps the real `_NSAlertPanel` off the window server outside a modal session, so the renderer removes those two modal style bits.
 - Popover content appears in an `NSGlassEffectView` panel beside the button that opens it in the Annotate or Studio window. The renderer never shows `NSPopover`, because AppKit can move a popover window onto the display before its level can be lowered.
 - Menu bar menu states draw the menu replica on the `.menu` visual effect material below the menu bar area.
 
@@ -83,7 +83,7 @@ The renderer compares the real Application Support tree, configuration directory
 - Annotation editor: every annotation tool, generated annotations, clean image, crop, background inspector, border, camera, progressive blur, color adjustments, watermark, background picker, load failure, and New Style popover.
 - Studio: Look, selected zoom, selected layout, selected text, selected redaction, selected image, selected audio, Captions, transcript editing, crop, export progress, export failure, and share failure; one page per tool rail button (Camera, Zoom, Cursor, Keystrokes, Audio, Clip); video and GIF export options; audio export options; New Style and Share Options popovers.
 - Quick Access: one card, several cards, hover actions, tucked handle, image and video cards, compression and preparation activity, copied link, failed upload, compressed result, and failed action.
-- Pinned screenshots: default, hover toolbar, and square corners.
+- Pinned screenshots: default, hover toolbar, and square corners. In the light appearance, pinned screenshot states show a light window-area crop of the fixture screenshot, so the Border preference's 1-point stroke contrasts with the screenshot edge; the dark appearance shows the full fixture screenshot, whose dark navy edge contrasts with the dark appearance's white stroke.
 - Capture History: every filter and the empty strip.
 - Screenshot selection: area, window, element, crosshair with magnifier, and every All-In-One mode, drawn over a generated image.
 - Scrolling capture: manual ready, automatic ready, running, and finishing controls.
@@ -92,7 +92,7 @@ The renderer compares the real Application Support tree, configuration directory
 - Menu bar: main menu content, capture actions, recording controls, recent captures, and recording projects.
 - App alerts: editor save decisions, Library rename and deletion, cloud deletion, style deletion, watermark import failure, media import failure, capture naming, recording input warnings, recording failures, recording recovery, permission explanations, automation confirmation and failure, screenshots folder failure, and quit decisions.
 
-Quick Look screenshot and recording previews use generated fixture files in an embedded Quick Look view. The native Quick Look panel, macOS file and color chooser panels, and Sparkle update windows remain outside the catalog. Quick Look content uses the embedded preview view. These system and updater presentations do not have fixture-safe adapters in the renderer.
+The Quick Look screenshot preview shows a generated fixture file in an embedded Quick Look view. The embedded Quick Look view draws a movie in an out-of-process `NSRemoteView` whose playback controls appear only under the pointer, so the Quick Look recording preview shows the fixture movie in an `AVPlayerView` with floating controls, paused at the start, in a window titled with the recording's deliverable file name (`RecordingSession.finalURL`). The native Quick Look panel, macOS file and color chooser panels, and Sparkle update windows remain outside the catalog. These system and updater presentations do not have fixture-safe adapters in the renderer.
 
 ## Add a State
 
