@@ -3,6 +3,7 @@ import AppKit
 struct AreaCaptureSelectionResult {
     enum Kind {
         case area
+        case element
         case window(CGWindowID)
     }
 
@@ -33,22 +34,29 @@ final class AreaCaptureSelection {
     private let liveMagnifier = AreaSelectionLiveMagnifier()
     private var active = false
     private var frozen = true
+    private(set) var elementSelection = false
     private(set) var windowSelection = false
     private(set) var start: CGPoint?
     private(set) var pointer = CGPoint.zero
     private(set) var highlightedRect: CGRect?
     private var hoveredWindow: WindowTarget?
 
-    func select() async throws -> AreaCaptureSelectionResult? {
+    func select(smartElement: Bool = false) async throws -> AreaCaptureSelectionResult? {
         guard !active, !Task.isCancelled else { return nil }
         active = true
         defer { active = false; snapshots.removeAll(); windows.removeAll() }
         frozen = UpshotPreferences.areaSelectionFreezeScreen
         windowSelection = false
+        elementSelection = smartElement
         start = nil
         highlightedRect = nil
         pointer = NSEvent.mouseLocation
         windows = Self.windowTargets()
+        if smartElement && !AreaSelectionAccessibility.hasPermission {
+            AreaSelectionAccessibility.requestPermission()
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Enable Accessibility for smart element capture", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
+        }
         snapshots = try await AreaCaptureSnapshot.captureAll()
         try Task.checkCancellation()
         return await withTaskCancellationHandler {
@@ -85,6 +93,7 @@ final class AreaCaptureSelection {
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.finish(nil) }
         }
+        move(to: pointer)
         if !frozen && UpshotPreferences.areaSelectionMagnifier {
             startLiveMagnifier()
         }
@@ -129,6 +138,9 @@ final class AreaCaptureSelection {
         pointer = point
         if let start {
             highlightedRect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+        } else if elementSelection {
+            hoveredWindow = windows.first { $0.frame.contains(point) }
+            highlightedRect = hoveredWindow.flatMap { AreaSelectionAccessibility.frame(at: point, processID: $0.processID) }
         } else if windowSelection {
             hoveredWindow = windows.first { $0.frame.contains(point) }
             highlightedRect = hoveredWindow?.frame
@@ -138,7 +150,7 @@ final class AreaCaptureSelection {
 
     func mouseDown(at point: CGPoint) {
         move(to: point)
-        guard !windowSelection else { return }
+        guard !windowSelection, !elementSelection else { return }
         start = point
         highlightedRect = nil
         redraw()
@@ -146,6 +158,12 @@ final class AreaCaptureSelection {
 
     func mouseUp(at point: CGPoint) {
         move(to: point)
+        if elementSelection {
+            guard let rect = highlightedRect else { NSSound.beep(); return }
+            NSLog("Smart element selected: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
+            complete(kind: .element, rect: rect)
+            return
+        }
         if windowSelection, let hoveredWindow {
             complete(kind: .window(hoveredWindow.id), rect: hoveredWindow.frame)
         } else if let rect = highlightedRect, rect.width >= 1, rect.height >= 1 {
@@ -161,6 +179,20 @@ final class AreaCaptureSelection {
 
     func keyDown(_ event: NSEvent) {
         switch event.charactersIgnoringModifiers?.lowercased() {
+        case "e":
+            if !AreaSelectionAccessibility.hasPermission {
+                finish(nil)
+                AreaSelectionAccessibility.requestPermission()
+                CaptureTextFeedbackPresenter.shared.showFailure(title: "Enable Accessibility for smart element capture", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+                return
+            }
+            elementSelection.toggle()
+            windowSelection = false
+            start = nil
+            highlightedRect = nil
+            NSLog("Smart element selection changed: enabled=%d", elementSelection)
+            move(to: NSEvent.mouseLocation)
+            return
         case "x":
             UpshotPreferences.areaSelectionCrosshair.toggle()
             NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
@@ -179,6 +211,7 @@ final class AreaCaptureSelection {
         switch event.keyCode {
         case 53: finish(nil)
         case 49:
+            elementSelection = false
             windowSelection.toggle()
             start = nil
             highlightedRect = nil
@@ -309,7 +342,9 @@ private final class AreaCaptureSelectionView: NSView {
                                         showsCrosshair: UpshotPreferences.areaSelectionCrosshair,
                                         showsMagnifier: UpshotPreferences.areaSelectionMagnifier)
         }
-        let text = selector.windowSelection ? "Click a window · Space: area · Esc: cancel" : "Drag across displays · Space: window · Esc: cancel"
+        let text = selector.elementSelection
+            ? (selector.highlightedRect == nil ? "No accessible element here · E: area · Esc: cancel" : "Click element · E: area · Esc: cancel")
+            : selector.windowSelection ? "Click a window · Space: area · E: element · Esc: cancel" : "Drag across displays · Space: window · E: element · Esc: cancel"
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white]
         let size = (text as NSString).size(withAttributes: attributes)
         let rect = CGRect(x: (bounds.width - size.width) / 2 - 16, y: 36, width: size.width + 32, height: 36)

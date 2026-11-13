@@ -36,6 +36,18 @@ final class CaptureCoordinator {
         Task { await performCaptureArea() }
     }
 
+    func captureSmartElement() {
+        Task { await captureSmartElementAwaiting() }
+    }
+
+    @discardableResult
+    func captureSmartElementAwaiting() async -> URL? {
+        guard let url = await ScreenshotManager.shared.captureArea(includeShadow: UpshotPreferences.captureWindowShadow,
+                                                                  delaySeconds: UpshotPreferences.captureDelaySeconds,
+                                                                  smartElement: true) else { return nil }
+        return finishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
+    }
+
     func capturePreviousArea() {
         Task { await capturePreviousAreaAwaiting() }
     }

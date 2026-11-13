@@ -48,9 +48,9 @@ final class ScreenshotManager {
     }
 
 
-    func captureArea(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
+    func captureArea(includeShadow: Bool = false, delaySeconds: Int = 0, smartElement: Bool = false) async -> URL? {
         do {
-            guard let selection = try await AreaCaptureSelection.shared.select() else { return nil }
+            guard let selection = try await AreaCaptureSelection.shared.select(smartElement: smartElement) else { return nil }
             return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
         } catch {
             NSLog("Area capture failed: %@", String(describing: error))
