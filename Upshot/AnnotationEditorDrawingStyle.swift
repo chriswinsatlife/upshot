@@ -1,6 +1,18 @@
 import Foundation
 
 extension AnnotationEditorModel {
+    var objectShadowsEnabled: Bool {
+        _ = revision
+        return engine.selectedShapes.first?.castsShadow ?? UpshotPreferences.annotationObjectShadows
+    }
+
+    func setObjectShadows(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: UpshotPreferences.annotationObjectShadowsKey)
+        engine.applyStyleToSelection { $0.castsShadow = enabled }
+        engine.notifyChanged()
+        NSLog("Annotation object shadows applied enabled=%@ selected=%ld", String(enabled), engine.selectedIds.count)
+    }
+
     var drawingSmoothing: Double {
         _ = revision
         return engine.selectedShapes.first?.drawProps?.smoothing ?? UpshotPreferences.annotationDrawingSmoothing

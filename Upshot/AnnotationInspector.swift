@@ -281,6 +281,11 @@ struct AnnotationEditorInspector: View {
                 .foregroundStyle(.secondary)
         }
 
+        Toggle("Object shadow", isOn: Binding(
+            get: { model.objectShadowsEnabled },
+            set: { model.setObjectShadows($0) }
+        ))
+
         if model.isTextStyleAvailable {
             AnnotationTextStyleControls(model: model)
         } else {

@@ -104,7 +104,7 @@ extension AnnoEditor {
         props.isPen = pointer.isPen
         props.smoothing = UpshotPreferences.annotationDrawingSmoothing
         props.points = [Vec(0, 0, pointer.isPen ? pointer.pressure : 0.5)]
-        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .draw(props))
+        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, castsShadow: UpshotPreferences.annotationObjectShadows, kind: .draw(props))
         document.add(shape)
         setInteraction(.drawing(id: shape.id, origin: pointer.pagePoint))
     }
@@ -133,7 +133,7 @@ extension AnnoEditor {
             kind = .redaction(props)
         }
 
-        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: kind)
+        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, castsShadow: UpshotPreferences.annotationObjectShadows, kind: kind)
         document.add(shape)
         setInteraction(.creatingGeo(id: shape.id, origin: pointer.pagePoint))
     }
@@ -147,7 +147,7 @@ extension AnnoEditor {
         props.arrowheadEnd = tool == .line ? .none : currentArrowheadEnd
         props.start = Vec(0, 0)
         props.end = Vec(0, 0)
-        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .arrow(props))
+        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, castsShadow: UpshotPreferences.annotationObjectShadows, kind: .arrow(props))
         document.add(shape)
         bindTerminal(arrowId: shape.id, terminal: .start, at: pointer.pagePoint, precise: pointer.alt)
         setInteraction(.creatingArrow(id: shape.id))
@@ -163,6 +163,7 @@ extension AnnoEditor {
         let shape = AnnoShape(
             x: pagePoint.x - props.diameter / 2,
             y: pagePoint.y - props.diameter / 2,
+            castsShadow: UpshotPreferences.annotationObjectShadows,
             kind: .numbered(props)
         )
         document.add(shape)
@@ -633,7 +634,7 @@ extension AnnoEditor {
         case .middle: x = pagePoint.x - Double(size.width) / 2
         case .end: x = pagePoint.x - Double(size.width)
         }
-        let shape = AnnoShape(x: x, y: pagePoint.y - Double(size.height) / 2, kind: .text(props))
+        let shape = AnnoShape(x: x, y: pagePoint.y - Double(size.height) / 2, castsShadow: UpshotPreferences.annotationObjectShadows, kind: .text(props))
         document.add(shape)
         selectedIds = [shape.id]
         startEditingText(shape.id)

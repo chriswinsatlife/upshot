@@ -149,6 +149,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
     var y: Double
     var rotation: Double = 0
     var opacity: Double = 1
+    var castsShadow: Bool?
     var kind: AnnoShapeKind
 
     init(
@@ -157,6 +158,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         y: Double,
         rotation: Double = 0,
         opacity: Double = 1,
+        castsShadow: Bool? = nil,
         kind: AnnoShapeKind
     ) {
         self.id = id
@@ -164,6 +166,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         self.y = y
         self.rotation = rotation
         self.opacity = opacity
+        self.castsShadow = castsShadow
         self.kind = kind
     }
 

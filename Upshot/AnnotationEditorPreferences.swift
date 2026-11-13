@@ -1,6 +1,12 @@
 import Foundation
 
 extension UpshotPreferences {
+    static let annotationObjectShadowsKey = "annotationEditor.objectShadows"
+
+    static var annotationObjectShadows: Bool {
+        UserDefaults.standard.bool(forKey: annotationObjectShadowsKey)
+    }
+
     static let annotationDrawingSmoothingKey = "annotationEditor.drawingSmoothing"
 
     static var annotationDrawingSmoothing: Double {

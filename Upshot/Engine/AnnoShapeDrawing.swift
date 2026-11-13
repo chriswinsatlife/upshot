@@ -4,34 +4,12 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
 
-/// Draws a document's shapes into a `CGContext`.
-///
-/// The canvas and the exporter both come through here, differing only in the transform they pass
-/// and the resolution of the screenshot they hand over - which is what makes the preview a true
-/// reduction of the export rather than a second implementation that happens to agree.
-///
-/// Three passes, in this order:
-///  1. Redactions, which transform screenshot pixels and so must sit under everything.
-///  2. The spotlight: one dimming layer over the image with a hole punched per highlight shape.
-///  3. Every other shape, in z-order.
 enum AnnoShapeDrawing {
-    /// Everything a draw needs to know about where the page sits and what it is drawn over.
     struct Target {
-        /// Page space -> context space.
         var transform: CGAffineTransform
-        /// The image's extent in page units.
         var pageSize: CGSize
-        /// The pixels currently under a context-space rect, for redactions to process.
-        ///
-        /// A closure rather than an image because the two callers sample different things: the
-        /// canvas hands back a crop of the screenshot, while the exporter snapshots the composed
-        /// context so a blur picks up the background behind a transparent screenshot too.
         var sample: ((CGRect) -> CGImage?)?
-        /// Clip applied to the spotlight layer, so it follows a rounded screenshot frame.
         var spotlightClip: CGPath?
-        /// True for the canvas, whose `NSView` is flipped, false for the export bitmap. Core
-        /// Graphics lays an image into the rect it is given the same way up either way, so the
-        /// flipped case has to invert it back.
         var isFlippedContext = false
         var redactionPreviewCache: AnnoRedactionPreviewCache? = nil
 
@@ -61,7 +39,6 @@ enum AnnoShapeDrawing {
         }
     }
 
-    // MARK: - One shape
 
     static func drawShape(
         _ shape: AnnoShape,
@@ -75,6 +52,16 @@ enum AnnoShapeDrawing {
         context.saveGState()
         context.concatenate(shape.pageTransform.cgAffineTransform.concatenating(target.transform))
         if shape.opacity < 1 { context.setAlpha(shape.opacity) }
+
+        if shape.castsShadow == true {
+            let scale = hypot(target.transform.a, target.transform.b)
+            context.setShadow(
+                offset: CGSize(width: 0, height: 3 * scale),
+                blur: 6 * scale,
+                color: NSColor.black.withAlphaComponent(0.35).cgColor
+            )
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
 
         for element in elements {
             switch element.content {
@@ -101,14 +88,13 @@ enum AnnoShapeDrawing {
             case let .numbered(props):
                 drawNumbered(props, in: context)
             case .redaction, .spotlight:
-                // Handled by their own passes, which need the screenshot underneath.
                 break
             }
         }
+        if shape.castsShadow == true { context.endTransparencyLayer() }
         context.restoreGState()
     }
 
-    // MARK: - Numbered callout
 
     private static func drawNumbered(_ props: NumberedProps, in context: CGContext) {
         let rect = CGRect(x: 0, y: 0, width: props.diameter, height: props.diameter)
@@ -120,8 +106,6 @@ enum AnnoShapeDrawing {
         context.setLineWidth(outlineWidth)
         context.strokeEllipse(in: rect.insetBy(dx: outlineWidth / 2, dy: outlineWidth / 2))
 
-        // The digits go through the same glyph-outline path text uses, so a rotated callout's
-        // number rotates with it and needs no flipped graphics context.
         let text = String(props.value)
         var textProps = TextProps()
         textProps.text = text
@@ -134,8 +118,6 @@ enum AnnoShapeDrawing {
         let path = TextMeasure.glyphPath(textProps)
         let glyphBounds = path.boundingBoxOfPath
         var transform = CGAffineTransform(
-            // Centre the visible outlines rather than their TextKit line box. The line box carries
-            // asymmetric ascent/descent padding, which makes digits appear slightly low.
             translationX: props.diameter / 2 - glyphBounds.midX,
             y: props.diameter / 2 - glyphBounds.midY
         )
@@ -151,7 +133,6 @@ enum AnnoShapeDrawing {
         return 0.34
     }
 
-    // MARK: - Spotlight
 
     private static func drawSpotlight(_ shapes: [AnnoShape], in context: CGContext, target: Target) {
         guard !shapes.isEmpty else { return }
@@ -176,7 +157,6 @@ enum AnnoShapeDrawing {
         for shape in shapes {
             guard case let .highlight(props) = shape.kind else { continue }
             var transform = shape.pageTransform.cgAffineTransform.concatenating(target.transform)
-            // Built with the transform baked in, so a rotated highlight punches a rotated hole.
             context.addPath(CGPath(
                 rect: CGRect(x: 0, y: 0, width: props.w, height: props.h),
                 transform: &transform
@@ -189,7 +169,6 @@ enum AnnoShapeDrawing {
         context.restoreGState()
     }
 
-    // MARK: - Redaction
 
     private static func drawRedaction(
         _ shape: AnnoShape,
@@ -199,9 +178,6 @@ enum AnnoShapeDrawing {
     ) {
         guard case let .redaction(props) = shape.kind, let sample = target.sample else { return }
 
-        // Sample the axis-aligned bounding box in context space, process it upright, then lay it
-        // back down clipped to the shape's own rotated rect. A rotated blur then blurs the pixels
-        // it actually covers rather than smearing along the screen axes.
         let localRect = CGRect(x: 0, y: 0, width: props.w, height: props.h)
         let full = shape.pageTransform.cgAffineTransform.concatenating(target.transform)
         let contextBounds = localRect.applying(full).integral
@@ -227,7 +203,6 @@ enum AnnoShapeDrawing {
         context.saveGState()
         context.concatenate(full)
         context.clip(to: localRect)
-        // Back to context space, where the sampled rect is axis-aligned.
         context.concatenate(full.inverted())
         context.interpolationQuality = props.kind == .pixelate ? .none : .high
         if target.isFlippedContext {
