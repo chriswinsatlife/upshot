@@ -27,9 +27,7 @@ nonisolated enum ScreenshotPixelProcessor {
             throw CocoaError(.fileReadCorruptFile)
         }
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
-        let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
-        let scale = sourceScale.flatMap { $0.isFinite && $0 >= 1 ? $0 : nil }
-            ?? max(1, dpi / 72)
+        let scale = Self.sourceScale(properties: properties, override: sourceScale)
         let outputScale: CGFloat = options.scaleToOneX ? 1 : scale
         var outputImage = try process(image: image, sourceScale: scale, options: options)
         if options.addBorder { outputImage = try addingBorder(to: outputImage) }
@@ -40,6 +38,12 @@ nonisolated enum ScreenshotPixelProcessor {
             sourceScale: scale,
             outputScale: outputScale
         )
+    }
+
+    static func sourceScale(properties: [CFString: Any], override: CGFloat?) -> CGFloat {
+        if let override, override.isFinite, override >= 1 { return override }
+        let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
+        return dpi.isFinite ? max(1, dpi / 72) : 1
     }
 
     static func process(image: CGImage, sourceScale: CGFloat = 1, options: ScreenshotPixelOptions) throws -> CGImage {

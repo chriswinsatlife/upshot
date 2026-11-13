@@ -83,7 +83,6 @@ enum ScreenshotFileNaming {
         let stem = url.deletingPathExtension().lastPathComponent
         guard !stem.hasSuffix("@2x") else { return fileName }
         let result = "\(stem)@2x.\(url.pathExtension)"
-        NSLog("Screenshot output: Retina filename suffix applied")
         return result
     }
 
