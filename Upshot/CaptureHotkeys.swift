@@ -386,6 +386,8 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         Task { @MainActor in
             do {
                 _ = try await AutomationActions.perform(self)
+            } catch AutomationError.cancelled {
+                AppLog.event("settings", "automation_action_cancelled", fields: ["action": String(describing: route)])
             } catch {
                 AppLog.event("settings", "automation_action_failed", fields: ["action": String(describing: route), "error": AppLog.error(error)])
                 let alert = NSAlert()

@@ -53,6 +53,8 @@ enum AutomationURLRouter {
                     return
                 }
                 _ = try await perform(route: request.route, parameters: request.parameters)
+            } catch AutomationError.cancelled {
+                AppLog.event("automation", "url_scheme_cancelled", fields: ["url": url.absoluteString])
             } catch {
                 AppLog.event("automation", "url_scheme_failed", fields: ["error": AppLog.error(error)])
                 let alert = NSAlert()

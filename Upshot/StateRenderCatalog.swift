@@ -16,7 +16,7 @@ enum StateRenderCatalog {
             states.append(StateRenderDefinition(name, source: source, marker: marker,
                                                  size: CGSize(width: width, height: height), scroll: scroll, makeView: view))
         }
-        for tab in SettingsTab.allCases where tab != .overlay {
+        for tab in SettingsTab.allCases where tab != .quickAccess {
             add("settings-\(tab.rawValue)", "SettingsView", "struct SettingsView", 1000, 820) {
                 SettingsNavigation.shared.prepareRenderState(selectedTab: tab)
                 return AnyView(SettingsView())

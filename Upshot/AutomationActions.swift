@@ -5,9 +5,13 @@ import UniformTypeIdentifiers
 
 nonisolated enum AutomationError: LocalizedError {
     case message(String)
+    case cancelled
 
     var errorDescription: String? {
-        switch self { case .message(let message): message }
+        switch self {
+        case .message(let message): message
+        case .cancelled: "The capture was cancelled."
+        }
     }
 }
 
@@ -193,7 +197,7 @@ enum AutomationActions {
             let text: String
             switch await CaptureCoordinator.shared.captureTextAwaiting() {
             case .copied(let recognized): text = recognized
-            case .cancelled: throw AutomationError.message("Text capture was cancelled or failed.")
+            case .cancelled: throw AutomationError.cancelled
             case .noTextFound: throw AutomationError.message("No text was recognized.")
             case .captureFailed: throw AutomationError.message("Text capture failed.")
             case .recognitionFailed: throw AutomationError.message("Text recognition failed.")
@@ -232,7 +236,7 @@ enum AutomationActions {
             captured = await CaptureCoordinator.shared.captureAreaAwaiting(delaySeconds: seconds, presentsPreview: false)
         default: throw AutomationError.message("Unsupported capture action.")
         }
-        guard let captured else { throw AutomationError.message("Screenshot capture was cancelled or failed.") }
+        guard let captured else { throw AutomationError.cancelled }
         var result: [String: JSONValue] = ["path": .string(captured.path)]
         switch action {
         case .areaCopy: try ScreenshotFileActions.copyImageToClipboard(from: captured)
