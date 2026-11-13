@@ -393,6 +393,7 @@ final class ScreenshotHistoryStore {
     func editorURL(for mediaURL: URL) -> URL {
         let standardizedURL = mediaURL.standardizedFileURL
         return items.first(where: { $0.url.standardizedFileURL == standardizedURL })?.editorURL
+            ?? RecordingDeliverable.session(for: standardizedURL)?.directoryURL
             ?? mediaURL
     }
 
