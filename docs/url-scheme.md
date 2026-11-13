@@ -61,6 +61,10 @@ Omitting `path` opens the latest matching capture from history. Paths may begin 
 - `upshot://settings/cloud`
 - `upshot://settings/about`
 
+## Confirmation
+
+A URL that uploads, shares, deletes, or saves changes shows a confirmation dialog before it runs. These routes are `capture/area-upload`, `editor/share`, `recording/discard`, `recording/restart`, `library/trash`, `editor/save`, `editor/done`, and `editor/recording-save`. The `upshot` command-line tool runs the same actions without a dialog, because it requires access to the local agent socket.
+
 ## Errors and Integration
 
 Unknown routes, duplicate parameters, unknown parameters, invalid output paths, and incompatible action states produce an app alert and a `URL scheme failed error=...` log entry. Successful actions produce `Automation action completed action=<route>`. Captures also log `Automation capture completed action=<route> path=<path>`.

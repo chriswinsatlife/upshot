@@ -26,10 +26,32 @@ nonisolated struct AutomationRequest {
 }
 
 enum AutomationURLRouter {
+    static let confirmationRequiredActions: Set<CaptureHotkeyAction> = [
+        .areaUpload, .editorShare, .recordingDiscard, .recordingRestart, .libraryTrash,
+        .editorSave, .editorDone, .recordingEditorSave
+    ]
+
+    private static func confirm(_ action: CaptureHotkeyAction) -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Allow a link to run \u{201C}\(action.title)\u{201D}?"
+        alert.informativeText = "Another app or a web page opened an Upshot link that uploads, shares, deletes, or saves changes."
+        alert.addButton(withTitle: "Run")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
+        alert.buttons[0].keyEquivalent = ""
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     static func handle(_ url: URL) {
         Task { @MainActor in
             do {
                 let request = try AutomationRequest(url: url)
+                if let action = CaptureHotkeyAction.allCases.first(where: { $0.route == request.route }),
+                   confirmationRequiredActions.contains(action), !confirm(action) {
+                    NSLog("URL scheme declined route=%@", request.route)
+                    return
+                }
                 _ = try await perform(route: request.route, parameters: request.parameters)
             } catch {
                 NSLog("URL scheme failed error=%@", error.localizedDescription)
