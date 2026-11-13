@@ -1,18 +1,3 @@
-//
-//  CaptureShelf.swift
-//  Upshot
-//
-//  The shelf of recent captures that floats at the edge of the screen after a
-//  screenshot or recording. Cards enter and leave through the screen edge
-//  they are docked to. Tucking the shelf slides every card out through that
-//  same edge, leaving a slim handle in the middle of the edge, well away from
-//  the bottom corner where editors keep their footers.
-//
-//  This model owns the cards and everything done to them. The panel, its
-//  placement and input live in `CaptureShelfPresenter`; the views only read
-//  this state and call back into it.
-//
-
 import AppKit
 import Observation
 import SwiftUI
@@ -22,18 +7,16 @@ enum PreviewMediaKind: String, Equatable, Codable {
     case video
 }
 
-/// Work a card is busy with. The card shows it in place of its actions.
 enum ShelfActivity: Equatable {
     case compressing
-    /// A recording being flattened into a shareable file before Save/Copy.
     case preparing
 }
 
-/// A short-lived result shown over a card, then cleared.
 enum ShelfFlash: Equatable {
     case linkCopied
     case uploadFailed
     case compressed(summary: String)
+    case actionFailed(message: String)
 }
 
 struct ShelfItem: Identifiable {
@@ -41,12 +24,9 @@ struct ShelfItem: Identifiable {
     var url: URL
     var thumbnail: NSImage
     var kind: PreviewMediaKind = .image
-    /// Where the capture was saved on the user's disk, if anywhere. Without
-    /// one it lives only in the temporary directory.
     var savedURL: URL?
     var activity: ShelfActivity?
     var flash: ShelfFlash?
-    /// Opened, previewed or worked on. Engaged cards never auto-close.
     var isEngaged = false
 }
 
@@ -55,26 +35,17 @@ struct ShelfItem: Identifiable {
 final class CaptureShelf {
     static let shared = CaptureShelf()
 
-    /// Why the shelf is tucked. It shows again only once every reason is
-    /// gone, so closing Quick Look can't pop it open over an editor.
     enum TuckReason: Hashable {
-        /// Tucked by hand, from the header or with a swipe.
         case user
-        /// An editor opened from a card is on screen.
         case editor
     }
 
-    /// Newest first.
     private(set) var items: [ShelfItem] = []
     private(set) var tuckReasons: Set<TuckReason> = []
     var hoveredID: ShelfItem.ID?
     private(set) var draggingID: ShelfItem.ID?
-    /// True while cards slide in, out, or along the column. Cards hold
-    /// their hover state until it settles: a card sliding under a resting
-    /// pointer would otherwise flash its controls on and off.
     private(set) var isMoving = false
 
-    /// The most cards the screen fits, set by the view as it lays out.
     @ObservationIgnored var capacity = 6 {
         didSet { trimToCapacity() }
     }
@@ -91,8 +62,6 @@ final class CaptureShelf {
         hoveredID.flatMap(item(id:))
     }
 
-    /// Captures that exist only in the temporary directory and are lost
-    /// when the app quits.
     var unsavedItems: [ShelfItem] {
         items.filter { $0.savedURL == nil }
     }
@@ -101,7 +70,6 @@ final class CaptureShelf {
         items.first { $0.id == id }
     }
 
-    // MARK: - Tucking
 
     func tuck(_ reason: TuckReason) {
         guard !tuckReasons.contains(reason) else { return }
@@ -120,7 +88,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Brings the shelf out whatever tucked it: the user asked for it.
     func open() {
         guard isTucked else { return }
         noteMotion()
@@ -129,10 +96,7 @@ final class CaptureShelf {
         }
     }
 
-    // MARK: - Adding
 
-    /// A fresh screenshot. Runs the after-capture actions whether or not the
-    /// shelf is set to show it.
     func add(url: URL) {
         let showsCard = AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot)
         let savedURL = AfterCaptureActions.isEnabled(.save, for: .screenshot)
@@ -152,8 +116,6 @@ final class CaptureShelf {
         scheduleAutoClose(id: item.id)
     }
 
-    /// A finished recording. The card shows at once; saving and the real
-    /// thumbnail land when they are ready.
     func addVideo(url: URL) {
         guard AfterCaptureActions.isEnabled(.showOverlay, for: .recording) else {
             if AfterCaptureActions.isEnabled(.save, for: .recording) {
@@ -178,8 +140,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Brings back a capture from history, from the menu bar's recents. It
-    /// moves to the front if it is already on the shelf.
     func show(existing url: URL, kind: PreviewMediaKind) {
         if let index = items.firstIndex(where: { $0.url == url && $0.kind == kind }) {
             noteMotion()
@@ -202,11 +162,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Swaps in an annotated version of a screenshot, then keeps the
-    /// clipboard and any saved copy in step with it. A screenshot that isn't
-    /// on the shelf gets a card only when `addsIfMissing` (finishing an
-    /// edit); a mid-edit save must not drop a card, and with it the whole
-    /// shelf, over the editor. Returns whether the capture was on the shelf.
     @discardableResult
     func applyAnnotation(originalURL: URL, historyURL: URL, addsIfMissing: Bool = false) -> Bool {
         if let existing = items.first(where: { $0.url == originalURL }) {
@@ -236,7 +191,6 @@ final class CaptureShelf {
         return false
     }
 
-    // MARK: - Removing
 
     func dismiss(id: ShelfItem.ID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
@@ -271,8 +225,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Removes the cards for one recording, whichever file of its package
-    /// they point at. Library keeps the recording itself.
     func dismissVideo(for url: URL) {
         if RecordingSession.isSessionDirectory(url) {
             dismissRecordingSession(url)
@@ -288,15 +240,12 @@ final class CaptureShelf {
 
     func dismissRecordingSession(_ directoryURL: URL) {
         let packagePath = directoryURL.standardizedFileURL.path
-        // The trailing separator keeps a sibling package with a longer name
-        // from matching.
         let prefix = packagePath.hasSuffix("/") ? packagePath : packagePath + "/"
         for item in items where item.kind == .video && item.url.standardizedFileURL.path.hasPrefix(prefix) {
             dismiss(id: item.id)
         }
     }
 
-    // MARK: - Hover and drag
 
     func setHovered(_ id: ShelfItem.ID, _ isHovered: Bool) {
         if isHovered {
@@ -319,7 +268,6 @@ final class CaptureShelf {
         }
     }
 
-    // MARK: - Actions
 
     func openEditor(id: ShelfItem.ID) {
         guard let item = item(id: id) else { return }
@@ -344,8 +292,6 @@ final class CaptureShelf {
             guard copyImageToClipboard(item.url) else { return }
             dismiss(id: id)
         case .video:
-            // Flattening can take a moment, so the card stays up showing
-            // progress and leaves once the copy has happened.
             Task {
                 guard await copyVideoToClipboard(item.url, itemID: id) else { return }
                 dismiss(id: id)
@@ -360,8 +306,6 @@ final class CaptureShelf {
         dismiss(id: id)
     }
 
-    /// Whether an editor has this capture open. It can't be deleted then,
-    /// or the editor would be left saving into a file that is gone.
     func isOpenInEditor(id: ShelfItem.ID) -> Bool {
         guard let item = item(id: id) else { return false }
         return CaptureLibraryOpenEditors.isEditing(item.url)
@@ -378,7 +322,6 @@ final class CaptureShelf {
         dismiss(id: id)
     }
 
-    /// Recognizes the text in a screenshot and copies it.
     func copyText(id: ShelfItem.ID) {
         guard let item = item(id: id), item.kind == .image else { return }
         let url = item.url
@@ -396,8 +339,6 @@ final class CaptureShelf {
         let url = item.url
         Task {
             do {
-                // The card can leave on its own, so it is no anchor for a
-                // popover: the remembered default stands in for asking.
                 let result = try await CloudUploader.shared.upload(
                     itemID: id,
                     fileURL: url,
@@ -423,7 +364,6 @@ final class CaptureShelf {
 
     func save(id: ShelfItem.ID, choosingLocation: Bool = false) {
         guard let item = item(id: id) else { return }
-        // A save dialog, a cancel or a failure must not expire the card.
         engage(id)
 
         if !choosingLocation && UpshotPreferences.saveButtonUsesConfiguredFolder {
@@ -451,8 +391,6 @@ final class CaptureShelf {
         }
 
         let panel = NSSavePanel()
-        // Recordings offer every container; the panel's format popup picks
-        // one and `VideoFileActions.save` converts to it.
         panel.allowedContentTypes = item.kind == .video
             ? VideoExportContainer.allCases.map(\.contentType)
             : [ScreenshotFileActions.exportContentType]
@@ -482,7 +420,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Copies a smaller JPG and adds it to the shelf beside the original.
     func compress(id: ShelfItem.ID) {
         guard let item = item(id: id), item.kind == .image, item.activity == nil else { return }
         engage(id)
@@ -510,10 +447,7 @@ final class CaptureShelf {
         }
     }
 
-    // MARK: - Internals
 
-    /// How cards travel through the screen edge: smooth, with no overshoot.
-    /// The app's bouncy `morph` would carry them past their dock and back.
     static let slide = Animation.smooth(duration: 0.38)
 
     static var slideIfAllowed: Animation? {
@@ -522,7 +456,6 @@ final class CaptureShelf {
 
     @ObservationIgnored private var motionEndTask: Task<Void, Never>?
 
-    /// Marks the shelf as moving until the slide has had time to finish.
     func noteMotion() {
         isMoving = true
         motionEndTask?.cancel()
@@ -533,7 +466,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Long edge of a card's thumbnail, in pixels.
     private static let thumbnailPixelSize: CGFloat = 520
 
     private func insert(_ item: ShelfItem, at index: Int = 0) {
@@ -542,12 +474,10 @@ final class CaptureShelf {
         noteMotion()
         withAnimation(Self.slideIfAllowed) {
             items.insert(item, at: min(index, items.count))
-            // A new capture always shows, even over an editor.
             tuckReasons.removeAll()
         }
     }
 
-    /// Drops the oldest idle cards so one more fits on screen.
     private func makeRoom(keeping keptID: ShelfItem.ID?) {
         let overflow = items.count + 1 - capacity
         guard overflow > 0 else { return }
@@ -600,8 +530,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Closes a card whose time is up, unless someone is using it; then it
-    /// checks again shortly.
     private func autoCloseIfIdle(id: ShelfItem.ID) {
         guard let item = item(id: id), !item.isEngaged else { return }
         let isBusy = hoveredID == id
@@ -612,7 +540,48 @@ final class CaptureShelf {
         if isBusy {
             scheduleAutoClose(id: id, after: .seconds(2))
         } else {
+            performAutoClose(id: id)
+        }
+    }
+
+    private func performAutoClose(id: ShelfItem.ID) {
+        guard let item = item(id: id) else { return }
+        let action = UpshotPreferences.previewAutoCloseAction
+        autoCloseTasks[id] = nil
+        engage(id)
+        NSLog("Quick Access auto-close item=%@ action=%@ outcome=started", id.uuidString, action.rawValue)
+
+        Task {
+            let succeeded: Bool
+            switch action {
+            case .close:
+                succeeded = true
+            case .copyAndClose:
+                switch item.kind {
+                case .image: succeeded = copyImageToClipboard(item.url)
+                case .video: succeeded = await copyVideoToClipboard(item.url, itemID: id)
+                }
+            case .saveAndClose:
+                if let savedURL = item.savedURL, FileManager.default.fileExists(atPath: savedURL.path) {
+                    succeeded = true
+                } else {
+                    let savedURL: URL?
+                    switch item.kind {
+                    case .image: savedURL = saveToDefaultLocation(from: item.url)
+                    case .video: savedURL = await saveVideoToDefaultLocation(from: item.url, itemID: id)
+                    }
+                    update(id) { $0.savedURL = savedURL }
+                    succeeded = savedURL != nil
+                }
+            }
+
+            guard succeeded else {
+                flash(.actionFailed(message: action == .saveAndClose ? "Save Failed" : "Copy Failed"), on: id)
+                NSLog("Quick Access auto-close item=%@ action=%@ outcome=failed card=retained", id.uuidString, action.rawValue)
+                return
+            }
             dismiss(id: id)
+            NSLog("Quick Access auto-close item=%@ action=%@ outcome=succeeded card=closed", id.uuidString, action.rawValue)
         }
     }
 
@@ -630,8 +599,6 @@ final class CaptureShelf {
         flash(.compressed(summary: result.displaySummary), on: item.id)
     }
 
-    /// Runs the after-capture actions other than Save, which the caller does
-    /// so it can keep the saved URL on the card.
     private func runAfterCaptureActions(type: AfterCaptureType, url: URL, itemID: ShelfItem.ID?) {
         if AfterCaptureActions.isEnabled(.copy, for: type) {
             switch type {
@@ -665,7 +632,6 @@ final class CaptureShelf {
         }
     }
 
-    /// Uploads a capture that has no card to show the result on.
     private func uploadUnattended(_ url: URL) {
         guard CloudUploader.shared.isConfigured else { return }
         Task {
@@ -683,9 +649,6 @@ final class CaptureShelf {
         }
     }
 
-    /// After an edit: overwrites an earlier saved copy in place (or saves a
-    /// first one when Auto Save is on) and re-copies when Auto Copy is on, so
-    /// no stale version is left anywhere.
     private func republish(_ id: ShelfItem.ID) {
         guard let item = item(id: id) else { return }
         if let savedURL = item.savedURL {
@@ -754,10 +717,7 @@ final class CaptureShelf {
         }
     }
 
-    // MARK: Recordings
 
-    /// Copying and saving hand the user a file, so both resolve the
-    /// session's deliverable first: the raw screen master has no cursor.
     private func copyVideoToClipboard(_ url: URL, itemID: ShelfItem.ID?) async -> Bool {
         do {
             let deliverable = try await prepareDeliverable(from: url, itemID: itemID)
@@ -779,14 +739,10 @@ final class CaptureShelf {
         }
     }
 
-    /// Flattens the session behind `url`, showing the card's progress while
-    /// a render is actually needed.
     private func prepareDeliverable(from url: URL, itemID: ShelfItem.ID?) async throws -> URL {
         guard RecordingDeliverable.needsRender(for: url), let itemID else {
             return try await RecordingDeliverable.resolve(for: url)
         }
-        // A long render must not race the auto-close timer out from under
-        // the progress it shows.
         engage(itemID)
         update(itemID) { $0.activity = .preparing }
         defer { update(itemID) { $0.activity = nil } }

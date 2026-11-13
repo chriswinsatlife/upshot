@@ -117,6 +117,8 @@ struct CaptureShelfCard: View {
             status("Upload Failed") { flashIcon("exclamationmark.triangle.fill", tint: Palette.warning) }
         case .compressed(let summary):
             status("JPG Copied\n\(summary)") { flashIcon("checkmark") }
+        case .actionFailed(let message):
+            status(message) { flashIcon("exclamationmark.triangle.fill", tint: Palette.warning) }
         }
     }
 
