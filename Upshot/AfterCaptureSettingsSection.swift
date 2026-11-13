@@ -1,18 +1,11 @@
-//
-//  AfterCaptureSettingsSection.swift
-//  Upshot
-//
-
 import SwiftUI
 
-/// A Form section listing the configurable after-capture actions for a given
-/// capture type (screenshot or recording).
 struct AfterCaptureActionsSection: View {
     let type: AfterCaptureType
     let title: String
 
     var body: some View {
-        Section(title) {
+        InterfaceSection(title) {
             ForEach(AfterCaptureAction.actions(for: type)) { action in
                 AfterCaptureToggleRow(action: action, type: type)
             }
@@ -25,15 +18,41 @@ private struct AfterCaptureToggleRow: View {
     private let title: String
     private let subtitle: String
     private let action: AfterCaptureAction
+    private let type: AfterCaptureType
 
     init(action: AfterCaptureAction, type: AfterCaptureType) {
         _isOn = AppStorage(wrappedValue: action.defaultValue, action.storageKey(for: type))
         self.action = action
+        self.type = type
         title = action.title
         subtitle = action.subtitle
     }
 
     var body: some View {
+        if type == .recording {
+            recordingRow
+        } else {
+            screenshotRow
+        }
+    }
+
+    private var isCloudConfigured: Bool { CloudCredentialStore.shared.isConfigured }
+
+    private var recordingRow: some View {
+        let needsCloud = action == .upload && !isCloudConfigured
+        return InterfaceRow(title, detail: needsCloud && isOn ? "Paused until Cloud is set up." : nil) {
+            if needsCloud {
+                InterfaceActionButton("Set Up Cloud…") { SettingsWindowController.show(tab: .cloud) }
+            }
+            Toggle(isOn: $isOn) { EmptyView() }
+                .fixedSize()
+                .accessibilityLabel(title)
+                .disabled(needsCloud && !isOn)
+        }
+    }
+
+    @ViewBuilder
+    private var screenshotRow: some View {
         Toggle(isOn: $isOn) {
             InterfaceRowLabel(title, detail: subtitle)
         }

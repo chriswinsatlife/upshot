@@ -1,45 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct VideoSettingsPane: View {
-    @AppStorage(UpshotPreferences.revealExportInFinderKey) private var revealExportInFinder = true
-
-    var body: some View {
-        InterfaceFormPage {
-            CaptureHotkeySettingsSection(actions: [.screenRecording])
-
-            LiveRecordingSettingsSection()
-
-            RecordingExportSettingsSection()
-
-            AfterCaptureActionsSection(type: .recording, title: "After Recording")
-
-            Section("After Export") {
-                Toggle(isOn: $revealExportInFinder) {
-                    InterfaceRowLabel(
-                        "Reveal in Finder",
-                        detail: "Select the exported file in Finder once the render finishes."
-                    )
-                }
-                .toggleStyle(.ink)
-            }
-
-            Section("Projects") {
-                LabeledContent {
-                    InterfaceActionButton("Open Library", systemImage: "square.grid.2x2") {
-                        CaptureLibraryModel.shared.show(filter: .recordings)
-                    }
-                } label: {
-                    InterfaceRowLabel(
-                        "Recording projects",
-                        detail: "Reopen a past recording with every edit intact."
-                    )
-                }
-            }
-        }
-    }
-}
-
 struct OverlaySettingsPane: View {
     @AppStorage(UpshotPreferences.previewPositionKey) private var previewPositionRaw = PreviewOverlayPosition.right.rawValue
     @AppStorage(UpshotPreferences.previewAutoCloseSecondsKey) private var autoCloseSeconds = 0
