@@ -167,16 +167,16 @@ enum StateRenderCatalog {
             }
         }
         for format in RecordingExportFormat.allCases {
-            add("studio-export-options-\(format.rawValue.lowercased())", "RecordingExportOptions", "struct RecordingExportOptionsPopover", 380, 900) {
+            add("studio-export-options-\(format.rawValue.lowercased())", "RecordingExportOptions", "struct RecordingExportOptionsPopover", 360, format == .gif ? 460 : 640) {
                 var delivery = RecordingExportDeliveryOptions()
                 delivery.format = format
                 return AnyView(RecordingExportOptionsPopover(initialSettings: VideoCompressionSettings(), initialDeliveryOptions: delivery, onConfirm: { _ in }))
             }
         }
-        add("studio-audio-export", "RecordingStudioInspector", "struct StudioAudioExportOptions", 300, 230) {
+        add("studio-audio-export", "RecordingStudioInspector", "struct StudioAudioExportOptions", 320, 180) {
             AnyView(StudioAudioExportOptions(format: .constant(.m4a), onExport: {}))
         }
-        add("share-options", "CloudUploadOptions", "struct CloudUploadOptionsPopover", 360, 300) {
+        add("share-options", "CloudUploadOptions", "struct CloudUploadOptionsPopover", 360, 220) {
             AnyView(CloudUploadOptionsPopover(suggestedTitle: "Release Overview", onConfirm: { _ in }))
         }
         for variant in ["one-card", "several-cards", "hover", "tucked", "compressing", "preparing", "link-copied", "upload-failed", "compressed", "action-failed", "video"] {

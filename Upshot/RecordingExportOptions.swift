@@ -49,111 +49,127 @@ struct RecordingExportOptionsPopover: View {
     }
 
     var body: some View {
-        InspectorPopover(
-            title: "Export Options",
-            confirmTitle: "Export",
+        ExportAndShareOptionsPopoverLayout(
+            confirmTitle: delivery.format == .gif ? "Export GIF" : "Export Video",
             onCancel: { dismiss() },
-            onConfirm: {
-                let confirmed = settings
-                RecordingExportPreferences.lastSettings = confirmed
-                UpshotPreferences.recordingExtendedExportDefaults = delivery
-                dismiss()
-                onConfirm(confirmed)
-            }
+            onConfirm: confirm
         ) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                segmented("Output", options: RecordingExportFormat.allCases, selection: $delivery.format)
-                if delivery.format == .gif {
-                    Picker("GIF frame rate", selection: $delivery.gifFrameRate) {
-                        ForEach(RecordingGIFFrameRate.allCases, id: \.self) { rate in
-                            Text("\(rate.rawValue) fps").tag(rate)
-                        }
-                    }
-                    segmented("GIF quality", options: RecordingGIFQuality.allCases, selection: $delivery.gifQuality)
-                    toggle("Optimize GIF", isOn: $delivery.optimizesGIF)
-                    InspectorHint("GIF exports loop continuously and contain no audio. Optimization combines identical frames.")
-                }
-                if delivery.format == .video {
-                    segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
-                    segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
-                }
-                segmented("Resolution", options: VideoCompressionResolution.allCases, selection: $settings.resolution)
-                toggle("Scale Retina to 1x", isOn: $delivery.scalesRetinaToOne)
-                if delivery.format == .video {
-                    segmented(
-                        "Frame rate",
-                        options: VideoExportFrameRate.allCases,
-                        selection: Binding(
-                            get: { settings.effectiveFrameRate },
-                            set: { settings.frameRate = $0 }
-                        )
-                    )
-                }
-
-                segmented(
-                    "Motion blur",
-                    options: RecordingMotionBlurLevel.allCases,
-                    selection: Binding(
-                        get: { delivery.motionBlurLevel ?? (settings.effectiveMotionBlurEnabled ? .high : .off) },
-                        set: { delivery.motionBlurLevel = $0 }
-                    )
-                )
-
-                if delivery.format == .video {
-                    segmented(
-                        "Format",
-                        options: VideoExportContainer.allCases,
-                        selection: Binding(
-                            get: { settings.effectiveContainer },
-                            set: { settings.container = $0 }
-                        )
-                    )
-
-                    InspectorHint(formatHint)
-
-                    toggle("Mono audio", isOn: $delivery.monoAudio)
-                    toggle("Separate audio tracks", isOn: $delivery.separateAudioTracks)
-                        .help("Keep microphone and system audio as independent tracks. Added audio uses its own mixed track. An imported replacement soundtrack replaces the recorded tracks.")
-                    toggle("Include audio", isOn: Binding(
-                        get: { !settings.removeAudio },
-                        set: { settings.removeAudio = !$0 }
-                    ))
-                    .padding(.top, 2)
-                }
+            InterfaceModeSwitch(
+                "Output",
+                selection: $delivery.format,
+                options: RecordingExportFormat.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.rawValue) }
+            )
+            .frame(maxWidth: .infinity)
+        } content: {
+            if delivery.format == .gif {
+                gifSection
+            } else {
+                videoSection
+                audioSection
             }
         }
     }
 
-    private var formatHint: String {
+    private var videoSection: some View {
+        InterfaceSection(nil) {
+            modeSwitchRow("Quality", selection: $settings.quality, options: VideoCompressionQuality.allCases)
+            modeSwitchRow("Codec", selection: $settings.codec, options: VideoCompressionCodec.allCases)
+            resolutionRow
+            modeSwitchRow(
+                "Frame rate",
+                selection: Binding(get: { settings.effectiveFrameRate }, set: { settings.frameRate = $0 }),
+                options: VideoExportFrameRate.allCases
+            )
+            motionBlurRow
+            modeSwitchRow(
+                "Format",
+                selection: Binding(get: { settings.effectiveContainer }, set: { settings.container = $0 }),
+                options: VideoExportContainer.allCases
+            )
+            .help(containerHelp)
+            InterfaceToggleRow("Scale Retina to 1x", isOn: $delivery.scalesRetinaToOne)
+        }
+    }
+
+    private var audioSection: some View {
+        InterfaceSection(nil) {
+            InterfaceToggleRow("Include audio", isOn: Binding(
+                get: { !settings.removeAudio },
+                set: { settings.removeAudio = !$0 }
+            ))
+            InterfaceToggleRow("Mono audio", isOn: $delivery.monoAudio)
+                .disabled(settings.removeAudio)
+            InterfaceToggleRow("Separate audio tracks", isOn: $delivery.separateAudioTracks)
+                .disabled(settings.removeAudio)
+                .help("Keep microphone and system audio as independent tracks. Added audio uses its own mixed track. An imported replacement soundtrack replaces the recorded tracks.")
+        }
+    }
+
+    private var gifSection: some View {
+        InterfaceSection(nil) {
+            InterfacePickerRow("Frame rate", selection: $delivery.gifFrameRate) {
+                ForEach(RecordingGIFFrameRate.allCases, id: \.self) { rate in
+                    Text("\(rate.rawValue) fps").tag(rate)
+                }
+            }
+            modeSwitchRow("Quality", selection: $delivery.gifQuality, options: RecordingGIFQuality.allCases.reversed())
+            resolutionRow
+            motionBlurRow
+            InterfaceToggleRow("Scale Retina to 1x", isOn: $delivery.scalesRetinaToOne)
+            InterfaceToggleRow("Optimize", isOn: $delivery.optimizesGIF)
+                .help("Combine identical frames. GIF exports loop continuously and contain no audio.")
+        }
+    }
+
+    private var resolutionRow: some View {
+        InterfacePickerRow("Resolution", selection: $settings.resolution) {
+            ForEach(VideoCompressionResolution.allCases) { resolution in
+                Text(resolution.rawValue).tag(resolution)
+            }
+        }
+    }
+
+    private var motionBlurRow: some View {
+        InterfacePickerRow(
+            "Motion blur",
+            selection: Binding(
+                get: { delivery.motionBlurLevel ?? (settings.effectiveMotionBlurEnabled ? .high : .off) },
+                set: { delivery.motionBlurLevel = $0 }
+            )
+        ) {
+            ForEach(RecordingMotionBlurLevel.allCases, id: \.self) { level in
+                Text(level.rawValue).tag(level)
+            }
+        }
+    }
+
+    private var containerHelp: String {
         switch settings.effectiveContainer {
         case .mov:
-            "Native QuickTime format for Apple apps."
+            "MOV is the native QuickTime format for Apple apps."
         case .mp4:
-            "Plays on more platforms, including Windows, browsers, and Slack."
+            "MP4 plays on more platforms, including Windows, browsers, and Slack."
         }
     }
 
-    private func toggle(_ title: String, isOn: Binding<Bool>) -> some View {
-        InspectorToggleRow(title, isOn: isOn)
+    private func confirm() {
+        let confirmed = settings
+        RecordingExportPreferences.lastSettings = confirmed
+        UpshotPreferences.recordingExtendedExportDefaults = delivery
+        dismiss()
+        onConfirm(confirmed)
     }
 
-    private func segmented<Option: Hashable & RawRepresentable>(
+    private func modeSwitchRow<Option: Hashable & RawRepresentable>(
         _ title: String,
-        options: [Option],
-        selection: Binding<Option>
+        selection: Binding<Option>,
+        options: [Option]
     ) -> some View where Option.RawValue == String {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            InspectorGroupLabel(title)
-            InspectorSegmented(
-                options: options,
-                isSelected: { $0 == selection.wrappedValue },
-                onTap: { selection.wrappedValue = $0 },
-                label: {
-                    Text($0.rawValue)
-                        .font(.inspectorSegment)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
+        InterfaceRow(title) {
+            InterfaceModeSwitch(
+                title,
+                selection: selection,
+                options: options.map { InterfaceModeSwitchOption(value: $0, title: $0.rawValue) }
             )
         }
     }

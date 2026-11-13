@@ -1615,26 +1615,23 @@ struct StudioAudioExportOptions: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        InspectorPopover(
-            title: "Export Audio",
-            confirmTitle: "Export",
-            width: 260,
+        ExportAndShareOptionsPopoverLayout(
+            confirmTitle: "Export Audio",
+            width: 280,
             onCancel: { dismiss() },
             onConfirm: onExport
         ) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorSegmented(
-                    options: RecordingAudioFormat.allCases,
-                    isSelected: { $0 == format },
-                    onTap: { format = $0 },
-                    label: { Text($0.title).font(.inspectorSegment) }
-                )
-
-                InspectorHint(
-                    format == .m4a
-                        ? "Compact AAC audio, accepted by most enhancement tools."
-                        : "Uncompressed, for tools that accept nothing else."
-                )
+            InterfaceSection(nil) {
+                InterfaceRow("Format") {
+                    InterfaceModeSwitch(
+                        "Format",
+                        selection: $format,
+                        options: RecordingAudioFormat.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.title) }
+                    )
+                }
+                .help(format == .m4a
+                    ? "M4A is compact AAC audio, accepted by most enhancement tools."
+                    : "WAV is uncompressed, for tools that accept nothing else.")
             }
         }
     }

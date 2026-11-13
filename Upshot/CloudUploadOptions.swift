@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CloudUploadOptions: Sendable {
@@ -39,10 +40,8 @@ struct CloudUploadOptionsPopover: View {
     }
 
     var body: some View {
-        InspectorPopover(
-            title: "Share Options",
-            message: "Uploads to your cloud and copies a share link.",
-            confirmTitle: "Upload",
+        ExportAndShareOptionsPopoverLayout(
+            confirmTitle: "Upload and Copy Link",
             onCancel: { dismiss() },
             onConfirm: {
                 CloudUploadPreferences.lastSocialEnabled = socialEnabled
@@ -51,16 +50,46 @@ struct CloudUploadOptionsPopover: View {
                 onConfirm(options)
             }
         ) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                    InspectorGroupLabel("Title")
-                    TextField("Title", text: $title, prompt: Text("Untitled"))
-                        .labelsHidden()
-                        .lineLimit(1)
-                        .inspectorTextField()
-                }
+            InterfaceSection(nil) {
+                InterfaceTextFieldRow("Title", prompt: "Untitled", fieldWidth: 180, text: $title)
+                InterfaceToggleRow("Allow comments and likes", isOn: $socialEnabled)
+            }
+        }
+        .background(CloudUploadOptionsInitialFocusClearance())
+    }
+}
 
-                InspectorToggleRow("Allow comments & likes", isOn: $socialEnabled)
+private struct CloudUploadOptionsInitialFocusClearance: NSViewRepresentable {
+    func makeNSView(context: Context) -> CloudUploadOptionsInitialFocusClearanceView {
+        CloudUploadOptionsInitialFocusClearanceView()
+    }
+
+    func updateNSView(_ nsView: CloudUploadOptionsInitialFocusClearanceView, context: Context) {}
+}
+
+private final class CloudUploadOptionsInitialFocusClearanceView: NSView {
+    private var keyWindowObserver: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let keyWindowObserver {
+            NotificationCenter.default.removeObserver(keyWindowObserver)
+            self.keyWindowObserver = nil
+        }
+        guard let window else { return }
+        window.initialFirstResponder = nil
+        DispatchQueue.main.async { [weak window] in window?.makeFirstResponder(nil) }
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] notification in
+            MainActor.assumeIsolated {
+                (notification.object as? NSWindow)?.makeFirstResponder(nil)
+                if let observer = self?.keyWindowObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self?.keyWindowObserver = nil
+                }
             }
         }
     }
