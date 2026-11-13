@@ -6,9 +6,9 @@ enum StateRenderSupplementalCatalog {
     static func states(fixtures: StateRenderFixtures) -> [StateRenderDefinition] {
         var states: [StateRenderDefinition] = []
         func add(_ name: String, _ source: String, _ marker: String, _ width: CGFloat, _ height: CGFloat,
-                 _ view: @escaping () async throws -> AnyView) {
+                 windowTitle: String? = nil, _ view: @escaping () async throws -> AnyView) {
             states.append(StateRenderDefinition(name, source: source, marker: marker,
-                                                 size: CGSize(width: width, height: height), makeView: view))
+                                                 size: CGSize(width: width, height: height), windowTitle: windowTitle, makeView: view))
         }
         add("settings-general-permissions-denied", "SettingsGeneralPane", "struct SettingsGeneralPane", 1000, 820) {
             SettingsNavigation.shared.prepareRenderState(selectedTab: .general)
@@ -98,10 +98,12 @@ enum StateRenderSupplementalCatalog {
         add("recording-camera-preview", "CameraRecordingManager", "static func renderPreview", 220, 220) {
             AnyView(StateRenderCameraPreview(player: AVPlayer(url: fixtures.project.cameraURL)).frame(width: 160, height: 160))
         }
-        for variant in ["screenshot", "recording"] {
-            add("quick-look-\(variant)", "QuickLookPreviewPresenter", "final class QuickLookPreviewPresenter", 900, 650) {
-                AnyView(try StateRenderQuickLookPreview(url: variant == "screenshot" ? fixtures.screenshots[0] : fixtures.project.screenURL))
-            }
+        add("quick-look-screenshot", "QuickLookPreviewPresenter", "final class QuickLookPreviewPresenter", 900, 650) {
+            AnyView(try StateRenderQuickLookPreview(url: fixtures.screenshots[0]))
+        }
+        add("quick-look-recording", "QuickLookPreviewPresenter", "final class QuickLookPreviewPresenter", 900, 650,
+            windowTitle: fixtures.project.finalURL.lastPathComponent) {
+            AnyView(StateRenderQuickLookMoviePreview(url: fixtures.project.screenURL))
         }
         for variant in ["pill", "notch", "notch-scrolled"] {
             add("teleprompter-\(variant)", "TeleprompterOverlayPresenter", "struct TeleprompterOverlayView", 620, 230) {

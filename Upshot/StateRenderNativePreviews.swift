@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import AVKit
 import QuickLookUI
 import SwiftUI
 
@@ -24,4 +25,21 @@ struct StateRenderQuickLookPreview: NSViewRepresentable {
 
     func makeNSView(context: Context) -> QLPreviewView { view }
     func updateNSView(_ nsView: QLPreviewView, context: Context) {}
+}
+
+struct StateRenderQuickLookMoviePreview: NSViewRepresentable {
+    let view: AVPlayerView
+
+    init(url: URL) {
+        let view = AVPlayerView(frame: CGRect(x: 0, y: 0, width: 900, height: 650))
+        view.controlsStyle = .floating
+        view.showsFullScreenToggleButton = true
+        view.videoGravity = .resizeAspect
+        view.player = AVPlayer(url: url)
+        view.player?.pause()
+        self.view = view
+    }
+
+    func makeNSView(context: Context) -> AVPlayerView { view }
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {}
 }
