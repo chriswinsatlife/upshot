@@ -1,11 +1,3 @@
-//
-//  RecordingStudioMotionTimeline.swift
-//  Upshot
-//
-//  One edited-time motion track for the screen rectangle, its clipping card,
-//  and the camera. Resolve destination geometry first, then integrate it;
-//  preview, export, and the cursor all use that same sampled transform.
-//
 
 import CoreGraphics
 import Foundation
@@ -36,7 +28,8 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
         layoutTimeline: RecordingCameraLayoutTimeline,
         cues: [ZoomCue],
         capture: PointerCaptureFile,
-        clipTimeline: RecordingClipTimeline
+        clipTimeline: RecordingClipTimeline,
+        zoomAnimationStyle: RecordingZoomAnimationStyle = .smooth
     ) -> RecordingStudioMotionTimeline {
         let duration = clipTimeline.duration
         guard duration.isFinite, duration > 0, canvasSize.width > 0, canvasSize.height > 0 else { return .none }
@@ -52,8 +45,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
         let resolver = RecordingCameraLayoutResolver(
             base: base, style: style, showsCamera: showsCamera, cameraAspect: cameraAspect
         )
-        // Retain original subject points. Bounds apply to the destination
-        // rectangle after camera clearance, never to the subject beforehand.
         let targets = ViewportTimeline.build(
             cues: cues,
             capture: capture,
@@ -94,8 +85,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
                 magnification: target.magnification, anchor: target.point
             ))
             if zoomed {
-                // Place the subject in the clearest part of the screen,
-                // rather than under the camera that has become an overlay.
                 let focus = focusCenter(in: destination)
                 let original = CGPoint(
                     x: layout.cardRect.minX + (target.point.x - crop.minX) / crop.width * layout.cardRect.width,
@@ -108,8 +97,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
                 let bias = CGFloat(target.boundsBias)
                 draw.origin.x += focus.x + (original.x - focus.x) * bias - layout.cardRect.midX
                 draw.origin.y += focus.y + (original.y - focus.y) * bias - layout.cardRect.midY
-                // The Edge preference can move an interior subject, but
-                // must not undo the reference geometry's source-edge clamp.
                 let boundedCrop = cropRect(bounded, crop: crop)
                 if abs(boundedCrop.minX - layout.cardRect.minX) < 0.0001
                     || abs(boundedCrop.maxX - layout.cardRect.maxX) < 0.0001 {
@@ -123,16 +110,13 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
                 draw = restingSplitRect(draw, layout: layout, cameraLayout: cameraLayout, anchor: target.point)
             }
             draw = contained(draw, in: destination.screenRect, crop: crop)
-            // Spring the selected region's edges. With a manual crop, its
-            // origin is fullOrigin + cropOrigin * fullSize; independent
-            // clamped springs on those terms do not preserve that relation.
             let drawnCrop = cropRect(draw, crop: crop)
             if targets.snaps(at: time) {
                 layoutSpring = StudioLayoutSpring(destination)
                 drawSpring = StudioRectSpring(drawnCrop)
             } else if index > 0 {
                 layoutSpring.step(toward: destination, dt: dt)
-                drawSpring.step(toward: drawnCrop, dt: dt)
+                drawSpring.step(toward: drawnCrop, dt: dt, profile: zoomAnimationStyle.spring)
             }
             let frame = layoutSpring.frame
             samples.append(Sample(
@@ -162,8 +146,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
     func viewport(at time: TimeInterval) -> ViewportFrame? {
         guard let base, let sample = sample(at: time) else { return nil }
         let layout = base.applying(sample.frame)
-        // Derive the viewport from the interpolated draw rectangle, so cursor
-        // coordinates also follow the pan during a changing card aspect.
         return ViewportFrame(
             magnification: sample.drawRect.width / layout.contentFillSize.width,
             anchor: CGPoint(
@@ -198,8 +180,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
         )
     }
 
-    /// Clamp the selected source region over the card, with a uniform scale.
-    /// Bounding the resolved rectangle also handles interpolated card sizes.
     private static func contained(_ requested: CGRect, in card: CGRect, crop: CGRect) -> CGRect {
         let scale = max(1, card.width / (requested.width * crop.width), card.height / (requested.height * crop.height))
         let width = requested.width * scale, height = requested.height * scale
@@ -221,8 +201,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
                       width: width, height: height)
     }
 
-    /// Resting split crops align to the screen's side, flipping when the
-    /// action needs the other edge. Very narrow crops can frame the middle.
     private static func restingSplitRect(
         _ draw: CGRect, layout: RecordingStudioLayout,
         cameraLayout: RecordingCameraLayout, anchor: CGPoint
@@ -248,8 +226,6 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
         let card = frame.screenRect
         let center = CGPoint(x: card.midX, y: card.midY)
         guard frame.cameraOpacity > 0.001 else { return center }
-        // A cutout's frame is mostly empty background either side of the
-        // person, who stands in its middle.
         let occupied = frame.cameraRect.insetBy(dx: frame.cameraRect.width * 0.2 * frame.cameraCutout, dy: 0)
         let camera = card.intersection(occupied)
         guard !camera.isNull, camera.width > 0, camera.height > 0 else { return center }
@@ -300,11 +276,11 @@ nonisolated private struct StudioRectSpring {
 
     var rect: CGRect { CGRect(x: x.position, y: y.position, width: width.position, height: height.position) }
 
-    mutating func step(toward rect: CGRect, dt: Double) {
-        x.motionStep(toward: rect.minX, dt: dt)
-        y.motionStep(toward: rect.minY, dt: dt)
-        width.motionStep(toward: rect.width, dt: dt)
-        height.motionStep(toward: rect.height, dt: dt)
+    mutating func step(toward rect: CGRect, dt: Double, profile: SpringConstant = ViewportTimeline.motionProfile) {
+        x.motionStep(toward: rect.minX, dt: dt, profile: profile)
+        y.motionStep(toward: rect.minY, dt: dt, profile: profile)
+        width.motionStep(toward: rect.width, dt: dt, profile: profile)
+        height.motionStep(toward: rect.height, dt: dt, profile: profile)
     }
 
     func isSettled(on rect: CGRect) -> Bool {
@@ -356,8 +332,8 @@ nonisolated private struct StudioLayoutSpring {
 }
 
 private extension DampedSpring {
-    mutating func motionStep(toward target: Double, dt: Double) {
-        step(toward: target, using: ViewportTimeline.motionProfile, dt: dt)
+    mutating func motionStep(toward target: Double, dt: Double, profile: SpringConstant = ViewportTimeline.motionProfile) {
+        step(toward: target, using: profile, dt: dt)
         if isSettled(on: target) { snap(to: target) }
     }
 

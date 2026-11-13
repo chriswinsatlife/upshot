@@ -1,14 +1,3 @@
-//
-//  RecordingStudioInspector.swift
-//  Upshot
-//
-//  The Studio inspector is one short list: saved styles, the canvas shape,
-//  the frame around the video, each feature as a section whose switch
-//  folds its few controls away, and the sound. The two things too big to
-//  sit in the list get a page of their own - the captions editor, and a
-//  zoom clicked on the timeline - with a back link to the list. Pages swap
-//  in place with no transition. Export and Share stay pinned below.
-//
 
 import AppKit
 import SwiftUI
@@ -29,7 +18,6 @@ private enum StudioTranscriptTab: Hashable {
     case edit
 }
 
-/// A page too big for the list, opened from its section.
 private enum StudioInspectorPage: Hashable {
     case captions
 
@@ -37,8 +25,6 @@ private enum StudioInspectorPage: Hashable {
     var systemImage: String { "captions.bubble" }
 }
 
-/// What the inspector is showing, so the scroll position starts over when
-/// it changes.
 private enum StudioInspectorContent: Hashable {
     case look
     case page(StudioInspectorPage)
@@ -57,8 +43,6 @@ struct StudioInspector: View {
     @State private var transcriptTab: StudioTranscriptTab = .captions
     @State private var isAudioExportOptionsPresented = false
     @State private var page: StudioInspectorPage?
-    /// Sections folded to their one-line summary, kept across projects and
-    /// launches. Comma-separated section names; everything else is open.
     @AppStorage("StudioInspectorFoldedSections") private var foldedSectionNames = ""
     @Environment(\.colorScheme) private var colorScheme
 
@@ -99,20 +83,15 @@ struct StudioInspector: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.bottom, 12)
         }
-        // Each page opens at its top.
         .id(content)
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectSoftIfAvailable()
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Backed like the panel, so the list never shows through the
-            // buttons as it scrolls.
             StudioActionFooter(model: model)
                 .background(sidebarBackground)
         }
         .background(sidebarBackground)
         .onChange(of: availablePages) { _, available in
-            // A page whose feature went away (its only sped-up clip was
-            // reset, say) folds back to the Look.
             if let page, !available.contains(page) {
                 self.page = nil
             }
@@ -133,7 +112,6 @@ struct StudioInspector: View {
         }
     }
 
-    /// A selected zoom wins: clicking one is always a request to edit it.
     private var content: StudioInspectorContent {
         if let cue = model.selectedCue { return .zoom(cue.id) }
         if let cue = model.selectedLayoutCue { return .layout(cue.id) }
@@ -157,7 +135,6 @@ struct StudioInspector: View {
         self.page = page
     }
 
-    // MARK: Look
 
     @ViewBuilder
     private var lookPage: some View {
@@ -201,8 +178,6 @@ struct StudioInspector: View {
         audioSection
     }
 
-    /// Everything drawn over or done to the video. Each switch folds its
-    /// section's controls away, so what is off costs one line.
     @ViewBuilder
     private var featureSections: some View {
         if model.hasCameraVideo {
@@ -269,7 +244,6 @@ struct StudioInspector: View {
             }
         }
 
-        // Only offered once some clip actually plays faster than recorded.
         if model.hasSpedUpClips {
             InspectorSection(
                 "Speed Badge",
@@ -283,9 +257,6 @@ struct StudioInspector: View {
             .transition(AnyTransition(.blurReplace).combined(with: .opacity))
         }
 
-        // Always the selected clip, or the one under the playhead, so the
-        // section never comes and goes - the clip lane selects on every
-        // scrub, and a section appearing would shove the list about.
         if let clip = shownClip {
             InspectorSection("Clip", summary: clipSummary(for: clip), isExpanded: expansion("Clip")) {
                 clipControls(for: clip)
@@ -293,8 +264,6 @@ struct StudioInspector: View {
         }
     }
 
-    /// Captions in the list are a status and a way in: the editor itself
-    /// needs the whole panel.
     private var captionsSection: some View {
         InspectorSection(
             "Captions",
@@ -351,19 +320,16 @@ struct StudioInspector: View {
         }
     }
 
-    /// Captions have a switch only once there is something to show.
     private var captionsToggle: Binding<Bool>? {
         guard model.hasSubtitles, case .idle = model.transcriptionState else { return nil }
         return $model.showsSubtitles
     }
 
-    // MARK: Folding
 
     private var foldedSections: Set<String> {
         Set(foldedSectionNames.split(separator: ",").map(String.init))
     }
 
-    /// Whether a section is open; folding one keeps it folded next time.
     private func expansion(_ section: String) -> Binding<Bool> {
         Binding(
             get: { !foldedSections.contains(section) },
@@ -381,7 +347,6 @@ struct StudioInspector: View {
         return "\(background) · \(padding)"
     }
 
-    /// The default layout's name and where it puts the camera.
     private var cameraSummary: String {
         let layout = model.style.camera.layout
         return switch layout.kind {
@@ -411,7 +376,6 @@ struct StudioInspector: View {
         return InspectorValueFormat.percent().displayString(for: model.audioVolume)
     }
 
-    /// The selected clip, or else the one under the playhead.
     private var shownClip: RecordingClipSegment? {
         if let selected = model.selectedClip { return selected }
         guard let location = model.clipTimeline.location(at: model.currentTime) else {
@@ -430,9 +394,7 @@ struct StudioInspector: View {
         return "\(index + 1) of \(segments.count) · \(speed)"
     }
 
-    // MARK: Pages
 
-    /// The top of every page: a way back, the page's title, and its switch.
     private func pageHeader<Accessory: View>(
         _ title: String,
         systemImage: String,
@@ -457,7 +419,6 @@ struct StudioInspector: View {
                 }
                 .buttonStyle(.plain)
                 .help("Back to \(backTitle)")
-                // Escape belongs to the crop bar while cropping.
                 .keyboardShortcut(model.isCroppingVideo ? nil : .cancelAction)
 
                 Spacer(minLength: 0)
@@ -492,8 +453,6 @@ struct StudioInspector: View {
         .padding(.bottom, 4)
     }
 
-    /// A page's controls. A feature that is switched off keeps its controls
-    /// on show, dimmed, so the page still says what turning it on would do.
     private func pageBody<Content: View>(
         isActive: Bool = true,
         @ViewBuilder content: () -> Content
@@ -559,7 +518,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Style
 
     private var canvasControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
@@ -635,16 +593,12 @@ struct StudioInspector: View {
                     range: 0...1,
                     format: .percent()
                 )
-                // The shadow falls on the background; with none there is
-                // nothing for it to fall on.
                 .disabled(model.style.background == .none)
                 .opacity(model.style.background == .none ? 0.4 : 1)
             }
         }
     }
 
-    /// The default layout. Cues on the timeline's Layout lane switch to
-    /// another one for part of the video.
     private var cameraControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
             StudioCameraLayoutPicker(model: model, layout: model.style.camera.layout) { layout, isContinuous in
@@ -678,7 +632,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Layout cue
 
     private func selectedLayoutPage(for selected: RecordingCameraLayoutCue) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -715,7 +668,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Text and pixelate
 
     private func selectedTextPage(for text: RecordingTextOverlay) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -793,11 +745,11 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Motion
 
     private var zoomControls: some View {
         let pressCount = model.recordedPressTimes.count
         return VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            RecordingZoomAnimationStylePicker(model: model)
             HStack(spacing: InspectorMetrics.rowSpacing) {
                 InspectorActionButton("Auto Zoom", systemImage: "pointer.arrow.rays") {
                     withAnimation(.morphIfAllowed) { model.resynthesizeZoomCues() }
@@ -843,11 +795,7 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Selection
 
-    /// A zoom clicked on the timeline. Its switch turns just this zoom on or
-    /// off; going back lets go of the selection and returns to wherever the
-    /// panel was, the Zoom page included.
     @ViewBuilder
     private func selectedZoomPage(for selected: ZoomCue) -> some View {
         pageHeader(
@@ -994,7 +942,6 @@ struct StudioInspector: View {
         return "\(x), \(y)"
     }
 
-    /// The clip under the playhead: its speed, and deleting it.
     private func clipControls(for clip: RecordingClipSegment) -> some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
             HStack(spacing: InspectorMetrics.rowSpacing) {
@@ -1031,7 +978,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Text
 
     private var keystrokeControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
@@ -1252,8 +1198,6 @@ struct StudioInspector: View {
             .background(shape.fill(InspectorControlPalette.trackFill(for: colorScheme)))
             .clipShape(shape)
             .onChange(of: model.activeSubtitleCue?.id) { _, activeID in
-                // Follow playback through the list, but never yank the list
-                // around while the user is scrubbing or editing.
                 guard let activeID, model.isPlaying else { return }
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(activeID, anchor: .center)
@@ -1262,16 +1206,9 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Audio
 
-    /// The round trip around tools that clean up speech but offer no API:
-    /// write the cut's soundtrack out, run it through the tool, bring the
-    /// result back in as the project's audio. Two buttons and a file chip -
-    /// the explaining is left to tooltips.
     private var audioControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            // A silent recording has nothing to send out, but it can still
-            // be given a soundtrack - so only the export half is withheld.
             if model.hasAudio {
                 InspectorHalfField {
                     InspectorSlider("Volume", value: $model.audioVolume, range: 0...2, format: .percent())
@@ -1309,9 +1246,6 @@ struct StudioInspector: View {
         .motion(.morph, value: model.replacementAudio?.displayName)
     }
 
-    /// One button carrying the whole export state, so progress and results
-    /// never cost the section an extra row. The format is asked for at export
-    /// time, the same way video export asks for its options.
     @ViewBuilder
     private var audioExportButton: some View {
         Group {
@@ -1362,8 +1296,6 @@ struct StudioInspector: View {
         .motion(.morphQuick, value: model.audioExportState.phase)
     }
 
-    /// Matches `InspectorActionButton`'s chrome for the export button's
-    /// non-idle states, which carry richer content than a symbol and a title.
     private func audioExportChrome<Label: View>(
         help: String,
         action: @escaping () -> Void,
@@ -1433,13 +1365,11 @@ struct StudioInspector: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    /// Short spans read better in seconds than as 0:00 timecode.
     private static func spanText(_ seconds: TimeInterval) -> String {
         let value = max(0, seconds)
         return value < 60 ? String(format: "%.1fs", value) : clockText(value)
     }
 
-    // MARK: Helpers
 
     private var usesDefaultLayout: Bool {
         abs(model.style.padding - 0.06) < 0.0001
@@ -1453,8 +1383,6 @@ struct StudioInspector: View {
 }
 
 private extension RecordingStudioExportState {
-    /// The state's kind without its payload, so progress ticks don't count
-    /// as a change of state.
     var phase: Int {
         switch self {
         case .idle: 0
@@ -1466,12 +1394,7 @@ private extension RecordingStudioExportState {
 }
 
 
-// MARK: - Transcript
 
-/// One editable subtitle line: a timestamp plus the cue text as a free-form
-/// field. Hovering a row skims the preview to that cue, clicking or editing
-/// commits the playhead there (paused), and the row under the playhead is
-/// highlighted so the list follows the video.
 private struct StudioSubtitleRow: View {
     @Bindable var model: RecordingStudioModel
     let cue: RecordingSubtitleCue
@@ -1504,8 +1427,6 @@ private struct StudioSubtitleRow: View {
             .font(.inspectorValue)
             .focused($isEditing)
             .onChange(of: isEditing) { _, editing in
-                // Starting to edit parks the paused preview on this cue so
-                // the correction is visible in context while typing.
                 if editing {
                     model.seekToSubtitle(cue)
                 }
@@ -1520,8 +1441,6 @@ private struct StudioSubtitleRow: View {
             model.seekToSubtitle(cue)
         }
         .onHover { hovering in
-            // Hover skims the paused preview like the timeline strip does;
-            // leaving hands the frame back to the real playhead.
             guard !model.isPlaying, let editorTime else { return }
             if hovering {
                 model.hoverPreviewTime = editorTime
@@ -1531,8 +1450,6 @@ private struct StudioSubtitleRow: View {
         }
     }
 
-    /// Where this cue lands on the edited timeline; nil when its audio was
-    /// cut out entirely.
     private var editorTime: TimeInterval? {
         model.editorTime(forSourceTime: cue.start)
             ?? model.editorTime(forSourceTime: (cue.start + cue.end) / 2)
@@ -1545,11 +1462,6 @@ private struct StudioSubtitleRow: View {
     }
 }
 
-/// Descript-style transcript editing: the narration as flowing words.
-/// Clicking a word jumps the playhead there, shift-clicking selects a
-/// passage, and cutting the selection removes that stretch of the video.
-/// Words whose footage is already cut render struck-through; filler words
-/// carry a dotted underline so the bulk action's targets are visible.
 private struct StudioTranscriptEditPanel: View {
     @Bindable var model: RecordingStudioModel
 
@@ -1571,8 +1483,6 @@ private struct StudioTranscriptEditPanel: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: InspectorMetrics.listRadius, style: .continuous))
                 .onChange(of: model.activeTranscriptWordIndex) { _, activeIndex in
-                    // Follow playback through the transcript, but never yank
-                    // it around while the user is selecting a passage.
                     guard let activeIndex, model.isPlaying, selection == nil else { return }
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo(activeIndex, anchor: .center)
@@ -1638,13 +1548,6 @@ private struct StudioTranscriptEditPanel: View {
     }
 }
 
-/// One word in the transcript editor, drawn so the flow reads as a plain
-/// paragraph: the chip's side padding doubles as the inter-word space
-/// (layout spacing is zero), which also makes a multi-word selection's
-/// highlight contiguous like real text selection. The font weight never
-/// changes with state - a width change would reflow the whole paragraph
-/// on every playback tick. Kept to plain stored values so ticks only
-/// re-render the words whose state actually changed.
 private struct StudioTranscriptWordView: View {
     let text: String
     let isSelected: Bool
@@ -1685,9 +1588,6 @@ private struct StudioTranscriptWordView: View {
     }
 }
 
-/// Minimal left-aligned wrapping layout for the transcript's word chips.
-/// Horizontal spacing lives inside the chips (see StudioTranscriptWordView),
-/// so the layout only separates lines.
 private struct TranscriptFlowLayout: Layout {
     var spacingX: CGFloat = 0
     var spacingY: CGFloat = 3
@@ -1728,9 +1628,7 @@ private struct TranscriptFlowLayout: Layout {
     }
 }
 
-// MARK: - Audio export options
 
-/// Asks for the soundtrack format at export time.
 private struct StudioAudioExportOptions: View {
     @Binding var format: RecordingAudioFormat
     let onExport: () -> Void
@@ -1763,18 +1661,13 @@ private struct StudioAudioExportOptions: View {
     }
 }
 
-/// One tile per arrow. Each pointer keeps its size relative to the others,
-/// so the tiles compare like the video, and sits centered by what it draws:
-/// the macOS arrow's image is mostly empty padding.
 private struct StudioCursorStylePicker: View {
     @Binding var selection: RecordingCursorStyle
-    /// Shows the vector arrows black inside a white outline.
     let inverted: Bool
 
     private struct Preview {
         var image: NSImage
         var size: CGSize
-        /// The drawn part of the image, as fractions of its size.
         var glyph: CGRect
     }
 
@@ -1842,7 +1735,6 @@ private struct StudioCursorStylePicker: View {
         .background(Color.primary.opacity(0.05))
     }
 
-    /// Something for a see-through circle to show, blur, or bend.
     private func textLines(in size: CGSize) -> some View {
         VStack(alignment: .leading, spacing: size.height * 0.1) {
             ForEach([0.62, 0.48, 0.56], id: \.self) { fraction in
@@ -1873,7 +1765,6 @@ private struct StudioCursorStylePicker: View {
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return full }
 
-        // Rows run top-down in memory, matching the view's top-left origin.
         var minX = width, minY = height, maxX = -1, maxY = -1
         for y in 0..<height {
             for x in 0..<width where pixels[y * width + x] > 64 {

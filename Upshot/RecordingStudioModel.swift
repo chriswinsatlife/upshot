@@ -102,6 +102,20 @@ final class RecordingStudioModel {
             rebuildPreviewReframe()
         }
     }
+    var exportAppearance = RecordingExportAppearance() {
+        didSet {
+            guard exportAppearance != oldValue else { return }
+            if isLoaded, let session {
+                do {
+                    try RecordingExportAppearanceStore.save(exportAppearance, to: session.directoryURL)
+                    session.removeFinalVideos()
+                } catch {
+                    NSLog("[Upshot] Export appearance save failed: %@", error.localizedDescription)
+                }
+            }
+            rebuildMotionTimeline()
+        }
+    }
     var exportDeliveryOptions = RecordingExportDeliveryOptions() {
         didSet {
             guard exportDeliveryOptions != oldValue else { return }
@@ -291,6 +305,7 @@ final class RecordingStudioModel {
         if RecordingSession.isSessionDirectory(url) {
             session = RecordingSession(directoryURL: url)
             exportDeliveryOptions = RecordingExportOptionStore.load(from: url) ?? UpshotPreferences.recordingExtendedExportDefaults
+            exportAppearance = RecordingExportAppearanceStore.load(from: url) ?? RecordingExportAppearance()
         } else {
             session = nil
         }
@@ -2773,6 +2788,7 @@ final class RecordingStudioModel {
             audioClips: audioClips,
             mediaDirectory: mediaDirectoryURL
         )
+        configuration.appearance = exportAppearance
         configuration.deliveryOptions = exportDeliveryOptions
         if !includesGIF { configuration.deliveryOptions.format = .video }
         configuration.sourcePixelScale = manifest?.pixelScale ?? 1
@@ -2801,7 +2817,8 @@ final class RecordingStudioModel {
             layoutTimeline: cameraLayoutTimeline,
             cues: zoomEnabled ? zoomCues : [],
             capture: pointerCapture,
-            clipTimeline: clipTimeline
+            clipTimeline: clipTimeline,
+            zoomAnimationStyle: exportAppearance.zoomAnimationStyle
         )
     }
 
@@ -2891,7 +2908,7 @@ final class RecordingStudioModel {
 
     private var freshDeliverableURL: URL? {
         guard ProcessInfo.processInfo.environment["UPSHOT_EXPORT_BYPASS_CACHE"] != "1" else { return nil }
-        guard exportDeliveryOptions == RecordingExportDeliveryOptions(), let session else { return nil }
+        guard exportDeliveryOptions == RecordingExportDeliveryOptions(), exportAppearance == RecordingExportAppearance(), let session else { return nil }
         return session.freshFinalURL(matching: currentDocument())
     }
 

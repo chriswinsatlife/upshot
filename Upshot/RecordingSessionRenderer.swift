@@ -21,10 +21,12 @@ enum RecordingSessionRenderer {
         let pointerSynthesized = manifest?.pointerSynthesized == true
         let editDocument = session.effectiveEditDocument()
         guard session.hasCamera || pointerSynthesized || editDocument != nil
-            || RecordingExportOptionStore.load(from: session.directoryURL) != nil else {
+            || RecordingExportOptionStore.load(from: session.directoryURL) != nil
+            || RecordingExportAppearanceStore.load(from: session.directoryURL) != nil else {
             return session.screenURL
         }
         if RecordingExportOptionStore.load(from: session.directoryURL) == nil,
+           RecordingExportAppearanceStore.load(from: session.directoryURL) == nil,
            let existing = session.freshFinalURL(matching: editDocument) { return existing }
 
         let configuration = try await makeConfiguration(for: session)
@@ -143,6 +145,7 @@ enum RecordingSessionRenderer {
             )
             : aspect.canvasSize(for: canvasSize)
         let videoCropRect = document?.normalizedVideoCropRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let appearance = RecordingExportAppearanceStore.load(from: session.directoryURL) ?? RecordingExportAppearance()
         let motionTimeline = RecordingStudioMotionTimeline.build(
             canvasSize: exportCanvasSize,
             style: style,
@@ -155,7 +158,8 @@ enum RecordingSessionRenderer {
             layoutTimeline: cameraLayoutTimeline,
             cues: zoomEnabled ? zoomCues : [],
             capture: capture,
-            clipTimeline: clipTimeline
+            clipTimeline: clipTimeline,
+            zoomAnimationStyle: appearance.zoomAnimationStyle
         )
 
         var configuration = RecordingStudioExporter.Configuration(
@@ -202,6 +206,7 @@ enum RecordingSessionRenderer {
             audioClips: document?.audioClips ?? [],
             mediaDirectory: session.directoryURL.appendingPathComponent("media", isDirectory: true)
         )
+        configuration.appearance = appearance
         configuration.deliveryOptions = RecordingExportOptionStore.load(from: session.directoryURL) ?? RecordingExportDeliveryOptions()
         configuration.deliveryOptions.format = .video
         configuration.sourcePixelScale = manifest?.pixelScale ?? 1

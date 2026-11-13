@@ -151,6 +151,7 @@ extension AgentTools {
             "items": .array(items),
             "document": document,
             "exportOptions": try JSONValue(encoding: model.exportDeliveryOptions),
+            "exportAppearance": try JSONValue(encoding: model.exportAppearance),
         ]
     }
 
@@ -586,6 +587,13 @@ extension AgentTools {
         let destination = try outputURL(arguments)
 
         model.exportState = .idle
+        if let patch = arguments.raw["appearance"] {
+            do {
+                model.exportAppearance = try JSONValue(encoding: model.exportAppearance).merging(patch).decode(as: RecordingExportAppearance.self)
+            } catch {
+                throw AgentToolError.message("Invalid export appearance: \(describe(error)). See get_editing_guide.")
+            }
+        }
         if let patch = arguments.raw["options"] {
             do {
                 let merged = try JSONValue(encoding: model.exportDeliveryOptions).merging(patch)

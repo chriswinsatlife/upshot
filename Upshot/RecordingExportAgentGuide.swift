@@ -11,6 +11,7 @@ enum RecordingExportAgentGuide {
     monoAudio: true downmixes recorded, replacement, and added audio to one channel. export_audio accepts mono: true.
     separateAudioTracks: true retains microphone and system audio as independent movie tracks. Added audio gets its own mixed track. A replacement soundtrack replaces the recorded tracks.
     motionBlurLevel: "Off", "Low", "Medium", "High" selects a zero, quarter, half, or full-frame shutter. This takes precedence over settings.motionBlurEnabled.
+    export_video appearance.zoomAnimationStyle: "Smooth" or "Dynamic" selects the zoom spring. Stored in export-appearance.json.
     get_recording returns the current options as exportOptions.
     """
 }

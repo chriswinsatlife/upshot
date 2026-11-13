@@ -33,6 +33,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let videoCropRect: CGRect
         let clipTimeline: RecordingClipTimeline
         var exportSettings: VideoCompressionSettings
+        var appearance = RecordingExportAppearance()
         var deliveryOptions = RecordingExportDeliveryOptions()
         var sourcePixelScale: Double = 1
         var recordedAudioTrackNames: [String] = []
@@ -180,6 +181,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
+        Self.logger.info("Zoom animation style=\(configuration.appearance.zoomAnimationStyle.rawValue)")
         let timing = RecordingExportTiming(settings: configuration.exportSettings, motionBlurLevel: configuration.deliveryOptions.motionBlurLevel)
         let sourceAsset = AVURLAsset(url: configuration.screenURL)
         let sourceDuration = try await sourceAsset.load(.duration).seconds
