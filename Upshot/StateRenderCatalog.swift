@@ -22,7 +22,7 @@ enum StateRenderCatalog {
                 return AnyView(SettingsView())
             }
             if tab != .about {
-                add("settings-\(tab.rawValue)-expanded", "SettingsView", "struct SettingsView", 1000, tab == .screenshots ? 3500 : tab == .general ? 2300 : 1800) {
+                add("settings-\(tab.rawValue)-expanded", "SettingsView", "struct SettingsView", 1000, tab == .screenshots ? 2000 : tab == .general ? 2300 : 1800) {
                     SettingsNavigation.shared.selectedTab = tab
                     UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recordingDoNotDisturbKey)
                     UpshotStorage.defaults.set(true, forKey: UpshotPreferences.screenshotApplyBackgroundPresetKey)
@@ -54,6 +54,12 @@ enum StateRenderCatalog {
                 return AnyView(NavigationStack { pane.navigationTitle("Quick Access") })
             }
         }
+        add("settings-section-screenshot-output-jpeg-transparent-expanded", "ScreenshotOutputSettingsSection", "struct ScreenshotOutputSettingsSection", 860, 820) {
+            UpshotStorage.defaults.set(ScreenshotExportFormat.jpeg.rawValue, forKey: UpshotPreferences.exportFormatKey)
+            UpshotStorage.defaults.set(true, forKey: UpshotPreferences.autoCompressKey)
+            UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.transparent.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)
+            return AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() })
+        }
         add("settings-shortcuts-expanded", "CaptureHotkeySettingsSection", "struct CaptureHotkeySettingsSection", 860, 4200) {
             AnyView(InterfaceFormPage { CaptureHotkeySettingsSection(actions: CaptureHotkeyAction.allCases) }.environment(SettingsPermissions()))
         }
@@ -76,6 +82,10 @@ enum StateRenderCatalog {
         let sections: [(String, String, () -> AnyView)] = [
             ("area-selection", "AreaSelectionSettingsSection", { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
             ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection() }) }),
+        }
+            ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() }) }),
+            ("text-recognition", "TextRecognitionSettingsSection", { AnyView(InterfaceFormPage { TextRecognitionSettingsSection() }) }),
+            ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(InterfaceFormPage { AnnotationEditorSettingsSection() }) }),
             ("capture-history", "CaptureHistorySettingsSection", { AnyView(InterfaceFormPage { CaptureHistorySettingsSection() }) }),
             ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
             ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
@@ -84,7 +94,7 @@ enum StateRenderCatalog {
             ("configuration", "AutomationSettingsSection", { AnyView(InterfaceFormPage { AutomationSettingsSection() }) })
         ]
         for (name, source, view) in sections {
-            add("settings-section-\(name)-expanded", source, "struct ", 860, name == "screenshot-output" ? 1450 : 900) {
+            add("settings-section-\(name)-expanded", source, "struct ", 860, name == "screenshot-output" ? 820 : 900) {
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.screenshotApplyBackgroundPresetKey)
                 UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.customWallpaper.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recordingDoNotDisturbKey)
