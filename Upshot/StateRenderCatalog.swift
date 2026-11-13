@@ -34,10 +34,25 @@ enum StateRenderCatalog {
         add("settings-shortcuts-expanded", "CaptureHotkeySettingsSection", "struct CaptureHotkeySettingsSection", 860, 4200) {
             AnyView(InterfaceFormPage { CaptureHotkeySettingsSection(actions: CaptureHotkeyAction.allCases) }.environment(SettingsPermissions()))
         }
+        let textRecognitionVariants: [(String, String, Bool, Bool)] = [
+            ("", "", false, true),
+            ("-language-unavailable", "xx-YY", true, true),
+            ("-analysis-off", "", false, false)
+        ]
+        for (suffix, language, detectCodes, analyzeCaptures) in textRecognitionVariants {
+            add("settings-text-recognition\(suffix)", "SettingsTextRecognitionPane", "struct SettingsTextRecognitionPane", 800, 640) {
+                UpshotStorage.defaults.set(language, forKey: UpshotPreferences.recognitionLanguageKey)
+                UpshotStorage.defaults.set(detectCodes, forKey: UpshotPreferences.recognitionDetectCodesKey)
+                UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recognitionKeepLineBreaksKey)
+                UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recognitionDetectLinksKey)
+                UpshotStorage.defaults.set(analyzeCaptures, forKey: UpshotPreferences.libraryAnalyzeCapturesKey)
+                UpshotStorage.defaults.set(false, forKey: UpshotPreferences.librarySortExistingKey)
+                return AnyView(NavigationStack { SettingsTextRecognitionPane().navigationTitle("Text Recognition") })
+            }
+        }
         let sections: [(String, String, () -> AnyView)] = [
             ("area-selection", "AreaSelectionSettingsSection", { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
             ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection() }) }),
-            ("text-recognition", "TextRecognitionSettingsSection", { AnyView(InterfaceFormPage { TextRecognitionSettingsSection() }) }),
             ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(InterfaceFormPage { AnnotationEditorSettingsSection() }) }),
             ("capture-history", "CaptureHistorySettingsSection", { AnyView(InterfaceFormPage { CaptureHistorySettingsSection() }) }),
             ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),

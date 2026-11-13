@@ -327,6 +327,10 @@ enum StateRenderSource {
             ("struct MCPSettingsPane: View {", 12),
             ("private enum Setup: String, CaseIterable, Identifiable {", 16),
         ],
+        "Upshot/SettingsTextRecognitionPane.swift": [
+            ("struct SettingsTextRecognitionPane: View {", 3),
+            ("private struct TextRecognitionLibrarySection: View {", 12),
+        ],
         "Upshot/SettingsView.swift": [
             ("enum SettingsTab: String, CaseIterable, Identifiable {", 9),
             ("final class SettingsNavigation {", 47),
@@ -342,9 +346,6 @@ enum StateRenderSource {
             ("final class TeleprompterOverlayPresenter {", 98),
             ("private final class TeleprompterOverlayHostingView<Content: View>: NSHostingView<Content> {", 222),
             ("struct TeleprompterOverlayView: View {", 228),
-        ],
-        "Upshot/TextRecognitionSettingsSection.swift": [
-            ("struct TextRecognitionSettingsSection: View {", 4),
         ],
         "Upshot/UpshotApp.swift": [
             ("enum UpshotMain {", 7),
