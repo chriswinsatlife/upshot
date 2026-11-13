@@ -35,6 +35,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         var exportSettings: VideoCompressionSettings
         var deliveryOptions = RecordingExportDeliveryOptions()
         var sourcePixelScale: Double = 1
+        var recordedAudioTrackNames: [String] = []
         let audioReplacementURL: URL?
         let audioVolume: Double
         let reframe: ReframeTrack?
@@ -225,6 +226,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         screenReader.add(videoOutput)
         screenReader.timeRange = exportTimeRange
 
+        let separatesRecording = configuration.deliveryOptions.separateAudioTracks && configuration.audioReplacementURL == nil
         var audioOutput: AVAssetReaderAudioMixOutput?
         var replacementReader: AVAssetReader?
         var clipSources: [RecordingAudioClipSource] = []
@@ -239,7 +241,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             let mixed: (reader: AVAssetReader, output: AVAssetReaderAudioMixOutput)? = clipSources.isEmpty
                 ? nil
                 : try await Self.makeMixedAudio(
-                    recordingTracks: audioTracks,
+                    recordingTracks: separatesRecording ? [] : audioTracks,
                     replacementURL: configuration.audioReplacementURL,
                     clips: clipSources,
                     timeRange: exportTimeRange,
@@ -265,7 +267,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                     replacementReader = reader
                     audioOutput = output
                 }
-            } else if !audioTracks.isEmpty {
+            } else if !audioTracks.isEmpty && !separatesRecording {
                 let output = AVAssetReaderAudioMixOutput(
                     audioTracks: audioTracks,
                     audioSettings: RecordingAudioChannels.decodedSettings(mono: configuration.deliveryOptions.monoAudio)
@@ -334,6 +336,23 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             audioInput = input
         }
 
+        var separatedAudio: [RecordingAudioTrackExport] = []
+        if separatesRecording && !configuration.exportSettings.removeAudio {
+            for (index, track) in audioTracks.enumerated() {
+                let title = configuration.recordedAudioTrackNames.indices.contains(index)
+                    ? configuration.recordedAudioTrackNames[index] : "Audio \(index + 1)"
+                let stream = try RecordingAudioTrackExport(
+                    asset: screenAsset, track: track, timeRange: exportTimeRange,
+                    volume: configuration.audioVolume, mono: configuration.deliveryOptions.monoAudio,
+                    title: title, writer: writer
+                )
+                separatedAudio.append(stream)
+            }
+        }
+        defer { for stream in separatedAudio { stream.reader.cancelReading() } }
+        for stream in separatedAudio {
+            guard stream.reader.startReading() else { throw stream.reader.error ?? ExportError.writerFailed(nil) }
+        }
         guard screenReader.startReading() else {
             throw screenReader.error ?? ExportError.writerFailed(nil)
         }
@@ -410,7 +429,10 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 input: writerAudioInput,
                 cancelFlag: cancelFlag
             )
-            _ = try await (videoDone, audioDone)
+            async let separateDone: Void = Self.pumpSeparateAudio(separatedAudio, cancelFlag: cancelFlag)
+            _ = try await (videoDone, audioDone, separateDone)
+            if screenReader.status == .failed { throw screenReader.error ?? ExportError.writerFailed(nil) }
+            if replacementReader?.status == .failed { throw replacementReader?.error ?? ExportError.writerFailed(nil) }
         } catch {
             screenReader.cancelReading()
             replacementReader?.cancelReading()
@@ -601,6 +623,15 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         output.alwaysCopiesSampleData = false
         reader.add(output)
         return (reader, output)
+    }
+
+    private static func pumpSeparateAudio(_ streams: [RecordingAudioTrackExport], cancelFlag: CancelFlag) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for stream in streams {
+                group.addTask { try await stream.pump { cancelFlag.isCancelled } }
+            }
+            try await group.waitForAll()
+        }
     }
 
     private func pumpAudio(

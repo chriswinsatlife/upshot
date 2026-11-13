@@ -2776,6 +2776,10 @@ final class RecordingStudioModel {
         configuration.deliveryOptions = exportDeliveryOptions
         if !includesGIF { configuration.deliveryOptions.format = .video }
         configuration.sourcePixelScale = manifest?.pixelScale ?? 1
+        configuration.recordedAudioTrackNames = [
+            manifest?.includesSystemAudio == true ? "System Audio" : nil,
+            manifest?.includesMicrophone == true ? "Microphone" : nil
+        ].compactMap { $0 }
         return configuration
     }
 

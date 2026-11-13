@@ -205,6 +205,10 @@ enum RecordingSessionRenderer {
         configuration.deliveryOptions = RecordingExportOptionStore.load(from: session.directoryURL) ?? RecordingExportDeliveryOptions()
         configuration.deliveryOptions.format = .video
         configuration.sourcePixelScale = manifest?.pixelScale ?? 1
+        configuration.recordedAudioTrackNames = [
+            manifest?.includesSystemAudio == true ? "System Audio" : nil,
+            manifest?.includesMicrophone == true ? "Microphone" : nil
+        ].compactMap { $0 }
         return configuration
     }
 

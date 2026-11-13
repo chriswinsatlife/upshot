@@ -103,6 +103,8 @@ struct RecordingExportOptionsPopover: View {
                 InspectorHint(formatHint)
 
                 toggle("Mono audio", isOn: $delivery.monoAudio)
+                toggle("Separate audio tracks", isOn: $delivery.separateAudioTracks)
+                    .help("Keep microphone and system audio as independent tracks. Added audio uses its own mixed track. An imported replacement soundtrack replaces the recorded tracks.")
                 toggle("Include audio", isOn: Binding(
                     get: { !settings.removeAudio },
                     set: { settings.removeAudio = !$0 }
