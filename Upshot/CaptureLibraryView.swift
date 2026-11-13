@@ -84,8 +84,10 @@ struct CaptureLibraryView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .inspector(isPresented: $inspectorVisible) {
-            CaptureLibraryInspector(model: model)
-                .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+            GeometryReader { _ in
+                CaptureLibraryInspector(model: model)
+            }
+            .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
         }
         .toolbar {
             CaptureLibraryToolbar(model: model, layout: $layout, inspectorVisible: $inspectorVisible)
