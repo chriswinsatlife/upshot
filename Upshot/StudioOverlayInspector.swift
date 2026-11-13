@@ -32,7 +32,6 @@ private enum StudioOverlaySwatches {
     ]
 }
 
-/// A row of preset swatches and a tile that opens the color panel.
 private struct StudioOverlayColorRow: View {
     let presets: [RecordingOverlayColor]
     let selection: RecordingOverlayColor
@@ -64,7 +63,6 @@ private struct StudioOverlayColorRow: View {
     }
 
     private func swatch(_ color: RecordingOverlayColor) -> some View {
-        // Translucent colors sit on a checker so their see-through reads.
         Canvas { context, size in
             if color.alpha < 0.999 {
                 let cell = size.width / 4
@@ -81,8 +79,6 @@ private struct StudioOverlayColorRow: View {
         }
     }
 }
-
-// MARK: - Text
 
 struct StudioTextInspectorControls: View {
     @Bindable var model: RecordingStudioModel
@@ -284,7 +280,6 @@ private struct StudioTextEffectTile: View {
     @State private var hoverStart = Date()
     @Environment(\.colorScheme) private var colorScheme
 
-    /// The pretend text is long, so the half-length squeeze never applies.
     private static let previewLength: TimeInterval = 100
     private static let hold: TimeInterval = 0.6
 
@@ -314,7 +309,6 @@ private struct StudioTextEffectTile: View {
     private func draw(in context: CGContext, size: CGSize, elapsed: TimeInterval) {
         var animation = isExit ? text.animationOut : text.animationIn
         animation.effect = effect
-        // A letter at a time would take forever in a thumbnail.
         if animation.unit != .all { animation.delay = min(animation.delay, 0.12) }
 
         var preview = text
@@ -336,7 +330,6 @@ private struct StudioTextEffectTile: View {
                 canvasSize: size, in: context, castsShadow: false
             )
         } else {
-            // Partway through a plain, linear run of the whole word.
             var rest = animation
             rest.unit = .all
             rest.ease = .linear
@@ -352,7 +345,6 @@ private struct StudioTextEffectTile: View {
         }
     }
 }
-
 
 struct StudioRedactionInspectorControls: View {
     @Bindable var model: RecordingStudioModel

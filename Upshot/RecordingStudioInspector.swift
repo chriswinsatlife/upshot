@@ -220,8 +220,6 @@ struct StudioInspector: View {
         StudioInspectorModeSwitchRow(title, selection: selection, options: options)
     }
 
-    // MARK: Look
-
     @ViewBuilder
     private var lookPage: some View {
         RecordingStudioStyleStrip(model: model, presetStore: stylePresetStore)
@@ -313,8 +311,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Camera
-
     @ViewBuilder
     private var cameraPage: some View {
         group("Camera", isOn: $model.style.camera.isVisible, toggleTitle: "Show camera") {
@@ -364,8 +360,6 @@ struct StudioInspector: View {
             }
         }
     }
-
-    // MARK: Zoom
 
     @ViewBuilder
     private var zoomPage: some View {
@@ -532,8 +526,6 @@ struct StudioInspector: View {
         return "\(x), \(y)"
     }
 
-    // MARK: Cursor
-
     @ViewBuilder
     private var cursorPage: some View {
         group(
@@ -575,8 +567,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Keystrokes
-
     @ViewBuilder
     private var keystrokesPage: some View {
         group("Keystrokes", isOn: $model.showsKeystrokes, toggleTitle: "Show keystrokes") {
@@ -608,8 +598,6 @@ struct StudioInspector: View {
             }
         }
     }
-
-    // MARK: Captions
 
     @ViewBuilder
     private var captionsPage: some View {
@@ -807,8 +795,6 @@ struct StudioInspector: View {
         }
     }
 
-    // MARK: Audio
-
     @ViewBuilder
     private var audioPage: some View {
         group("Audio", accessory: {
@@ -961,8 +947,6 @@ struct StudioInspector: View {
         return value < 60 ? String(format: "%.1fs", value) : clockText(value)
     }
 
-    // MARK: Clip
-
     private var shownClip: RecordingClipSegment? {
         if let selected = model.selectedClip { return selected }
         guard let location = model.clipTimeline.location(at: model.currentTime) else {
@@ -1021,8 +1005,6 @@ struct StudioInspector: View {
             .transition(.opacity)
         }
     }
-
-    // MARK: Selection pages
 
     private func selectionHeader(_ title: String, onDone: @escaping () -> Void) -> some View {
         HStack(spacing: Space.m) {

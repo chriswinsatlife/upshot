@@ -1,46 +1,18 @@
-//
-//  StudioTimelineBlocks.swift
-//  Upshot
-//
-//  The blocks on the Studio timeline's tracks - zooms, camera layouts, text,
-//  images and effects, audio - and the one interaction engine they share.
-//  Blocks only draw. Each track hit-tests the pointer against the same
-//  frames it draws with and runs a single drag gesture, so a block is never
-//  swallowed by its own trim handles, and every track selects, moves, trims
-//  and creates the same way.
-//
-
 import AppKit
 import SwiftUI
 
-// MARK: - Metrics
-
 enum StudioBlockMetrics {
     static let cornerRadius: CGFloat = 8
-    /// Room above and below a block inside its track; the selection rim
-    /// sits in it.
     static let inset: CGFloat = 3
-    /// Narrowest a block draws, however short, so it stays visible and
-    /// grabbable on a fitted timeline.
     static let minimumWidth: CGFloat = 24
-    /// The selection's handles, outside the block's ends.
     static let handleWidth: CGFloat = 8
     static let rimWidth: CGFloat = 2
-    /// The rim's outer corners. A selected block's corners tighten to the
-    /// rim's inner edge, so the frame runs an even width all the way round
-    /// instead of bulging into rounder block corners.
     static let selectionCornerRadius: CGFloat = 6
     static let selectedCornerRadius: CGFloat = selectionCornerRadius - rimWidth
-    /// How far past an unselected block's end a trim can still be grabbed.
     static let edgeOutset: CGFloat = 4
-    /// How far into an unselected block its trim reaches, at most. Never
-    /// more than a fifth of the block, so its middle always moves it.
     static let edgeInset: CGFloat = 6
-    /// How far into a selected block its outside handles still answer.
     static let handleOverlap: CGFloat = 2
     static let labelInset: CGFloat = 9
-    /// Pointer travel before a press on a block becomes a move, or a press
-    /// on empty track becomes a new block.
     static let dragThreshold: CGFloat = 3
 
     static var shape: RoundedRectangle {
@@ -49,7 +21,6 @@ enum StudioBlockMetrics {
 }
 
 extension EnvironmentValues {
-    /// The corners of the block being drawn: tighter while it's selected.
     @Entry var studioBlockCornerRadius: CGFloat = StudioBlockMetrics.cornerRadius
 }
 
@@ -62,16 +33,11 @@ private struct StudioBlockClip: ViewModifier {
 }
 
 extension View {
-    /// Clips to the block's corners as they are drawn right now.
     func studioBlockClip() -> some View {
         modifier(StudioBlockClip())
     }
 }
 
-// MARK: - Model
-
-/// One block on a track: what it stands for and where it sits on the
-/// edited timeline.
 struct StudioLaneBlock<Item: Identifiable>: Identifiable where Item.ID == UUID {
     let item: Item
     let editorStart: TimeInterval
@@ -87,24 +53,14 @@ enum StudioBlockEditKind: Equatable {
     case trimTrailing
 }
 
-/// A drag in progress, measured from the block as the press found it -
-/// the live block re-derives on every update, so measuring against it would
-/// compound the translation.
 struct StudioBlockEdit<Item: Identifiable> where Item.ID == UUID {
     let base: StudioLaneBlock<Item>
     let kind: StudioBlockEditKind
-    /// Editor seconds the pointer has travelled since the press.
     let delta: TimeInterval
 }
 
-/// What a drag across empty track does.
 enum StudioLaneEmptyBehavior {
-    /// Scrubs the playhead.
     case scrub
-    /// A click scrubs; a drag draws out a new block. The dashed draft is the
-    /// block: `commit` gets exactly the range it shows, already fitted
-    /// between the neighbours and grown to `minimumLength` (timeline
-    /// seconds), and must add it as is.
     case create(
         tint: Color,
         minimumLength: TimeInterval,
@@ -112,31 +68,17 @@ enum StudioLaneEmptyBehavior {
     )
 }
 
-/// A block's place on the edited timeline.
 struct StudioLaneSpan: Equatable {
     let id: UUID
     let editorStart: TimeInterval
     let editorEnd: TimeInterval
 }
 
-/// Whether blocks on a track may overlap.
 enum StudioLaneOverlap {
     case allowed
-    /// Moves, trims and new blocks stop at the neighbours, as zooms and
-    /// camera layouts must. `spans` is every block on the track, not just
-    /// the ones drawn, so a drag also stops at a neighbour scrolled out of
-    /// view.
     case forbidden(spans: [StudioLaneSpan])
 }
 
-/// Where a drag across empty track puts a new block, in editor time.
-///
-/// The block starts where the press landed and runs to the pointer, either
-/// way, stopped at the edges of the gap the press landed in. A drag shorter
-/// than `minimumLength` still makes a block that long, grown in the drag's
-/// direction (and back from the gap's end if it runs out of room), so the
-/// draft never shows less than will be added. Nil when the gap is too short
-/// to hold a block at all.
 func studioDraftRange(
     anchor: TimeInterval,
     pointer: TimeInterval,
@@ -159,9 +101,6 @@ func studioDraftRange(
     return lower...upper
 }
 
-/// The empty stretch of track around `time`: from the end of the last block
-/// before it to the start of the first block after it, or the timeline's
-/// ends. Nil when `time` is inside a block.
 func studioGap(
     around time: TimeInterval,
     spans: [StudioLaneSpan],
@@ -173,17 +112,13 @@ func studioGap(
     return floor...max(floor, ceiling)
 }
 
-/// How a track turns block edits into model changes.
 struct StudioBlockLaneActions<Item: Identifiable> where Item.ID == UUID {
     let select: (Item) -> Void
-    /// An edit is starting: open one undo step.
     let begin: (StudioBlockEditKind) -> Void
     let edit: (StudioBlockEdit<Item>) -> Void
-    /// The edit is done: close the undo step.
     let end: (StudioBlockEditKind) -> Void
 }
 
-/// What a block's content needs to know to draw itself.
 struct StudioBlockState {
     let width: CGFloat
     let height: CGFloat
@@ -191,10 +126,6 @@ struct StudioBlockState {
     let isHovered: Bool
 }
 
-// MARK: - Geometry and hit-testing
-
-/// Where a block draws on its track. Rendering and hit-testing both use it,
-/// so what you see is what you grab.
 struct StudioBlockFrame: Equatable {
     let minX: CGFloat
     let width: CGFloat
@@ -204,15 +135,12 @@ struct StudioBlockFrame: Equatable {
     init(editorStart: TimeInterval, editorEnd: TimeInterval, scale: StudioTimelineScale) {
         let startX = scale.x(for: editorStart)
         let natural = CGFloat(max(0, editorEnd - editorStart)) * scale.pointsPerSecond
-        // A block running past the edited video's end is cut there; one
-        // drawn wider than it lasts slides inward to stay whole.
         let visible = min(natural, scale.contentWidth - startX)
         let width = min(max(StudioBlockMetrics.minimumWidth, visible), scale.contentWidth)
         self.width = width
         self.minX = min(startX, max(0, scale.contentWidth - width))
     }
 
-    /// How far into this block, when unselected, its ends trim.
     var edgeInset: CGFloat {
         min(StudioBlockMetrics.edgeInset, width * 0.2)
     }
@@ -223,7 +151,6 @@ enum StudioBlockEdge: Equatable {
     case trailing
 }
 
-/// What the pointer is over on a track.
 enum StudioBlockTarget: Equatable {
     case empty
     case body(UUID)
@@ -243,13 +170,10 @@ struct StudioBlockHitTester {
         let frame: StudioBlockFrame
     }
 
-    /// Bottom to top, as drawn.
     let entries: [Entry]
     let selectedID: UUID?
 
     func target(atX x: CGFloat) -> StudioBlockTarget {
-        // The selected block draws on top with its handles outside its
-        // ends, so it answers first: the handles trim, the block moves.
         if let selected = entries.last(where: { $0.id == selectedID }) {
             let frame = selected.frame
             let reach = StudioBlockMetrics.handleWidth
@@ -265,7 +189,6 @@ struct StudioBlockHitTester {
             }
         }
 
-        // Otherwise the topmost block whose middle is under the pointer.
         for entry in entries.reversed() where entry.id != selectedID {
             let frame = entry.frame
             if x >= frame.minX + frame.edgeInset, x <= frame.maxX - frame.edgeInset {
@@ -273,8 +196,6 @@ struct StudioBlockHitTester {
             }
         }
 
-        // Then the nearest end within reach. Where two blocks meet, the end
-        // of the block the pointer is inside wins over a neighbour's reach.
         var nearest: (target: StudioBlockTarget, isInside: Bool, distance: CGFloat)?
         for entry in entries where entry.id != selectedID {
             let frame = entry.frame
@@ -297,16 +218,9 @@ struct StudioBlockHitTester {
     }
 }
 
-// MARK: - Track
-
-/// One track of blocks. Owns every pointer interaction on the track: hover,
-/// the cursor, selection, moving, trimming, scrubbing and drawing out new
-/// blocks. Each kind of block supplies only its content, its menu, and how
-/// an edit lands in the model.
 struct StudioBlockLane<Item: Identifiable, Content: View, Menu: View, Decoration: View>: View
 where Item.ID == UUID {
     let model: RecordingStudioModel
-    /// The blocks to draw, bottom to top. Usually only those on screen.
     let blocks: [StudioLaneBlock<Item>]
     let selectedID: UUID?
     let scale: StudioTimelineScale
@@ -320,20 +234,15 @@ where Item.ID == UUID {
     @ViewBuilder let menu: (StudioLaneBlock<Item>) -> Menu
     let help: (StudioLaneBlock<Item>) -> String
 
-    /// A press on the track, from mouse-down to mouse-up.
     private enum Press {
-        /// On a block, not yet far enough to edit it.
         case block(StudioLaneBlock<Item>, StudioBlockEditKind)
         case editing(StudioLaneBlock<Item>, StudioBlockEditKind)
-        /// On empty track that can grow a new block, not yet dragged.
         case empty(startTime: TimeInterval)
-        /// Drawing out a new block from where the press landed.
         case creating(startTime: TimeInterval)
         case scrubbing
     }
 
     @State private var press: Press?
-    /// The block a drag across empty track will add on release.
     @State private var draft: ClosedRange<TimeInterval>?
     @State private var hover: StudioBlockTarget = .empty
 
@@ -348,7 +257,6 @@ where Item.ID == UUID {
         let selected = blocks.first { $0.id == selectedID }
 
         ZStack(alignment: .topLeading) {
-            // The track's own surface: presses between blocks land here.
             Color.clear
 
             decoration()
@@ -362,8 +270,6 @@ where Item.ID == UUID {
                 )
             }
 
-            // The selected block draws last, so its handles sit over its
-            // neighbours.
             ForEach(blocks.filter { $0.id != selectedID } + (selected.map { [$0] } ?? [])) { block in
                 if let frame = frames[block.id] {
                     blockView(block, frame: frame)
@@ -408,7 +314,6 @@ where Item.ID == UUID {
             .environment(\.studioBlockCornerRadius, cornerRadius)
             .frame(width: frame.width, height: blockHeight, alignment: .leading)
             .overlay {
-                // An unselected block shows which end the pointer would trim.
                 if !isSelected, case .edge(block.id, let edge) = activeTarget {
                     StudioBlockGrip()
                         .frame(maxWidth: .infinity, alignment: edge == .leading ? .leading : .trailing)
@@ -422,8 +327,6 @@ where Item.ID == UUID {
             .offset(x: frame.minX, y: StudioBlockMetrics.inset)
     }
 
-    // MARK: Pointer
-
     private func hitTester(_ frames: [UUID: StudioBlockFrame]) -> StudioBlockHitTester {
         StudioBlockHitTester(
             entries: blocks.compactMap { block in
@@ -433,7 +336,6 @@ where Item.ID == UUID {
         )
     }
 
-    /// The press's target while one is held, the hovered one otherwise.
     private var activeTarget: StudioBlockTarget {
         switch press {
         case .block(let block, let kind), .editing(let block, let kind):
@@ -470,7 +372,6 @@ where Item.ID == UUID {
         model.pause()
         let target = hitTester(frames).target(atX: x)
         if let id = target.blockID, let block = blocks.first(where: { $0.id == id }) {
-            // Selecting on mouse-down shows the handles before any drag.
             actions.select(block.item)
             let kind: StudioBlockEditKind = switch target {
             case .edge(_, .leading): .trimLeading
@@ -481,8 +382,6 @@ where Item.ID == UUID {
             return
         }
 
-        // Empty track lets go of the selection, like clicking empty canvas,
-        // and scrubs.
         model.clearTimelineSelection()
         let time = scale.time(forX: x)
         model.seek(to: time)
@@ -497,8 +396,6 @@ where Item.ID == UUID {
         let time = scale.time(forX: x)
         switch press {
         case .block(let block, let kind):
-            // A trim follows the pointer from the first point; a move waits
-            // out a small wobble so a click only selects.
             let threshold = kind == .move ? StudioBlockMetrics.dragThreshold : 0.5
             guard abs(translation) >= threshold else { return }
             actions.begin(kind)
@@ -526,10 +423,6 @@ where Item.ID == UUID {
     private func edit(_ block: StudioLaneBlock<Item>, kind: StudioBlockEditKind, translation: CGFloat) {
         var delta = Double(translation) * scale.secondsPerPoint
         if case .forbidden(let spans) = overlap {
-            // Stop at the neighbours here, on the timeline, where the
-            // block's length is the one you see. Stopping later, in
-            // recording time, would park it with a length measured where
-            // the pointer is - over a sped-up clip, a different one.
             let room = room(around: block, among: spans)
             switch kind {
             case .move:
@@ -544,8 +437,6 @@ where Item.ID == UUID {
         actions.edit(StudioBlockEdit(base: block, kind: kind, delta: delta))
     }
 
-    /// The gap a block sits in: from the end of the block before it to the
-    /// start of the block after it, or the timeline's ends.
     private func room(around block: StudioLaneBlock<Item>, among spans: [StudioLaneSpan]) -> ClosedRange<TimeInterval> {
         let others = spans.filter { $0.id != block.id }
         let floor = others.map(\.editorEnd).filter { $0 <= block.editorStart + 0.0001 }.max() ?? 0
@@ -570,8 +461,6 @@ where Item.ID == UUID {
         draft = nil
     }
 
-    /// The block a drag from `start` to `current` would add, or nil when
-    /// there's no room for one where the press landed.
     private func draftRange(from start: TimeInterval, to current: TimeInterval) -> ClosedRange<TimeInterval>? {
         guard case .create(_, let minimumLength, _) = empty else { return nil }
         let gap: ClosedRange<TimeInterval>? = switch overlap {
@@ -616,9 +505,6 @@ extension StudioBlockLane where Decoration == EmptyView {
     }
 }
 
-/// Where a dragged block lands in the recording. It keeps its length on the
-/// timeline, not in the recording, so sliding it from a sped-up clip onto a
-/// normal one doesn't stretch it (or squeeze it the other way).
 func studioMovedSourceRange(
     model: RecordingStudioModel,
     editorStart: TimeInterval,
@@ -631,13 +517,8 @@ func studioMovedSourceRange(
     )
 }
 
-// MARK: - Drawing
-
-/// How a block is painted: the bright tint with white marks on it, as in
-/// Edits and CapCut. Selection doesn't change the body; a rim goes around it.
 struct StudioBlockStyle {
     let tint: NSColor
-    /// Marks on the body.
     var onTint: Color = .white
 
     static let zoom = StudioBlockStyle(tint: .controlAccentColor)
@@ -647,8 +528,6 @@ struct StudioBlockStyle {
     static let effect = StudioBlockStyle(tint: .systemGray)
     static let audio = StudioBlockStyle(tint: .systemIndigo)
 
-    /// The tint, lifted a touch toward white in light mode; the pointer
-    /// lifts it a little more.
     func fill(isHovering: Bool) -> Color {
         let tint = tint
         return Color(nsColor: NSColor(name: nil) { appearance in
@@ -662,8 +541,6 @@ struct StudioBlockStyle {
     }
 }
 
-/// A block's body: its fill, a faint light along the top and a hairline
-/// rim, so neighbouring blocks and the track behind them stay apart.
 struct StudioBlockSurface<Fill: ShapeStyle>: View {
     let fill: Fill
     @Environment(\.studioBlockCornerRadius) private var cornerRadius
@@ -684,7 +561,6 @@ struct StudioBlockSurface<Fill: ShapeStyle>: View {
     }
 }
 
-/// Diagonal stripes across a block, clipped to it.
 struct StudioBlockHatch: View {
     let color: Color
     var spacing: CGFloat = 6
@@ -705,21 +581,12 @@ struct StudioBlockHatch: View {
     }
 }
 
-/// The one label every block uses: a glyph, its name, then a quieter
-/// detail - usually how long the block runs, "Audio 00:56" style. As the
-/// block narrows the detail goes first, then the name (a long one is
-/// truncated while a few letters still show), then the glyph sits alone,
-/// centred, so nothing is ever cut to a stub like "C…".
-///
-/// It always spans the whole block, so a surface put behind it covers the
-/// block rather than just the line of text.
 struct StudioBlockLabel: View {
     let systemImage: String
     let title: String
     var detail: String?
     let state: StudioBlockState
     let color: Color
-    /// Where the line sits; audio keeps it along the top, over its waveform.
     var verticalAlignment: VerticalAlignment = .center
 
     var body: some View {
@@ -775,15 +642,12 @@ struct StudioBlockLabel: View {
             .font(.system(size: 10, weight: .medium))
     }
 
-    /// Digits keep their width, so "1.5×" doesn't shuffle as it changes.
     private var titleText: Text {
         Text(title)
             .font(.system(size: 11, weight: .medium).monospacedDigit())
     }
 }
 
-/// Selection: a yellow rim around the block, widening past each end into a
-/// handle marked with a line. The block itself is left exactly as it was.
 struct StudioSelectionFrame: View {
     let blockWidth: CGFloat
     let blockHeight: CGFloat
@@ -807,8 +671,6 @@ struct StudioSelectionFrame: View {
     }
 }
 
-/// The rim's outline: the frame's rounded rect with the selected block cut
-/// out along its tightened corners, so the rim's two edges run parallel.
 private struct StudioSelectionFrameShape: Shape {
     func path(in rect: CGRect) -> Path {
         let rim = StudioBlockMetrics.rimWidth
@@ -821,7 +683,6 @@ private struct StudioSelectionFrameShape: Shape {
     }
 }
 
-/// The mark inside an unselected block's end while the pointer would trim it.
 struct StudioBlockGrip: View {
     var body: some View {
         Capsule()
@@ -831,9 +692,6 @@ struct StudioBlockGrip: View {
     }
 }
 
-/// The dashed block a drag across empty track will add. It sits in the
-/// same frame the block will, minimum width included, so letting go never
-/// makes it jump.
 private struct StudioDraftBlock: View {
     let frame: StudioBlockFrame
     let height: CGFloat

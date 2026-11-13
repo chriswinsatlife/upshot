@@ -1,21 +1,3 @@
-//
-//  RecordingStudioTimelineDock.swift
-//  Upshot
-//
-//  The Studio timeline: a glass control row over the tracks. Edit tools sit
-//  on the left, transport in the middle, timeline zoom on the right - each a
-//  cluster of glass shapes in its own container. Tools that only mean
-//  something in context are born out of their neighbour when they start to
-//  apply and melt back into it when they stop: Delete grows out of Split
-//  once something is selected, Reset appears beside Undo once the cut has
-//  edits, and the fit chip grows out of the zoom buttons once the lanes are
-//  zoomed.
-//
-//  Under the row the tracks follow the web editor: a gutter of glyphs names
-//  each track, every track is a flat full-width row, and the ruler labels
-//  its major ticks from their leading edge.
-//
-
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -23,37 +5,21 @@ import UniformTypeIdentifiers
 struct StudioTimelineDock: View {
     @Bindable var model: RecordingStudioModel
 
-    /// Horizontal scale of the lanes, as a multiplier over "the whole
-    /// recording fits the viewport". Zoom 1 is the timeline's original
-    /// fixed-width layout; anything above it scrolls.
     @State private var zoom: Double = 1
     @State private var viewportWidth: CGFloat = 1
     @State private var scrollX: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(edge: .leading)
     @State private var isResetClipsConfirmationPresented = false
-    /// The pointer's position over the lanes, in viewport points.
     @State private var skimX: CGFloat?
-    /// The playhead is being dragged along the ruler, the clips or an
-    /// empty track, which opens its head into the time readout.
     @State private var isScrubbing = false
-    /// The + has opened into the things that can be added.
     @State private var isAddOpen = false
-    /// Files being dragged over the tracks: which tracks they'll land on,
-    /// and when.
     @State private var mediaDrop: StudioMediaDrop?
-    /// The height the tracks were given by dragging the dock's top edge,
-    /// kept across projects and launches; 0 shows every track.
     @AppStorage("StudioTimelineTracksHeight") private var storedTracksHeight: Double = 0
-    /// The tracks' height when a resize drag began.
     @State private var resizeBase: CGFloat?
-    /// How far the tracks are scrolled down, which the gutter follows.
     @State private var scrollY: CGFloat = 0
     @State private var verticalScrollPosition = ScrollPosition(edge: .top)
 
-    /// Step per zoom button press / keyboard shortcut.
     private static let zoomStep: Double = 1.6
-    /// How close to the viewport edge the playhead may drift before the
-    /// lanes scroll to keep it in sight.
     private static let followMargin: CGFloat = 48
 
     private var scale: StudioTimelineScale {
@@ -69,9 +35,6 @@ struct StudioTimelineDock: View {
             controlRow
                 .padding(.horizontal, Space.m)
                 .padding(.vertical, Space.xs)
-            // As in the web editor, a hairline closes the tool row off from
-            // the tracks edge to edge, and the gutter's own line runs from
-            // it to the bottom of the dock.
             Rectangle()
                 .fill(Palette.hairline)
                 .frame(height: 1)
@@ -89,24 +52,16 @@ struct StudioTimelineDock: View {
         .overlay(alignment: .top) { resizeHandle }
     }
 
-    // MARK: Height
-
-    /// Every track, with the room after the last.
     private var fullTracksHeight: CGFloat {
         StudioTimelineMetrics.scrollingLanesHeight(tracks: tracks)
     }
 
-    /// The height the tracks get: what the dock was dragged to, never more
-    /// than every track needs and never less than the clips.
     private var visibleTracksHeight: CGFloat {
         let full = fullTracksHeight
         guard storedTracksHeight > 0 else { return full }
         return min(full, max(StudioTimelineMetrics.minimumTracksHeight, CGFloat(storedTracksHeight)))
     }
 
-    /// The dock's top edge trades height between the preview and the
-    /// tracks, following the pointer exactly. A double-click opens it back
-    /// up to every track.
     private var resizeHandle: some View {
         Color.clear
             .frame(height: 7)
@@ -119,8 +74,6 @@ struct StudioTimelineDock: View {
                         if resizeBase == nil { resizeBase = base }
                         let full = fullTracksHeight
                         let height = min(full, max(StudioTimelineMetrics.minimumTracksHeight, base - value.translation.height))
-                        // Dragged all the way open means "every track", so a
-                        // track that appears later still shows.
                         storedTracksHeight = height >= full - 0.5 ? 0 : Double(height)
                         keepClipsInView(height: height)
                     }
@@ -133,7 +86,6 @@ struct StudioTimelineDock: View {
             .offset(y: -3)
     }
 
-    /// Shrinking the tracks scrolls them so the clips stay on screen.
     private func keepClipsInView(height: CGFloat) {
         var top: CGFloat = 0
         for track in tracks {
@@ -150,8 +102,6 @@ struct StudioTimelineDock: View {
         }
     }
 
-    // MARK: Control row
-
     private var controlRow: some View {
         ZStack {
             HStack(spacing: 0) {
@@ -165,8 +115,6 @@ struct StudioTimelineDock: View {
         .motion(.morph, value: clusterKey)
     }
 
-    /// Changes when a contextual tool appears or leaves, so the clusters
-    /// morph once per change rather than on every model update.
     private var clusterKey: [Bool] {
         [canDeleteSelection, isAddOpen, model.canUndo, model.canRedo, zoom > 1.0001]
     }
@@ -324,11 +272,6 @@ struct StudioTimelineDock: View {
         }
     }
 
-    // MARK: Tracks
-
-    /// The tracks top to bottom: what goes over the picture above the clips,
-    /// what changes the camera below them, sound last. Layouts arrange the
-    /// camera, so a recording without one has no layout track.
     private var tracks: [StudioTrack] {
         var tracks: [StudioTrack] = [.text, .overlay, .clips, .zooms]
         if model.hasCameraVideo { tracks.append(.layouts) }
@@ -336,14 +279,10 @@ struct StudioTimelineDock: View {
         return tracks
     }
 
-    /// One glyph per track beside its row, over a hairline that keeps the
-    /// column apart from the tracks.
     private var trackGutter: some View {
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: StudioTimelineMetrics.headerHeight + StudioTimelineMetrics.trackSpacing)
-            // The glyphs ride the tracks' vertical scroll, so each stays
-            // beside its row in a short timeline.
             VStack(spacing: StudioTimelineMetrics.trackSpacing) {
                 ForEach(tracks) { track in
                     Image(systemName: track.systemImage)
@@ -370,8 +309,6 @@ struct StudioTimelineDock: View {
 
     private var lanes: some View {
         GeometryReader { proxy in
-            // The proxy width leads the stored one by a frame, so lay the
-            // lanes out from it and keep the state copy for the controls.
             let scale = StudioTimelineScale(
                 viewportWidth: max(proxy.size.width, 1),
                 duration: model.duration,
@@ -379,8 +316,6 @@ struct StudioTimelineDock: View {
             )
 
             VStack(spacing: StudioTimelineMetrics.trackSpacing) {
-                // Clicking or dragging along the ruler, or the strip above
-                // it, moves the playhead there.
                 VStack(spacing: 0) {
                     Color.clear
                         .frame(height: StudioTimelineMetrics.playheadLaneHeight)
@@ -395,8 +330,6 @@ struct StudioTimelineDock: View {
                 .contentShape(Rectangle())
                 .gesture(scrubGesture(scale: scale, scrollX: scrollX))
 
-                // The ruler stays put while the tracks scroll under it when
-                // the dock is shorter than they are.
                 ScrollView(.vertical) {
                     scrollingLanes(scale: scale)
                 }
@@ -411,8 +344,6 @@ struct StudioTimelineDock: View {
                 }
                 .frame(height: visibleTracksHeight)
             }
-            // Hovering anywhere over the timeline - ruler, clips or zoom
-            // lane - skims the preview to that moment.
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
@@ -444,9 +375,6 @@ struct StudioTimelineDock: View {
                 viewportWidth = max(width, 1)
                 clampZoom()
             }
-            // Images and audio dropped from Finder land where they're let
-            // go; while they're dragged over, the track each kind will land
-            // on lights up with a mark at the drop point.
             .onDrop(of: [.fileURL], delegate: StudioMediaDropDelegate(
                 canDrop: model.canImportMedia,
                 time: { scale.time(forX: $0.x + scrollX) },
@@ -474,10 +402,6 @@ struct StudioTimelineDock: View {
         .onChange(of: model.currentTime) { _, time in followPlayhead(to: time) }
     }
 
-    /// Press-and-drag that moves the playhead, for the ruler and for tracks
-    /// with nothing under the pointer. `offset` turns the gesture's x into
-    /// timeline x: the viewport's scroll for the ruler, zero inside the
-    /// scrolled tracks.
     private func scrubGesture(
         scale: StudioTimelineScale,
         scrollX offset: CGFloat,
@@ -495,11 +419,6 @@ struct StudioTimelineDock: View {
             .onEnded { _ in isScrubbing = false }
     }
 
-    /// The tracks that carry real edit targets live in a horizontal scroll
-    /// view sized to the zoomed timeline. The ruler, playhead and track
-    /// grounds stay viewport-sized and redraw against `scrollX` instead - a
-    /// shape or Canvas tens of thousands of points wide would be a single
-    /// oversized layer, while an AppKit view only ever draws its visible rect.
     private func scrollingLanes(scale: StudioTimelineScale) -> some View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: StudioTimelineMetrics.trackSpacing) {
@@ -527,8 +446,6 @@ struct StudioTimelineDock: View {
                 }
             }
             .scrollPosition($scrollPosition)
-            // Blocks and clips land where an edit puts them, even when the
-            // edit came from an animated inspector or tool-row action.
             .transaction { $0.animation = nil }
             .scrollIndicators(scale.isScrollable ? .visible : .never)
             .scrollBounceBehavior(.basedOnSize)
@@ -584,7 +501,6 @@ struct StudioTimelineDock: View {
         }
     }
 
-    /// What a track says while files that will land on it are dragged over.
     private func dropHint(for track: StudioTrack) -> String? {
         switch track {
         case .overlay: "Drop to add over the video"
@@ -593,8 +509,6 @@ struct StudioTimelineDock: View {
         }
     }
 
-    /// An empty track explains itself at its leading edge instead of
-    /// reading as dead space.
     private func hint(for track: StudioTrack) -> String? {
         switch track {
         case .zooms:
@@ -631,9 +545,6 @@ struct StudioTimelineDock: View {
                 model.seek(to: time)
             },
             onHover: { time in
-                // The lanes' own hover tracking owns skimming and clears it
-                // on leaving the timeline; this only backs it up while the
-                // pointer is over the AppKit strip.
                 guard let time else { return }
                 model.timelineHoverTime = time
                 model.hoverPreviewTime = time
@@ -653,17 +564,10 @@ struct StudioTimelineDock: View {
             },
             title: model.projectDisplayName,
             onScrubbing: { isScrubbing = $0 },
-            // Rarely needed, so it waits in the clips' own menu rather
-            // than taking a place in the tool row.
             onResetAll: model.hasClipEdits ? { isResetClipsConfirmationPresented = true } : nil
         )
     }
 
-    // MARK: Zoom & scroll
-
-    /// Rescales around `anchorTime`, keeping that moment under the same
-    /// screen position so pinching or ⌘-scrolling doesn't shove the edit
-    /// you were aiming at out of the viewport.
     private func applyZoom(factor: Double, anchorTime: TimeInterval?) {
         let current = scale
         guard current.duration > 0, factor.isFinite, factor > 0 else { return }
@@ -672,8 +576,6 @@ struct StudioTimelineDock: View {
         let next = min(max(zoom * factor, 1), current.maxZoom)
         guard abs(next - zoom) > 0.0001 else { return }
 
-        // A pinch arrives as dozens of small steps; let the storyboard scale
-        // with the lane and resample once the gesture settles.
         model.timelineThumbnails.deferSampling()
         zoom = next
         var zoomed = current
@@ -688,8 +590,6 @@ struct StudioTimelineDock: View {
         scrollPosition.scrollTo(edge: .leading)
     }
 
-    /// Keeps the zoom inside range after the viewport or the edited duration
-    /// changes - a cut or a wider window can leave the old scale past the cap.
     private func clampZoom() {
         let clamped = min(max(zoom, 1), scale.maxZoom)
         if abs(clamped - zoom) > 0.0001 {
@@ -703,8 +603,6 @@ struct StudioTimelineDock: View {
         let x = current.x(for: time)
         guard x < scrollX + Self.followMargin
             || x > scrollX + viewportWidth - Self.followMargin else { return }
-        // While playing, land the playhead a third in so there is room to
-        // watch what is coming; a seek just centers it.
         let inset = model.isPlaying ? viewportWidth / 3 : viewportWidth / 2
         scroll(to: x - inset, in: current)
     }
@@ -715,8 +613,6 @@ struct StudioTimelineDock: View {
         scrollPosition.scrollTo(x: clamped)
     }
 
-    /// Zoom buttons keep the playhead pinned when it is on screen, so the
-    /// scale grows around the edit point rather than the viewport middle.
     private var buttonZoomAnchor: TimeInterval {
         let x = scale.x(for: model.currentTime)
         if x >= scrollX, x <= scrollX + viewportWidth {
@@ -725,7 +621,6 @@ struct StudioTimelineDock: View {
         return scale.time(forX: scrollX + viewportWidth / 2)
     }
 
-    /// Images, GIFs and audio to place at the playhead.
     private func pickMedia() {
         model.pause()
         let panel = NSOpenPanel()
@@ -766,19 +661,12 @@ struct StudioTimelineDock: View {
 }
 
 private enum StudioTimelineMetrics {
-    /// Between one track and the next, as in the web editor.
     static let trackSpacing: CGFloat = 4
     static let gutterWidth: CGFloat = 40
     static let playheadLaneHeight: CGFloat = 18
     static let rulerHeight: CGFloat = 20
-    /// The playhead's lane and the ruler, above the first track.
     static let headerHeight = playheadLaneHeight + rulerHeight
-    /// Room under the last track - with the gap after it, about what the
-    /// web editor leaves - which the gutter's line runs through and the
-    /// horizontal scroller uses while scrolling.
     static let scrollerGutter: CGFloat = 6
-    /// The shortest the tracks get when the dock is dragged down: the clips
-    /// and the space around them.
     static let minimumTracksHeight: CGFloat = 64
 
     static func scrollingLanesHeight(tracks: [StudioTrack]) -> CGFloat {
@@ -786,7 +674,6 @@ private enum StudioTimelineMetrics {
     }
 }
 
-/// A row of the timeline, named by its glyph in the gutter.
 private enum StudioTrack: String, Identifiable {
     case text
     case overlay
@@ -828,17 +715,8 @@ private enum StudioTrack: String, Identifiable {
     }
 }
 
-/// Shared horizontal scale for every lane in the Studio timeline. `zoom` is a
-/// multiplier over "the whole recording fits the viewport", so zoom 1 keeps
-/// the original fixed-width timeline and higher values widen the lanes into a
-/// scrolling surface where cuts, trim handles and zoom blocks stay grabbable
-/// on long recordings.
 struct StudioTimelineScale: Equatable {
-    /// Finest scale worth offering; past this a single frame is wider than a
-    /// thumbnail tile.
     static let maximumPointsPerSecond: CGFloat = 240
-    /// Ceiling on lane width, which is what actually bounds the scale on long
-    /// recordings. A 30-minute take still reaches ~55 points per second here.
     static let maximumContentWidth: CGFloat = 100_000
 
     var viewportWidth: CGFloat
@@ -880,8 +758,6 @@ struct StudioTimelineScale: Equatable {
         return min(max(Double(x / pointsPerSecond), 0), duration)
     }
 
-    /// Editor time span currently on screen, padded a little so lane content
-    /// culled against it never pops in at the edges.
     func visibleRange(scrollX: CGFloat) -> ClosedRange<TimeInterval> {
         let margin: CGFloat = 120
         let lower = time(forX: scrollX - margin)
@@ -890,22 +766,12 @@ struct StudioTimelineScale: Equatable {
     }
 }
 
-/// Full-height playhead drawn as one pin: a soft rounded head above the
-/// ruler whose underside flows into the stem through concave fillets. At
-/// rest the head is a small tab; hovered or dragged it widens into a
-/// readout of the time, then folds back. The head is the only hit target -
-/// everywhere else the overlay passes clicks through to the tracks
-/// underneath. The pointer's skim line is drawn here too, so it runs
-/// through every lane rather than just the clip strip.
 private struct StudioTimelinePlayhead: View {
     let time: TimeInterval
     let scale: StudioTimelineScale
     let scrollX: CGFloat
-    /// The pointer's position while skimming, in viewport points.
     let skimX: CGFloat?
     let showsSkim: Bool
-    /// The playhead is being scrubbed from the ruler, the clips or an empty
-    /// track; the head opens into its readout as if it were dragged.
     var isScrubbing = false
     let onScrub: (TimeInterval) -> Void
 
@@ -924,19 +790,11 @@ private struct StudioTimelinePlayhead: View {
         GeometryReader { proxy in
             let width = max(proxy.size.width, 1)
             let laneHeight = StudioTimelineMetrics.playheadLaneHeight
-            // Viewport space: the playhead overlay never scrolls, it just
-            // tracks the scrolled lanes underneath it.
             let x = scale.x(for: time) - scrollX
             let isVisible = x >= -2 && x <= width + 2
             let isExpanded = isHovering || isDragging || isScrubbing
             let head = isExpanded ? Metrics.readoutSize : Metrics.headSize
-            // The stem stays on the true time. At the start the head
-            // overhangs the track gutter; at the end the inspector column
-            // would clip it, so it stops at the edge and the stem slides
-            // across to its trailing side.
             let headX = min(x, width - head.width / 2)
-            // The head hangs from the top of its lane, so the readout grows
-            // downward toward the ruler rather than off the dock.
             let headTop = laneHeight - Metrics.headSize.height - 1
 
             ZStack(alignment: .topLeading) {
@@ -993,17 +851,10 @@ private struct StudioTimelinePlayhead: View {
             }
         }
         .coordinateSpace(name: Self.coordinateSpace)
-        // Opening into the readout and folding back is the one spring left
-        // on the timeline.
         .motion(.morphQuick, value: isHovering || isDragging || isScrubbing)
     }
 }
 
-/// A playhead pin in one outline: a rounded head across the top of the
-/// rect, a stem down to the bottom, and concave fillets where the head's
-/// underside meets the stem so the two read as a single soft piece. The
-/// stem can sit right of centre, up to the head's trailing edge; as it gets
-/// there that side's corners close up, so the pin becomes a flag.
 private struct PlayheadPinShape: Shape {
     var headHeight: CGFloat
     var stemOffset: CGFloat = 0
@@ -1027,11 +878,8 @@ private struct PlayheadPinShape: Shape {
             max(rect.midX + stemOffset, rect.minX + corner + halfStem),
             rect.maxX - halfStem
         )
-        // Head left between the stem and the trailing edge. The trailing
-        // corners shrink with it, reaching square when the stem is flush.
         let trailingRoom = rect.maxX - (stemX + halfStem)
         let trailingCorner = min(corner, trailingRoom)
-        // A fillet can't reach past the head's own rounded corners.
         let leadingFillet = max(0, min(
             filletRadius,
             stemX - halfStem - (rect.minX + corner),
@@ -1046,8 +894,6 @@ private struct PlayheadPinShape: Shape {
 
         var path = Path()
         path.move(to: CGPoint(x: rect.minX + corner, y: rect.minY))
-        // Under a point of room the lip would read as a notch, so the
-        // pin is already a flag.
         if trailingRoom > 1 {
             path.addArc(
                 tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
@@ -1059,19 +905,16 @@ private struct PlayheadPinShape: Shape {
                 tangent2End: CGPoint(x: stemX + halfStem, y: headBottom),
                 radius: trailingCorner
             )
-            // Underside into the stem's right edge, curving down.
             path.addArc(
                 tangent1End: CGPoint(x: stemX + halfStem, y: headBottom),
                 tangent2End: CGPoint(x: stemX + halfStem, y: rect.maxY),
                 radius: trailingFillet
             )
         } else {
-            // Flush: the top edge turns straight down into the stem.
             path.addLine(to: CGPoint(x: stemX + halfStem, y: rect.minY))
         }
         path.addLine(to: CGPoint(x: stemX + halfStem, y: rect.maxY))
         path.addLine(to: CGPoint(x: stemX - halfStem, y: rect.maxY))
-        // Back up the stem's left edge and out along the underside.
         path.addArc(
             tangent1End: CGPoint(x: stemX - halfStem, y: headBottom),
             tangent2End: CGPoint(x: rect.minX, y: headBottom),
@@ -1092,12 +935,6 @@ private struct PlayheadPinShape: Shape {
     }
 }
 
-/// Absolute-time ruler above the tracks, drawn like the web editor's: each
-/// major tick is a hairline the full height of the ruler with its time just
-/// after it, minor ticks stand along the floor, and a hairline closes the
-/// ruler off from the tracks. The ruler itself never scrolls: it draws only
-/// the time span currently on screen, so a deeply zoomed timeline costs the
-/// same to render as a fitted one.
 private struct StudioTimelineRuler: View {
     let duration: Double
     let pointsPerSecond: CGFloat
@@ -1123,7 +960,6 @@ private struct StudioTimelineRuler: View {
                 CGFloat(time) * pointsPerSecond - scrollX
             }
 
-            // Minor ticks first, so a major line covers the one it lands on.
             var minorIndex = max(0, Int(floor(startTime / minorStep)))
             while true {
                 let time = Double(minorIndex) * minorStep
@@ -1159,8 +995,6 @@ private struct StudioTimelineRuler: View {
                 )
                 let labelSize = label.measure(in: size)
                 let labelX = tickX + Self.labelInset.x
-                // A label that would run off the trailing edge is left out
-                // rather than squeezed against the tick before it.
                 guard labelX + labelSize.width <= size.width else { continue }
                 context.draw(label, in: CGRect(
                     x: labelX,
@@ -1172,9 +1006,6 @@ private struct StudioTimelineRuler: View {
         }
     }
 
-    /// Smallest "nice" interval whose labels stay comfortably apart at the
-    /// current scale. Sub-second steps unlock once a zoomed lane spreads a
-    /// single second across most of the viewport.
     private static func labelStep(forPointsPerSecond pointsPerSecond: CGFloat) -> Double {
         let candidates: [Double] = [
             0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800
@@ -1185,7 +1016,6 @@ private struct StudioTimelineRuler: View {
         return candidates.last ?? 60
     }
 
-    /// Fifths of a step that divides into them evenly, quarters otherwise.
     private static func minorStep(for step: Double) -> Double {
         let isFifths = step >= 1 && step.truncatingRemainder(dividingBy: 5) == 0
         return step / (isFifths ? 5 : 4)
@@ -1214,14 +1044,8 @@ func studioPreciseTimecode(_ seconds: Double) -> String {
     return String(format: "%02d:%04.1f", totalMinutes, remaining)
 }
 
-/// The flat, full-width ground a track sits on. It stays pinned to the
-/// viewport while the track's blocks scroll over it, so the row reads as a
-/// fixed track no matter how far the timeline is zoomed. An empty track
-/// names what it is for at its leading edge.
 private struct StudioTrackGround: View {
     let hint: String?
-    /// Where dragged files would land, in viewport points; set only on the
-    /// tracks they'll land on.
     var dropX: CGFloat? = nil
 
     var body: some View {
@@ -1253,16 +1077,11 @@ private struct StudioTrackGround: View {
     }
 }
 
-/// Files dragged over the tracks: the tracks their kinds land on, and the
-/// moment under the pointer.
 private struct StudioMediaDrop: Equatable {
     var tracks: Set<StudioTrack>
     var time: TimeInterval
 }
 
-/// Takes files from Finder. Images and GIFs land on the overlay track and
-/// audio on the audio track; when a drag doesn't say what it carries, both
-/// light up.
 private struct StudioMediaDropDelegate: DropDelegate {
     let canDrop: Bool
     let time: (CGPoint) -> TimeInterval
@@ -1311,8 +1130,6 @@ private struct StudioMediaDropDelegate: DropDelegate {
     }
 }
 
-/// Zoom cues. Dragging across empty track draws out a zoom in the gap it
-/// started in; a click scrubs. Recorded clicks mark the track's floor.
 private struct StudioZoomLane: View {
     @Bindable var model: RecordingStudioModel
     let scale: StudioTimelineScale
@@ -1355,9 +1172,6 @@ private struct StudioZoomLane: View {
         }
     }
 
-    /// Recorded clicks as small dots along the track's floor, so they mark
-    /// where Auto Zoom would act without striping the blocks. Culled to the
-    /// visible span: an hour-long take can hold thousands of clicks.
     private var pressMarks: some View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(visiblePressTimes.enumerated()), id: \.offset) { _, pressTime in
@@ -1380,8 +1194,6 @@ private struct StudioZoomLane: View {
             title: cue.isEnabled
                 ? InspectorValueFormat.magnification(fractionDigits: 1).displayString(for: cue.zoom)
                 : "Off",
-            // Following the pointer is the default, so only a zoom that
-            // does something else says so, ahead of its length.
             detail: (cue.isEnabled && cue.anchorMode != .pointerAnchor ? "\(cue.anchorMode.laneTitle) · " : "")
                 + studioTimecode(block.editorLength),
             state: state,
@@ -1391,7 +1203,6 @@ private struct StudioZoomLane: View {
             if cue.isEnabled {
                 StudioBlockSurface(fill: StudioBlockStyle.zoom.fill(isHovering: state.isHovered))
             } else {
-                // Hatched, so a turned-off zoom reads as "kept, not used".
                 StudioBlockSurface(fill: Color.primary.opacity(0.08))
                     .overlay { StudioBlockHatch(color: .primary.opacity(0.10)) }
             }
@@ -1470,10 +1281,8 @@ private struct StudioZoomLane: View {
         }
     }
 
-    /// Magnifications offered from a block's context menu.
     private static let zoomPresets: [Double] = [1.25, 1.5, 2, 2.5, 3]
 
-    /// One undoable change to a zoom from its context menu.
     private func edit(_ cue: ZoomCue, action: String, _ change: (inout ZoomCue) -> Void) {
         var updated = cue
         change(&updated)
@@ -1503,10 +1312,6 @@ private extension ZoomAnchorMode {
     }
 }
 
-// MARK: - Layout lane
-
-/// Camera layout cues. Dragging across empty track draws out a layout in
-/// the gap it started in; a click scrubs, as on the zoom track.
 private struct StudioLayoutLane: View {
     @Bindable var model: RecordingStudioModel
     let scale: StudioTimelineScale
@@ -1571,7 +1376,6 @@ private struct StudioLayoutLane: View {
         .background {
             StudioBlockSurface(fill: StudioBlockStyle.layout.fill(isHovering: state.isHovered))
                 .overlay(alignment: .leading) {
-                    // Where the layout is still morphing in.
                     LinearGradient(
                         colors: [StudioBlockStyle.layout.onTint.opacity(0.2), .clear],
                         startPoint: .leading,
@@ -1640,10 +1444,6 @@ private struct StudioLayoutLane: View {
     }
 }
 
-// MARK: - Text and pixelate tracks
-
-/// Text blocks. Dragging across empty track adds a text over the dragged
-/// range; a click scrubs. Texts may overlap.
 private struct StudioTextLane: View {
     @Bindable var model: RecordingStudioModel
     let scale: StudioTimelineScale
@@ -1707,8 +1507,6 @@ private struct StudioTextLane: View {
     }
 }
 
-/// What sits on the Images and Effects track. Images and pixelate or blur
-/// regions share it, so they hit-test together.
 private enum StudioEffectsItem: Identifiable {
     case image(RecordingImageOverlay)
     case redaction(RecordingRedaction)
@@ -1728,8 +1526,6 @@ private enum StudioEffectsItem: Identifiable {
     }
 }
 
-/// Images, GIFs, and pixelate and blur blocks, on the Images and Effects
-/// track. A drag across empty track scrubs.
 private struct StudioRedactionLane: View {
     @Bindable var model: RecordingStudioModel
     let scale: StudioTimelineScale
@@ -1774,8 +1570,6 @@ private struct StudioRedactionLane: View {
                         state: state
                     )
                 case .redaction(let redaction):
-                    // Effects carry light stripes, so they read apart from
-                    // images.
                     StudioOverlayBlockContent(
                         style: .effect,
                         systemImage: redaction.style.systemImage,
@@ -1841,7 +1635,6 @@ private struct StudioRedactionLane: View {
         }
     }
 
-    /// Images under effects, as they draw on the video.
     private var visibleBlocks: [StudioLaneBlock<StudioEffectsItem>] {
         let images = model.imageTimelineBlocks.map {
             StudioLaneBlock(item: StudioEffectsItem.image($0.item), editorStart: $0.editorStart, editorEnd: $0.editorEnd)
@@ -1855,8 +1648,6 @@ private struct StudioRedactionLane: View {
     }
 }
 
-/// Where a text, image or effect lands after a drag. A move keeps its
-/// length on the timeline; a trim moves one end, never past the other.
 private func studioOverlaySourceRange<Item>(
     for edit: StudioBlockEdit<Item>,
     model: RecordingStudioModel,
@@ -1879,8 +1670,6 @@ private func studioOverlaySourceRange<Item>(
     }
 }
 
-/// A text, image or effect block: its surface, stripes for effects, and
-/// its label.
 private struct StudioOverlayBlockContent: View {
     let style: StudioBlockStyle
     let systemImage: String
@@ -1908,11 +1697,6 @@ private struct StudioOverlayBlockContent: View {
     }
 }
 
-// MARK: - Audio track
-
-/// Music and sound under the video. Blocks sit on the edited video's clock:
-/// the body moves a clip along the video, its ends trim the file. A drag
-/// across empty track scrubs.
 private struct StudioAudioLane: View {
     @Bindable var model: RecordingStudioModel
     let scale: StudioTimelineScale
@@ -1944,7 +1728,6 @@ private struct StudioAudioLane: View {
         )
     }
 
-    /// Its name over a waveform of the stretch that plays.
     private func content(for clip: RecordingAudioClip, state: StudioBlockState) -> some View {
         let style = StudioBlockStyle.audio
         return ZStack(alignment: .topLeading) {
@@ -1981,8 +1764,6 @@ private struct StudioAudioLane: View {
         case .move:
             edited.start = max(0, base.start + edit.delta)
         case .trimLeading:
-            // The start can't run before the file's first sample or the
-            // video's first frame.
             let shift = min(max(edit.delta, -base.trimStart, -base.start), base.duration - minimum)
             edited.start = base.start + shift
             edited.trimStart = base.trimStart + shift
@@ -1999,7 +1780,6 @@ private struct StudioAudioLane: View {
     }
 }
 
-/// Rounded bars of an audio file's loudness between two file times.
 private struct StudioWaveform: View {
     let peaks: [Float]
     let color: Color

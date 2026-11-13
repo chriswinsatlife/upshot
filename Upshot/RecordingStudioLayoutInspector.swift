@@ -1,19 +1,8 @@
-//
-//  RecordingStudioLayoutInspector.swift
-//  Upshot
-//
-//  The camera layout picker: six layouts as quiet, neutral miniatures in two
-//  rows of three, and below them only the options the picked layout has. Used for the
-//  default layout in the Camera section and for a layout cue selected on
-//  the timeline.
-//
-
 import SwiftUI
 
 struct StudioCameraLayoutPicker: View {
     @Bindable var model: RecordingStudioModel
     let layout: RecordingCameraLayout
-    /// `isContinuous` is true while a slider is being dragged.
     let onChange: (RecordingCameraLayout, _ isContinuous: Bool) -> Void
 
     private let columns = Array(
@@ -37,8 +26,6 @@ struct StudioCameraLayoutPicker: View {
         }
     }
 
-    /// Tiles share the canvas's shape, so a portrait export shows portrait
-    /// miniatures.
     private var tileAspect: CGFloat {
         let size = model.basePreviewCanvasSize
         guard size.width > 0, size.height > 0 else { return 16 / 10 }
@@ -140,8 +127,6 @@ struct StudioCameraLayoutPicker: View {
         }
     }
 
-    /// A camera over the screen steps back for zooms: by how much, where
-    /// 0% leaves it where it is. One field rather than a switch and a field.
     private var zoomShrinkSlider: some View {
         InspectorSlider(
             "Shrink",
@@ -198,22 +183,13 @@ struct StudioCameraLayoutPicker: View {
     }
 }
 
-/// One layout in the picker: its miniature above its name. The miniature
-/// is the whole tile, with no card around it, and the ring that marks the
-/// picked one sits a hair outside it, like every other picker tile in the
-/// inspector.
-///
-/// When a choice it shows changes, such as the corner, the tile morphs
-/// from what it showed on the video's own curve.
 private struct StudioCameraLayoutTile: View {
     let preset: RecordingCameraLayout
-    /// The layout in use, which the tile is either showing or not.
     let current: RecordingCameraLayout
     let aspectRatio: CGFloat
     let action: () -> Void
 
     @State private var isHovering = false
-    /// The morph runs as `phase` animates up by one from `morphStart`.
     @State private var phase: CGFloat = 0
     @State private var morphStart: CGFloat = 0
     @State private var morphSource: RecordingCameraLayout?
@@ -261,10 +237,6 @@ private struct StudioCameraLayoutTile: View {
         .animation(.easeOut(duration: 0.15), value: isHovering)
         .animation(.easeOut(duration: 0.2), value: isSelected)
         .onChange(of: current) { old, _ in
-            // Only from what the tile showed itself, so a new corner slides
-            // every corner camera over and a slider moves nothing. A newly
-            // picked tile keeps its picture: replaying the move from the
-            // layout before would first snap it to that layout's picture.
             morph(from: old.adopting(preset).miniature)
         }
         .help(preset.detailedTitle)
@@ -293,20 +265,11 @@ private struct StudioCameraLayoutTileButtonStyle: ButtonStyle {
 }
 
 extension RecordingCameraLayout {
-    /// What a tile draws: the arrangement and the choices that change its
-    /// shape (corner, side, placement, a bubble's shape), at the ideal
-    /// proportions rather than the slider values, so a narrow split or a
-    /// tiny bubble never makes a miniature look wrong.
     fileprivate var miniature: RecordingCameraLayout {
         RecordingCameraLayout(kind: kind, corner: corner, shape: shape, side: side, placement: placement)
     }
 }
 
-// MARK: - Miniature
-
-/// Where everything sits in a miniature. Kept in the resolver's frame so a
-/// morph blends exactly like the video's, plus how much the camera floats
-/// over the screen rather than sitting beside it.
 private struct MiniatureFrame {
     var base: RecordingCameraLayoutFrame
     var floats: CGFloat
@@ -319,22 +282,15 @@ private struct MiniatureFrame {
     }
 }
 
-/// One idealized frame for every tile, drawn to a grid rather than by the
-/// resolver: one padding around the stage, one margin for a camera inside
-/// the window, one camera size, and radii that run concentric with the
-/// tile's own corners.
 private struct MiniatureGeometry {
     let size: CGSize
     let outerRadius: CGFloat
 
-    /// Everything is measured in this, so text, lights and people come out
-    /// the same size in every tile.
     var unit: CGFloat { min(size.width, size.height) }
     var padding: CGFloat { min(max((unit * 0.13).rounded(), 4), 8) }
     var stage: CGRect { CGRect(origin: .zero, size: size).insetBy(dx: padding, dy: padding) }
     private var margin: CGFloat { max(2, (unit * 0.07).rounded()) }
 
-    /// Outer radius = inner radius + padding.
     func concentricRadius(for rect: CGRect) -> CGFloat {
         let inset = min(rect.minX, rect.minY, size.width - rect.maxX, size.height - rect.maxY)
         return max(2, outerRadius - max(0, inset))
@@ -406,7 +362,6 @@ private struct MiniatureGeometry {
         }
     }
 
-    /// A webcam-sized square (or 3:4) in the window's corner.
     private func cornerCamera(for layout: RecordingCameraLayout) -> (rect: CGRect, radius: CGFloat) {
         let size: CGSize = if layout.shape == .portrait {
             CGSize(width: (unit * 0.32).rounded(), height: (unit * 0.32 * 4 / 3).rounded())
@@ -426,9 +381,6 @@ private struct MiniatureGeometry {
         return (CGRect(origin: CGPoint(x: x, y: y), size: size), radius)
     }
 
-    /// Two cards filling the stage, the padding between them: a camera a
-    /// little taller than wide, and the screen in the rest. Stacked, camera
-    /// below by default, on a portrait canvas.
     private func splitRects(for layout: RecordingCameraLayout) -> (screen: CGRect, camera: CGRect) {
         let cameraFirst = layout.side == .leading
         if size.width >= size.height {
@@ -451,8 +403,6 @@ private struct MiniatureGeometry {
         )
     }
 
-    /// Just the person: head and shoulders standing on the tile's bottom
-    /// edge, in front of the window, which the edge crops.
     private func cutoutBust(for layout: RecordingCameraLayout) -> CGRect {
         let head = (unit * 0.27).rounded()
         let width = (head * 1.9).rounded()
@@ -466,9 +416,6 @@ private struct MiniatureGeometry {
     }
 }
 
-/// The stage, the window and the camera at one moment of a morph. `phase`
-/// is the only animated value: SwiftUI runs it up by one from `morphStart`,
-/// and every frame between is resolved and blended here.
 private struct MiniatureScene: View, Animatable {
     let layout: RecordingCameraLayout
     let source: RecordingCameraLayout?
@@ -509,8 +456,6 @@ private struct MiniatureScene: View, Animatable {
         let base = frame.base
         let window = isMorphing ? base.screenRect : snapped(base.screenRect)
         let camera = isMorphing ? base.cameraRect : snapped(base.cameraRect)
-        // A camera standing over the window hides what's under it, so the
-        // text steps around it.
         let standsOver = base.cameraOpacity > 0.5 && max(frame.floats, base.cameraCutout) > 0.5
 
         return ZStack(alignment: .topLeading) {
@@ -546,7 +491,6 @@ private struct MiniatureScene: View, Animatable {
 
     private var isDark: Bool { colorScheme == .dark }
 
-    /// On whole pixels at rest, so edges and hairlines land crisp.
     private func snapped(_ rect: CGRect) -> CGRect {
         let scale = max(displayScale, 1)
         func round(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
@@ -555,16 +499,12 @@ private struct MiniatureScene: View, Animatable {
     }
 }
 
-/// A window reduced to what makes it one: the traffic lights, a heading
-/// and two lines of text. Its lights are grey until its tile is picked.
 private struct MiniatureWindow: View {
     let size: CGSize
-    /// The tile's measure, so every window's text is the same size.
     let unit: CGFloat
     let radius: CGFloat
     let isDark: Bool
     let isSelected: Bool
-    /// A camera standing over the window, in the window's coordinates.
     let obstruction: CGRect?
 
     var body: some View {
@@ -578,13 +518,11 @@ private struct MiniatureWindow: View {
         ZStack(alignment: .topLeading) {
             shape.fill(isDark ? Color(white: 0.25) : Color.white)
 
-            // Lights a camera half covers would peek out from under it.
             if obstruction?.intersects(lights.insetBy(dx: -1, dy: -1)) != true {
                 MiniatureTrafficLights(dot: dot, isLit: isSelected, isDark: isDark)
                     .offset(x: inset, y: inset)
             }
 
-            // Lines the window has no room for are left out, not clipped.
             if let text, text.minY + line * 3.6 <= size.height - inset * 0.6 {
                 VStack(alignment: .leading, spacing: line * 1.2) {
                     Capsule()
@@ -610,9 +548,6 @@ private struct MiniatureWindow: View {
         .shadow(color: .black.opacity(isDark ? 0.22 : 0.05), radius: 1, y: 0.5)
     }
 
-    /// Where the text runs: under the lights, beside a camera standing
-    /// over it, or below the camera when the window is too narrow for
-    /// that. None when too little is left to read as text.
     private func textBlock(inset: CGFloat, top: CGFloat, line: CGFloat) -> CGRect? {
         let height = line * 6.8
         let minimumWidth = line * 6
@@ -634,8 +569,6 @@ private struct MiniatureWindow: View {
     }
 }
 
-/// Close, minimize and zoom: macOS's colors on the picked tile, a quiet
-/// grey on the rest.
 private struct MiniatureTrafficLights: View {
     let dot: CGFloat
     let isLit: Bool
@@ -658,16 +591,10 @@ private struct MiniatureTrafficLights: View {
     }
 }
 
-/// The camera: a person against a flat wall, cropped by the camera's
-/// shape. Floating over the window it gets a white rim and a lift; beside
-/// the window it's a card like the window. Cut out, the wall melts away
-/// and the person alone stands in front, as the video does it.
 private struct MiniatureCamera: View {
     let size: CGSize
     let radius: CGFloat
-    /// 0 is the whole camera picture, 1 the person alone.
     let cutout: CGFloat
-    /// 0 beside the window, 1 over it.
     let floats: CGFloat
     let isDark: Bool
 
@@ -701,12 +628,6 @@ private struct MiniatureCamera: View {
     }
 }
 
-/// Head and shoulders, drawn the way Apple's person glyph is: a round head
-/// over domed shoulders, a hairline of space between. Framed by a camera,
-/// the head sits a little above the middle and the frame's bottom crops
-/// the shoulders, and the head is sized by whichever side is shorter, so
-/// the person never grows tall in a narrow frame. Cut out, the bust fills
-/// its frame's width with the head at the top.
 private struct MiniaturePerson: Shape {
     var cutout: CGFloat = 0
 
@@ -735,13 +656,7 @@ private struct MiniaturePerson: Shape {
     }
 }
 
-/// Head and shoulders, drawn the way Apple's person glyph is: a round head
-/// over domed shoulders. One scale everywhere - by the frame's height,
-/// capped by its width - and anchored to the bottom, so a thin card shows
-/// the same person with wall above rather than a stretched one, and the
-/// frame's bottom edge always crops the shoulders.
 struct StudioPersonSilhouette: Shape {
-    /// The head's diameter as a share of the frame's height.
     var scale: CGFloat = 0.36
 
     func path(in rect: CGRect) -> Path {
