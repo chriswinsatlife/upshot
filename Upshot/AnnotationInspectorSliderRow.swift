@@ -6,7 +6,7 @@ struct AnnotationInspectorSliderRow: View {
     let range: ClosedRange<CGFloat>
     let format: InspectorValueFormat
 
-    static let sliderWidth: CGFloat = 104
+    static let sliderMinimumWidth: CGFloat = 72
 
     init(_ title: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, format: InspectorValueFormat) {
         self.title = title
@@ -16,15 +16,18 @@ struct AnnotationInspectorSliderRow: View {
     }
 
     var body: some View {
-        InterfaceRow(title) {
+        HStack(alignment: .center, spacing: InterfaceMetrics.rowControlSpacing) {
+            InterfaceRowLabel(title)
+                .fixedSize()
             Slider(value: clampedValue, in: range)
                 .labelsHidden()
                 .controlSize(.small)
-                .frame(width: Self.sliderWidth)
+                .frame(minWidth: Self.sliderMinimumWidth, maxWidth: .infinity)
                 .accessibilityLabel(title)
                 .accessibilityValue(format.displayString(for: value))
             AnnotationInspectorValueField(title: title, value: $value, range: range, format: format)
         }
+        .frame(minHeight: InterfaceMetrics.rowMinimumHeight)
     }
 
     private var clampedValue: Binding<CGFloat> {
