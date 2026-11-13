@@ -53,7 +53,7 @@ enum ActiveDisplayResolver {
                   (windowInfo[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
                   (windowInfo[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1 > 0,
                   let boundsDictionary = windowInfo[kCGWindowBounds as String] as? NSDictionary,
-                  let windowBounds = CGRect(dictionaryRepresentation: boundsDictionary),
+                  let windowBounds = CaptureRectangleDecoder.decode(boundsDictionary),
                   windowBounds.width > 1,
                   windowBounds.height > 1 else {
                 continue

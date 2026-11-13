@@ -256,7 +256,7 @@ nonisolated final class RecordingRedactionFrameFilter: @unchecked Sendable {
         self.redactions = redactions
         context = CIContext(options: [
             .cacheIntermediates: false,
-            .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any
+            .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         ])
     }
 

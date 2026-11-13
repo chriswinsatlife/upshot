@@ -102,7 +102,7 @@ final class CaptureSourceProbe {
                   (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1 > 0,
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, pid != ownPID,
                   let boundsDictionary = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary),
+                  let bounds = CaptureRectangleDecoder.decode(boundsDictionary),
                   bounds.width >= 40, bounds.height >= 40 else { return nil }
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             guard !ignoredOwners.contains(owner) else { return nil }

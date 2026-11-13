@@ -132,7 +132,7 @@ final class RecordingSourceTargetPresenter {
 
         let app = window.owningApplication
         let appName = app?.applicationName ?? "Window"
-        let title = (window.title?.isEmpty == false) ? window.title! : appName
+        let title = window.title.flatMap { $0.isEmpty ? nil : $0 } ?? appName
         let scale = NSScreen.screens
             .first { NSMouseInRect(CGPoint(x: hit.frame.midX, y: hit.frame.midY), $0.frame, false) }?
             .backingScaleFactor ?? 2
@@ -159,7 +159,7 @@ final class RecordingSourceTargetPresenter {
             guard let number = entry[kCGWindowNumber as String] as? NSNumber,
                   (entry[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
                   let boundsDict = entry[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict) else {
+                  let bounds = CaptureRectangleDecoder.decode(boundsDict) else {
                 return nil
             }
             let id = CGWindowID(number.uint32Value)

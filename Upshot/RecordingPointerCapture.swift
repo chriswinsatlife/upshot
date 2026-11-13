@@ -748,14 +748,7 @@ nonisolated final class PointerActivityRecorder: NSObject, @unchecked Sendable {
     /// permanently nil, which silently disabled per-frame window tracking and
     /// pushed every window recording onto the static fallback mapping.
     private static func rectValue(_ value: Any?) -> CGRect? {
-        guard let value else { return nil }
-        if CFGetTypeID(value as CFTypeRef) == CFDictionaryGetTypeID(),
-           let rect = CGRect(dictionaryRepresentation: value as! CFDictionary) {
-            return rect
-        }
-        if let rect = value as? CGRect { return rect }
-        if let value = value as? NSValue { return value.rectValue }
-        return nil
+        CaptureRectangleDecoder.decode(value)
     }
 
     private static func doubleValue(_ value: Any?) -> Double? {

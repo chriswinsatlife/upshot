@@ -81,7 +81,7 @@ final class ScrollingCaptureAutoScroll {
             guard let windowID = window[kCGWindowNumber as String] as? CGWindowID,
                   let processID = window[kCGWindowOwnerPID as String] as? pid_t,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
-                  let frame = CGRect(dictionaryRepresentation: bounds) else { return nil }
+                  let frame = CaptureRectangleDecoder.decode(bounds) else { return nil }
             return ScrollingCaptureWindow(windowID: windowID, processID: processID,
                                           frame: ActiveDisplayResolver.appKitRect(fromQuartz: frame),
                                           layer: window[kCGWindowLayer as String] as? Int ?? 0,

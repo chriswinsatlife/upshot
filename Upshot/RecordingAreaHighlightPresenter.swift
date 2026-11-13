@@ -97,7 +97,7 @@ extension ScreenRecordingSource {
         case .window(let window):
             let information = CGWindowListCopyWindowInfo(.optionIncludingWindow, window.windowID) as? [[String: Any]]
             if let bounds = information?.first?[kCGWindowBounds as String] as? NSDictionary,
-               let rect = CGRect(dictionaryRepresentation: bounds) {
+               let rect = CaptureRectangleDecoder.decode(bounds) {
                 return Self.appKitRect(rect)
             }
             return Self.appKitRect(window.frame)

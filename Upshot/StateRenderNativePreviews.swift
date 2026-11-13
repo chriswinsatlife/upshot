@@ -10,15 +10,18 @@ struct StateRenderCameraPreview: NSViewRepresentable {
 }
 
 struct StateRenderQuickLookPreview: NSViewRepresentable {
-    let url: URL
+    let view: QLPreviewView
 
-    func makeNSView(context: Context) -> QLPreviewView {
-        let view = QLPreviewView(frame: CGRect(x: 0, y: 0, width: 900, height: 650), style: .normal)!
+    init(url: URL) throws {
+        guard let view = QLPreviewView(frame: CGRect(x: 0, y: 0, width: 900, height: 650), style: .normal) else {
+            throw StateRenderFailure(message: "Quick Look preview could not be initialized")
+        }
         view.autostarts = false
         view.shouldCloseWithWindow = true
         view.previewItem = url as NSURL
-        return view
+        self.view = view
     }
 
+    func makeNSView(context: Context) -> QLPreviewView { view }
     func updateNSView(_ nsView: QLPreviewView, context: Context) {}
 }

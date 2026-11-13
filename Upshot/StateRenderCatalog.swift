@@ -125,7 +125,11 @@ enum StateRenderCatalog {
         }
         for variant in ["one-card", "several-cards", "hover", "tucked", "compressing", "preparing", "link-copied", "upload-failed", "compressed", "action-failed", "video"] {
             add("quick-access-\(variant)", "CaptureShelfView", "struct CaptureShelfView", 380, variant == "several-cards" ? 670 : 400) {
-                var cards = fixtures.screenshots.prefix(variant == "several-cards" ? 4 : 1).map { ShelfItem(url: $0, thumbnail: NSImage(contentsOf: $0)!) }
+                var cards = try fixtures.screenshots.prefix(variant == "several-cards" ? 4 : 1).map { url in
+                    guard let image = NSImage(contentsOf: url) else { throw StateRenderFailure(message: "Fixture thumbnail could not be loaded") }
+                    return ShelfItem(url: url, thumbnail: image)
+                }
+                guard !cards.isEmpty else { throw StateRenderFailure(message: "Fixture screenshots are unavailable") }
                 switch variant {
                 case "compressing": cards[0].activity = .compressing
                 case "preparing": cards[0].activity = .preparing
@@ -158,14 +162,20 @@ enum StateRenderCatalog {
         }
         for mode in AllInOneCaptureMode.allCases {
             add("selector-all-in-one-\(mode.rawValue)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
-                AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil)!, mode: mode, allInOne: true, crosshair: false) })
+                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    throw StateRenderFailure(message: "Fixture selector image could not be decoded")
+                }
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: true, crosshair: false) })
             }
         }
         for variant in ["area", "crosshair-magnifier", "window", "element"] {
             add("selector-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.areaSelectionCrosshairKey)
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.areaSelectionMagnifierKey)
-                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil)!, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier") })
+                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    throw StateRenderFailure(message: "Fixture selector image could not be decoded")
+                }
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier") })
             }
         }
         for variant in ["manual-ready", "automatic-ready", "running", "finishing"] {

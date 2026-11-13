@@ -114,7 +114,7 @@ enum StateRenderSupplementalCatalog {
         }
         for variant in ["screenshot", "recording"] {
             add("quick-look-\(variant)", "QuickLookPreviewPresenter", "final class QuickLookPreviewPresenter", 900, 650) {
-                AnyView(StateRenderQuickLookPreview(url: variant == "screenshot" ? fixtures.screenshots[0] : fixtures.project.screenURL))
+                AnyView(try StateRenderQuickLookPreview(url: variant == "screenshot" ? fixtures.screenshots[0] : fixtures.project.screenURL))
             }
         }
         for variant in ["pill", "notch"] {

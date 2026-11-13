@@ -1172,7 +1172,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                 do {
                     let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]]
                     let frame = attachments?.first
-                    let contentRect = (frame?[.contentRect] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
+                    let contentRect = (frame?[.contentRect] as? NSDictionary).flatMap { CaptureRectangleDecoder.decode($0) }
                     let scale = (frame?[.scaleFactor] as? NSNumber)?.doubleValue ?? 1
                     let pixelContentRect = contentRect.map {
                         CGRect(x: $0.minX * scale, y: $0.minY * scale, width: $0.width * scale, height: $0.height * scale)

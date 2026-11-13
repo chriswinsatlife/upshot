@@ -626,7 +626,7 @@ final class AreaCaptureSelection {
                   let id = window[kCGWindowNumber as String] as? CGWindowID,
                   let processID = window[kCGWindowOwnerPID as String] as? pid_t,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
-                  let frame = CGRect(dictionaryRepresentation: bounds), frame.width > 1, frame.height > 1 else { return nil }
+                  let frame = CaptureRectangleDecoder.decode(bounds), frame.width > 1, frame.height > 1 else { return nil }
             let application = NSRunningApplication(processIdentifier: processID)
             let source = CaptureSource(bundleIdentifier: application?.bundleIdentifier,
                                        appName: application?.localizedName ?? window[kCGWindowOwnerName as String] as? String ?? "Unknown",

@@ -25,7 +25,9 @@ struct StateRenderFixtures {
             try png.write(to: url)
             screenshots.append(ScreenshotHistoryStore.shared.importScreenshot(from: url, source: CaptureSource(bundleIdentifier: nil, appName: "Upshot", windowTitle: title)))
         }
-        let image = NSImage(contentsOf: screenshots[0])!
+        guard let firstScreenshot = screenshots.first, let image = NSImage(contentsOf: firstScreenshot) else {
+            throw StateRenderFailure(message: "Fixture screenshot could not be loaded")
+        }
         let gif = root.appendingPathComponent("Capture Animation.gif")
         guard let destination = CGImageDestinationCreateWithURL(gif as CFURL, UTType.gif.identifier as CFString, 1, nil),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { throw StateRenderFailure(message: "Fixture GIF generation failed") }
