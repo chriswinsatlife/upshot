@@ -39,10 +39,6 @@ struct AreaCaptureSnapshot {
         let lease = desktopIconsPrepared ? nil : try await DesktopIconVisibilityService.shared.beginCapture()
         defer { DesktopIconVisibilityService.shared.endCapture(lease) }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let coverIDs = DesktopIconVisibilityService.shared.coverWindowIDs
-        let excluded = content.windows.filter {
-            $0.owningApplication?.processID == getpid() && $0.windowLayer != 0 && !UpshotPreferences.includeAppWindowsInCaptures && !coverIDs.contains($0.windowID)
-        }
         var snapshots: [AreaCaptureSnapshot] = []
         let screens = NSScreen.screens.compactMap { screen -> (CGDirectDisplayID, CGRect)? in
             guard let displayID = ActiveDisplayResolver.displayID(for: screen) else { return nil }
@@ -51,7 +47,7 @@ struct AreaCaptureSnapshot {
         for (displayID, frame) in screens {
             try Task.checkCancellation()
             guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw CocoaError(.fileReadUnknown) }
-            let filter = SCContentFilter(display: display, excludingWindows: excluded)
+            let filter = AreaCaptureWindowFilter.displayFilter(display: display, content: content)
             let configuration = SCStreamConfiguration()
             configuration.width = Int(filter.contentRect.width * CGFloat(filter.pointPixelScale))
             configuration.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))

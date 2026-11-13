@@ -179,10 +179,6 @@ final class AreaCaptureSelection {
     private func startStreams() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         shareableContent = content
-        guard let application = content.applications.first(where: { $0.processID == getpid() }) else { throw CocoaError(.fileReadUnknown) }
-        let coverIDs = DesktopIconVisibilityService.shared.coverWindowIDs
-        let covers = content.windows.filter { coverIDs.contains($0.windowID) }
-        guard covers.count == coverIDs.count else { throw CocoaError(.fileReadUnknown) }
         for snapshot in snapshots {
             try Task.checkCancellation()
             guard !cancelled else { return }
@@ -194,7 +190,7 @@ final class AreaCaptureSelection {
                 self?.cancel()
             })
             streams.append(stream)
-            try await stream.start(display: display, excluding: application, covers: covers)
+            try await stream.start(display: display, content: content)
         }
         let deadline = ProcessInfo.processInfo.systemUptime + 3
         while !streams.allSatisfy(\.isReady) && !cancelled {

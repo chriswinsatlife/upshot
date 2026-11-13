@@ -13,13 +13,7 @@ final class AreaSelectionLiveMagnifier {
         task = Task { @MainActor [weak self] in
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                let excluded = content.windows.filter { panelIDs.contains($0.windowID) }
-                let ownApplication = content.applications.first { $0.processID == getpid() }
-                let includedOwnWindows = content.windows.filter {
-                    DesktopIconVisibilityService.shared.coverWindowIDs.contains($0.windowID)
-                        || ($0.owningApplication?.processID == getpid() && !panelIDs.contains($0.windowID)
-                            && ($0.windowLayer == 0 || UpshotPreferences.includeAppWindowsInCaptures))
-                }
+                let excluded = AreaCaptureWindowFilter.excludedWindows(in: content)
                 NSLog("Area live magnifier started: excludedWindows=%ld", excluded.count)
                 var receivedFrame = false
                 while !Task.isCancelled {
@@ -36,13 +30,7 @@ final class AreaSelectionLiveMagnifier {
                     configuration.height = Int(pixels.height)
                     configuration.showsCursor = false
                     configuration.ignoreShadowsDisplay = false
-                    let filter: SCContentFilter
-                    if let ownApplication {
-                        filter = SCContentFilter(display: display, excludingApplications: [ownApplication], exceptingWindows: includedOwnWindows)
-                    } else {
-                        guard excluded.count == panelIDs.count else { throw CocoaError(.fileReadUnknown) }
-                        filter = SCContentFilter(display: display, excludingWindows: excluded)
-                    }
+                    let filter = AreaCaptureWindowFilter.displayFilter(display: display, content: content)
                     let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
                     try Task.checkCancellation()
                     self?.samplePosition = snapshot.magnifierSamplePosition(at: pointer)

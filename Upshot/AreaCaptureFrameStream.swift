@@ -135,8 +135,8 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         self.didFail = didFail
     }
 
-    func start(display: SCDisplay, excluding application: SCRunningApplication, covers: [SCWindow]) async throws {
-        let filter = SCContentFilter(display: display, excludingApplications: [application], exceptingWindows: covers)
+    func start(display: SCDisplay, content: SCShareableContent) async throws {
+        let filter = AreaCaptureWindowFilter.displayFilter(display: display, content: content)
         let configuration = SCStreamConfiguration()
         configuration.width = Int(filter.contentRect.width * CGFloat(filter.pointPixelScale))
         configuration.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))
@@ -148,8 +148,9 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
             ActiveDisplayResolver.displayID(for: $0) == displayID
         }?.maximumFramesPerSecond ?? 60)
         try await start(filter: filter, configuration: configuration, maximumFramesPerSecond: maximumFramesPerSecond)
-        NSLog("Area capture stream started: display=%u excludedApplication=%d wallpaperCovers=%ld frameCapacity=%ld historyMs=250 maximumFrameRate=%ld",
-              displayID, application.processID, covers.count, frames.capacity, maximumFramesPerSecond)
+        NSLog("Area capture stream started: display=%u excludedFloatingWindows=%ld wallpaperCovers=%ld frameCapacity=%ld historyMs=250 maximumFrameRate=%ld",
+              displayID, AreaCaptureWindowFilter.excludedWindows(in: content).count, DesktopIconVisibilityService.shared.coverWindowIDs.count,
+              frames.capacity, maximumFramesPerSecond)
     }
 
     func start(window: SCWindow, includeShadow: Bool) async throws {

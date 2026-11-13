@@ -191,6 +191,13 @@ struct AreaCaptureOfflineVerification {
     }
 
     static func main() throws {
+        let process: pid_t = 9000
+        precondition(!AreaCaptureWindowFilter.excludes(windowID: 1, owner: process, layer: 0, currentProcess: process, includeAppWindows: false, coverWindowIDs: []))
+        precondition(AreaCaptureWindowFilter.excludes(windowID: 2, owner: process, layer: 1000, currentProcess: process, includeAppWindows: false, coverWindowIDs: []))
+        precondition(!AreaCaptureWindowFilter.excludes(windowID: 2, owner: process, layer: 1000, currentProcess: process, includeAppWindows: true, coverWindowIDs: []))
+        precondition(!AreaCaptureWindowFilter.excludes(windowID: 3, owner: process, layer: 21, currentProcess: process, includeAppWindows: false, coverWindowIDs: [3]))
+        precondition(!AreaCaptureWindowFilter.excludes(windowID: 4, owner: process + 1, layer: 1000, currentProcess: process, includeAppWindows: false, coverWindowIDs: []))
+        print("PASS capture window filtering: application UI retained, floating windows excluded by preference, wallpaper covers retained, other applications retained")
         let windowConfiguration = AreaCaptureWindowSnapshot.configuration(includeShadow: false)
         precondition(windowConfiguration.ignoreShadows && !windowConfiguration.includeChildWindows && !windowConfiguration.showsCursor)
         print("PASS isolated window screenshot configuration: shadows disabled, child windows excluded, cursor excluded")
