@@ -64,9 +64,11 @@ enum StateRenderSource {
             ("nonisolated private struct SendableCameraSampleBuffer: @unchecked Sendable {", 570),
         ],
         "Upshot/CaptureCodeFeedbackPresenter.swift": [
-            ("final class CaptureCodeFeedbackPresenter {", 5),
-            ("private final class CaptureCodePanel: NSPanel {", 42),
-            ("struct CaptureCodeFeedbackView: View {", 46),
+            ("final class CaptureCodeFeedbackPresenter {", 6),
+            ("private final class CaptureCodePanel: NSPanel {", 63),
+            ("private enum CaptureCodeFeedbackItem: Identifiable {", 67),
+            ("struct CaptureCodeFeedbackView: View {", 91),
+            ("private struct CaptureCodeFeedbackRow: View {", 211),
         ],
         "Upshot/CaptureCountdownPresenter.swift": [
             ("final class CaptureCountdownPresenter {", 6),
@@ -106,8 +108,9 @@ enum StateRenderSource {
             ("private struct CaptureShelfHandle: View {", 148),
         ],
         "Upshot/CaptureTextFeedbackPresenter.swift": [
-            ("final class CaptureTextFeedbackPresenter {", 5),
-            ("struct CaptureTextFeedbackView: View {", 150),
+            ("struct CaptureTextFeedback: Equatable {", 4),
+            ("final class CaptureTextFeedbackPresenter {", 39),
+            ("struct CaptureTextFeedbackView: View {", 155),
         ],
         "Upshot/CloudUploadOptions.swift": [
             ("struct CloudUploadOptions: Sendable {", 3),

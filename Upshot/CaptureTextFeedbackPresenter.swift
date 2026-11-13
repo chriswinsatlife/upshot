@@ -1,18 +1,51 @@
 import AppKit
 import SwiftUI
 
+struct CaptureTextFeedback: Equatable {
+    let title: String
+    var detail: String? = nil
+    let systemImage: String
+    var tone: InterfaceToastTone = .neutral
+
+    private static let maximumDetailCharacterCount = 56
+
+    static func copied(text: String) -> CaptureTextFeedback {
+        let lines = text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let firstLine = lines.first ?? text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return CaptureTextFeedback(
+            title: lines.count == 1 ? "Copied 1 line" : "Copied \(lines.count) lines",
+            detail: abbreviatedDetail(firstLine),
+            systemImage: "checkmark.circle.fill",
+            tone: .success
+        )
+    }
+
+    static let noTextFound = CaptureTextFeedback(title: "No text found", systemImage: "text.viewfinder")
+
+    static func failure(title: String) -> CaptureTextFeedback {
+        CaptureTextFeedback(title: title, systemImage: "exclamationmark.triangle.fill", tone: .failure)
+    }
+
+    private static func abbreviatedDetail(_ line: String) -> String? {
+        guard !line.isEmpty else { return nil }
+        guard line.count > maximumDetailCharacterCount else { return line }
+        return String(line.prefix(maximumDetailCharacterCount - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+}
+
 @MainActor
 final class CaptureTextFeedbackPresenter {
     static let shared = CaptureTextFeedbackPresenter()
 
-    private static let toastSize = NSSize(width: 300, height: 52)
     private static let shadowSlack: CGFloat = 24
-    private static var panelSize: NSSize {
-        NSSize(width: toastSize.width + 2 * shadowSlack, height: toastSize.height + 2 * shadowSlack)
-    }
     private static let bottomInset: CGFloat = 96
+    private static let entranceRise: CGFloat = 8
     private static let visibleDuration: Duration = .seconds(1.8)
-    private static let fadeOutDuration: TimeInterval = 0.2
+    private static let fadeInDuration: TimeInterval = 0.2
+    private static let fadeOutDuration: TimeInterval = 0.15
+    private static let entranceTimingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
 
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
@@ -20,63 +53,30 @@ final class CaptureTextFeedbackPresenter {
     private init() {}
 
     func showCopied(text: String, displayID: CGDirectDisplayID?) {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
-        let title = lines.count == 1
-            ? "Copied 1 line"
-            : "Copied \(lines.count) lines"
-        present(
-            symbol: "text.viewfinder",
-            title: title,
-            detail: lines.first.map(String.init) ?? text,
-            displayID: displayID
-        )
+        AppLog.event("capture", "text_recognition_feedback_presented", fields: ["outcome": "copied"])
+        present(.copied(text: text), displayID: displayID)
     }
 
     func showNoTextFound(displayID: CGDirectDisplayID?) {
-        present(
-            symbol: "text.viewfinder",
-            title: "No text found",
-            detail: "Nothing was recognized in that area.",
-            displayID: displayID
-        )
+        AppLog.event("capture", "text_recognition_feedback_presented", fields: ["outcome": "no_text_found"])
+        present(.noTextFound, displayID: displayID)
     }
 
     func showFailure(title: String, displayID: CGDirectDisplayID?) {
-        AppLog.event("capture", "text_recognition_feedback_presented")
-        let detail = switch title {
-        case "Capture failed": "The screenshot could not be captured or read."
-        case "Text recognition failed": "The capture succeeded, but text recognition failed."
-        case "Code recognition failed": "The capture succeeded, but code recognition failed."
-        default: "Try again."
-        }
-        present(
-            symbol: "exclamationmark.triangle",
-            title: title,
-            detail: detail,
-            displayID: displayID
-        )
+        AppLog.event("capture", "text_recognition_feedback_presented", fields: ["outcome": "failure", "title": title])
+        present(.failure(title: title), displayID: displayID)
     }
 
-    private func present(
-        symbol: String,
-        title: String,
-        detail: String,
-        displayID: CGDirectDisplayID?
-    ) {
+    private func present(_ feedback: CaptureTextFeedback, displayID: CGDirectDisplayID?) {
         dismissTask?.cancel()
         dismiss()
 
-        let size = Self.panelSize
         let hostingView = NSHostingView(
-            rootView: CaptureTextFeedbackView(
-                symbol: symbol,
-                title: title,
-                detail: detail,
-                size: Self.toastSize
-            )
-            .padding(Self.shadowSlack)
+            rootView: CaptureTextFeedbackView(feedback: feedback)
+                .padding(Self.shadowSlack)
         )
         hostingView.sizingOptions = []
+        let size = hostingView.fittingSize
 
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -91,18 +91,22 @@ final class CaptureTextFeedbackPresenter {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.contentView = hostingView
-        panel.setFrame(
-            NSRect(origin: origin(size: size, displayID: displayID), size: size),
-            display: true
-        )
+
+        let restingFrame = NSRect(origin: origin(size: size, displayID: displayID), size: size)
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        panel.setFrame(restingFrame.offsetBy(dx: 0, dy: reduceMotion ? 0 : -Self.entranceRise), display: true)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
 
         PreviewWindowCaptureExclusion.shared.register(window: panel)
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.14
+            context.duration = Self.fadeInDuration
+            context.timingFunction = Self.entranceTimingFunction
             panel.animator().alphaValue = 1
+            if !reduceMotion {
+                panel.animator().setFrame(restingFrame, display: true)
+            }
         }
 
         self.panel = panel
@@ -118,6 +122,7 @@ final class CaptureTextFeedbackPresenter {
 
         await NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.fadeOutDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 0
         }
 
@@ -148,34 +153,14 @@ final class CaptureTextFeedbackPresenter {
 }
 
 struct CaptureTextFeedbackView: View {
-    let symbol: String
-    let title: String
-    let detail: String
-    let size: NSSize
+    let feedback: CaptureTextFeedback
 
     var body: some View {
-        HStack(spacing: 11) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Palette.label)
-                .frame(width: 30, height: 30)
-                .background(Palette.fill, in: Circle())
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.dsHeadline)
-                    .foregroundStyle(Palette.label)
-                Text(detail)
-                    .font(.dsCaption)
-                    .foregroundStyle(Palette.secondaryLabel)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 11)
-        .frame(width: size.width, height: size.height)
-        .interfacePanelSurface(cornerRadius: size.height / 2)
+        InterfaceToast(
+            feedback.title,
+            detail: feedback.detail,
+            systemImage: feedback.systemImage,
+            tone: feedback.tone
+        )
     }
 }

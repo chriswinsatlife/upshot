@@ -254,20 +254,14 @@ enum StateRenderCatalog {
                 AnyView(CaptureCountdownView(model: CaptureCountdownModel(remaining: count, total: 3), onCancel: {}))
             }
         }
-        for (name, symbol, title, detail) in [
-            ("success", "text.viewfinder", "Copied 1 line", "Capture a clear view of the work."),
-            ("empty", "text.viewfinder", "No text found", "Nothing was recognized in that area."),
-            ("failure", "exclamationmark.triangle", "Text recognition failed", "The capture succeeded, but text recognition failed.")
-        ] {
-            add("capture-text-\(name)", "CaptureTextFeedbackPresenter", "struct CaptureTextFeedbackView", 348, 100) {
-                AnyView(CaptureTextFeedbackView(symbol: symbol, title: title, detail: detail, size: CGSize(width: 300, height: 52)))
+        for (name, feedback) in CaptureFeedbackRenderStates.textFeedback {
+            add("capture-text-\(name)", "CaptureTextFeedbackPresenter", "struct CaptureTextFeedbackView", 560, 150) {
+                AnyView(CaptureFeedbackRenderBackdrop(image: fixtures.image) { CaptureTextFeedbackView(feedback: feedback) })
             }
         }
-        for variant in ["qr", "barcode", "links", "combined"] {
-            add("capture-code-\(variant)", "CaptureCodeFeedbackPresenter", "struct CaptureCodeFeedbackView", 460, 400) {
-                let codes = variant == "links" ? [] : [DetectedCaptureCode(symbology: variant == "barcode" ? "VNBarcodeSymbologyCode128" : VNBarcodeSymbology.qr.rawValue, payload: "https://example.com/review", data: nil)]
-                let links = variant == "qr" || variant == "barcode" ? [] : [URL(string: "https://example.com/review")!]
-                return AnyView(CaptureCodeFeedbackView(detection: CaptureCodeDetection(codes: codes, links: links), dismiss: {}))
+        for variant in CaptureFeedbackRenderStates.codeVariants {
+            add("capture-code-\(variant)", "CaptureCodeFeedbackPresenter", "struct CaptureCodeFeedbackView", 520, variant == "many" ? 500 : 340) {
+                AnyView(CaptureFeedbackRenderBackdrop(image: fixtures.image) { CaptureFeedbackRenderStates.codeFeedbackView(variant: variant) })
             }
         }
         add("menu-bar", "MenuBarView", "struct MenuBarView", 400, 800) {

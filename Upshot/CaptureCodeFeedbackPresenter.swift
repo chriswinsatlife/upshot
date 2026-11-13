@@ -1,9 +1,15 @@
 import AppKit
 import SwiftUI
+import Vision
 
 @MainActor
 final class CaptureCodeFeedbackPresenter {
     static let shared = CaptureCodeFeedbackPresenter()
+
+    private static let bottomInset: CGFloat = 166
+    private static let maximumListHeight: CGFloat = 320
+    private static let screenMargin: CGFloat = 20
+
     private var panel: NSPanel?
 
     private init() {}
@@ -16,24 +22,39 @@ final class CaptureCodeFeedbackPresenter {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
         } ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
-        let size = NSSize(width: min(460, frame.width - 40), height: min(400, frame.height - 80))
+
         let panel = CaptureCodePanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .nonactivatingPanel],
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.title = "Detected Codes and Links"
+        let listHeight = min(Self.maximumListHeight, frame.height - 200)
+        let hostingView = NSHostingView(
+            rootView: CaptureCodeFeedbackView(detection: detection, maximumListHeight: listHeight) { [weak panel] in
+                panel?.close()
+            }
+        )
+        hostingView.sizingOptions = []
+        let size = hostingView.fittingSize
+
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.isMovableByWindowBackground = true
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: CaptureCodeFeedbackView(detection: detection) { [weak panel] in panel?.close() })
-        let origin = CGPoint(x: frame.midX - size.width / 2,
-                             y: min(frame.minY + 166, frame.maxY - panel.frame.height - 20))
-        panel.setFrameOrigin(origin)
+        panel.contentView = hostingView
+        let origin = CGPoint(
+            x: frame.midX - size.width / 2,
+            y: min(frame.minY + Self.bottomInset, frame.maxY - size.height - Self.screenMargin)
+        )
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
         PreviewWindowCaptureExclusion.shared.register(window: panel)
         panel.orderFrontRegardless()
+        panel.invalidateShadow()
         self.panel = panel
         AppLog.event("capture", "capture_code_prompt_presented", fields: ["codes": String(describing: detection.codes.count), "links": String(describing: detection.links.count)])
     }
@@ -43,54 +64,108 @@ private final class CaptureCodePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+private enum CaptureCodeFeedbackItem: Identifiable {
+    case code(DetectedCaptureCode, link: URL?)
+    case link(URL)
+
+    var id: String {
+        switch self {
+        case .code(let code, _): "code:" + code.id
+        case .link(let link): "link:" + link.absoluteString
+        }
+    }
+
+    static func items(for detection: CaptureCodeDetection) -> [CaptureCodeFeedbackItem] {
+        var remainingLinks = detection.links
+        let codeItems = detection.codes.map { code -> CaptureCodeFeedbackItem in
+            guard let payload = code.payload,
+                  let index = remainingLinks.firstIndex(where: { $0.absoluteString == payload }) else {
+                return .code(code, link: nil)
+            }
+            return .code(code, link: remainingLinks.remove(at: index))
+        }
+        return codeItems + remainingLinks.map(CaptureCodeFeedbackItem.link)
+    }
+}
+
 struct CaptureCodeFeedbackView: View {
     let detection: CaptureCodeDetection
+    var maximumListHeight: CGFloat = 320
     let dismiss: () -> Void
-    @State private var copied: Set<String> = []
+    @State private var copied: Set<String>
     @State private var failure: String?
 
+    private static let panelWidth: CGFloat = 440
+
+    init(
+        detection: CaptureCodeDetection,
+        maximumListHeight: CGFloat = 320,
+        copiedIdentifiers: Set<String> = [],
+        failure: String? = nil,
+        dismiss: @escaping () -> Void
+    ) {
+        self.detection = detection
+        self.maximumListHeight = maximumListHeight
+        self.dismiss = dismiss
+        self._copied = State(initialValue: copiedIdentifiers)
+        self._failure = State(initialValue: failure)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(detection.codes) { code in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label(code.title, systemImage: "qrcode.viewfinder").font(.headline)
-                            Text(code.displayPayload)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if code.payload == nil {
-                                Text("Binary payload displayed as Base64.").font(.caption).foregroundStyle(.secondary)
+        InterfacePanel(.flyout, padding: InterfaceMetrics.flyoutPadding) {
+            HStack(alignment: .top, spacing: Space.xs) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(CaptureCodeFeedbackItem.items(for: detection)) { item in
+                                row(for: item)
                             }
-                            Button(copied.contains(code.id) ? "Payload Copied" : "Copy Payload") { copy(code) }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    ForEach(detection.links, id: \.self) { link in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(link.absoluteString)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack {
-                                Button("Open Link") { open(link) }
-                                Button(copied.contains(link.absoluteString) ? "Link Copied" : "Copy Link") { copy(link) }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(maxHeight: maximumListHeight)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if let failure {
+                        Label(failure, systemImage: "exclamationmark.triangle.fill")
+                            .font(.dsCaption)
+                            .foregroundStyle(Palette.destructiveLabel)
+                            .padding(.horizontal, Space.m)
+                            .padding(.vertical, Space.s)
                     }
                 }
-                .padding(2)
+                InterfaceToolbarDivider()
+                InterfaceToolbarButton("Close", systemImage: "xmark", labelPlacement: .hidden, action: dismiss)
+                    .keyboardShortcut(.cancelAction)
             }
-            if let failure {
-                Text(failure).font(.caption).foregroundStyle(.red)
-            }
-            HStack {
-                Spacer()
-                Button("Dismiss", action: dismiss).keyboardShortcut(.cancelAction)
-            }
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
+        .frame(width: Self.panelWidth)
         .onExitCommand(perform: dismiss)
+    }
+
+    @ViewBuilder
+    private func row(for item: CaptureCodeFeedbackItem) -> some View {
+        switch item {
+        case .code(let code, let link):
+            CaptureCodeFeedbackRow(
+                title: code.title,
+                systemImage: code.symbology == VNBarcodeSymbology.qr.rawValue ? "qrcode" : "barcode",
+                payload: code.displayPayload,
+                payloadEncoding: code.payload == nil ? "Base64" : nil,
+                isCopied: copied.contains(code.id),
+                copy: { copy(code) },
+                open: link.map { link in { open(link) } }
+            )
+        case .link(let link):
+            CaptureCodeFeedbackRow(
+                title: "Link",
+                systemImage: "link",
+                payload: link.absoluteString,
+                isCopied: copied.contains(link.absoluteString),
+                copy: { copy(link) },
+                open: { open(link) }
+            )
+        }
     }
 
     private func copy(_ code: DetectedCaptureCode) {
@@ -130,5 +205,59 @@ struct CaptureCodeFeedbackView: View {
             failure = "The link could not be opened."
             AppLog.event("capture", "capture_detected_link_open_failed")
         }
+    }
+}
+
+private struct CaptureCodeFeedbackRow: View {
+    let title: String
+    let systemImage: String
+    let payload: String
+    var payloadEncoding: String? = nil
+    let isCopied: Bool
+    let copy: () -> Void
+    let open: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: Space.ml) {
+            Image(systemName: systemImage)
+                .font(.system(size: IconSize.flyout, weight: .medium))
+                .foregroundStyle(Palette.label)
+                .frame(width: InterfaceMetrics.flyoutIconSlotWidth)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: InterfaceMetrics.rowLabelToDetailSpacing) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text(title)
+                        .font(.dsBodyEmphasis)
+                        .foregroundStyle(Palette.label)
+                    if let payloadEncoding {
+                        Text(payloadEncoding)
+                            .font(.dsCaption)
+                            .foregroundStyle(Palette.secondaryLabel)
+                    }
+                }
+                Text(payload)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.secondaryLabel)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: Space.xxs) {
+                if let open {
+                    InterfaceToolbarButton("Open Link", systemImage: "arrow.up.forward.square", labelPlacement: .hidden, action: open)
+                }
+                InterfaceToolbarButton(
+                    isCopied ? "Copied" : "Copy",
+                    systemImage: isCopied ? "checkmark" : "doc.on.doc",
+                    labelPlacement: .hidden,
+                    tint: isCopied ? Palette.success : nil,
+                    action: copy
+                )
+                .contentTransition(.symbolEffect(.replace))
+            }
+        }
+        .padding(.leading, Space.m)
+        .padding(.vertical, Space.xs)
     }
 }
