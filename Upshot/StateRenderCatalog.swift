@@ -61,8 +61,22 @@ enum StateRenderCatalog {
             UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.transparent.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)
             return AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() })
         }
-        add("settings-shortcuts-expanded", "CaptureHotkeySettingsSection", "struct CaptureHotkeySettingsSection", 860, 4200) {
-            AnyView(InterfaceFormPage { CaptureHotkeySettingsSection(actions: CaptureHotkeyAction.allCases) }.environment(SettingsPermissions()))
+        add("settings-shortcuts-expanded", "SettingsShortcutsPane", "struct SettingsShortcutsPane", 860, 4260) {
+            AnyView(SettingsShortcutsPane(model: fixtures.shortcutSettingsModel(customizesAllInOne: true)))
+        }
+        for variant in ["search", "search-empty", "recording", "conflict", "registration-failure"] {
+            add("settings-shortcuts-\(variant)", "SettingsShortcutsPane", "struct SettingsShortcutsPane", 800, 640) {
+                let model = fixtures.shortcutSettingsModel()
+                let searchText = variant == "search" ? "record" : variant == "search-empty" ? "Upload to Dropbox" : ""
+                if variant == "recording" { model.presentRecordingForRendering(.area) }
+                if variant == "conflict" {
+                    model.presentRejectionForRendering(CaptureHotkeySettingsModel.conflictMessage(for: StateRenderFixtures.allInOneShortcut, conflict: .allInOne), for: .previousArea)
+                }
+                if variant == "registration-failure" {
+                    model.presentRejectionForRendering("⌃⌥Space could not be registered. It may be used by another app. Choose a different shortcut.", for: .window)
+                }
+                return AnyView(NavigationStack { SettingsShortcutsPane(model: model, searchText: searchText).navigationTitle("Shortcuts") })
+            }
         }
         let textRecognitionVariants: [(String, String, Bool, Bool)] = [
             ("", "", false, true),

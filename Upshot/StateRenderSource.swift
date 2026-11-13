@@ -82,9 +82,6 @@ enum StateRenderSource {
             ("struct CaptureHistoryView: View {", 3),
             ("private struct CaptureHistoryCard: View {", 93),
         ],
-        "Upshot/CaptureHotkeySettingsSection.swift": [
-            ("struct CaptureHotkeySettingsSection: View {", 4),
-        ],
         "Upshot/CaptureLibraryInspector.swift": [
             ("struct CaptureLibraryInspector: View {", 7),
             (".alert(\"Delete from cloud?\", isPresented: Binding(", 78),
@@ -342,6 +339,11 @@ enum StateRenderSource {
         ],
         "Upshot/SettingsQuickAccessPane.swift": [
             ("struct SettingsQuickAccessPane: View {", 4),
+        ],
+        "Upshot/SettingsShortcutsPane.swift": [
+            ("enum SettingsShortcutsGroup: String, CaseIterable, Identifiable {", 3),
+            ("private struct SettingsShortcutsSubgroup: Identifiable {", 72),
+            ("struct SettingsShortcutsPane: View {", 78),
         ],
         "Upshot/SettingsView.swift": [
             ("enum SettingsTab: String, CaseIterable, Identifiable {", 4),
