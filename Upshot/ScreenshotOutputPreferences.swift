@@ -8,6 +8,9 @@ extension UpshotPreferences {
     static let screenshotShowCursorKey = "screenshotShowCursor"
     static let screenshotApplyBackgroundPresetKey = "screenshotApplyBackgroundPreset"
     static let screenshotBackgroundPresetIDKey = "screenshotBackgroundPresetID"
+    static let screenshotWindowBackgroundKey = "screenshotWindowBackground"
+    static let screenshotWindowWallpaperPathKey = "screenshotWindowWallpaperPath"
+    static let screenshotWindowPaddingKey = "screenshotWindowPadding"
 
     static var screenshotConvertToSRGB: Bool {
         UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
@@ -35,5 +38,18 @@ extension UpshotPreferences {
 
     static var screenshotBackgroundPresetID: String {
         UserDefaults.standard.string(forKey: screenshotBackgroundPresetIDKey) ?? ""
+    }
+
+    static var screenshotWindowBackground: WindowScreenshotBackgroundMode {
+        WindowScreenshotBackgroundMode(rawValue: UserDefaults.standard.string(forKey: screenshotWindowBackgroundKey) ?? "") ?? .original
+    }
+
+    static var screenshotWindowWallpaperPath: String {
+        UserDefaults.standard.string(forKey: screenshotWindowWallpaperPathKey) ?? ""
+    }
+
+    static var screenshotWindowPadding: CGFloat {
+        let value = UserDefaults.standard.object(forKey: screenshotWindowPaddingKey) as? Double ?? 32
+        return value.isFinite ? min(256, max(0, value)) : 32
     }
 }
