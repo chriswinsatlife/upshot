@@ -1,14 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Native magnification recognition owns the pinch lifecycle. The event monitor
-/// handles scrolling only; it never interprets magnification events or phases.
 struct AnnotationCanvasInputHandler: NSViewRepresentable {
     let onPan: (CGFloat, CGFloat) -> Void
     let onZoom: (CGFloat, CGPoint) -> Void
     let onBeginPinch: (CGPoint) -> Void
     let onPinch: (CGFloat) -> Void
     let onEndPinch: () -> Void
+    let onOptionChanged: (Bool) -> Void
 
     func makeNSView(context: Context) -> InputView {
         let view = InputView()
@@ -22,6 +21,7 @@ struct AnnotationCanvasInputHandler: NSViewRepresentable {
         view.onBeginPinch = onBeginPinch
         view.onPinch = onPinch
         view.onEndPinch = onEndPinch
+        view.onOptionChanged = onOptionChanged
     }
 
     static func dismantleNSView(_ view: InputView, coordinator: ()) { view.detach() }
@@ -32,6 +32,7 @@ struct AnnotationCanvasInputHandler: NSViewRepresentable {
         var onBeginPinch: ((CGPoint) -> Void)?
         var onPinch: ((CGFloat) -> Void)?
         var onEndPinch: (() -> Void)?
+        var onOptionChanged: ((Bool) -> Void)?
 
         private lazy var magnifier: NSMagnificationGestureRecognizer = {
             let recognizer = NSMagnificationGestureRecognizer(target: self, action: #selector(magnifyCanvas(_:)))
@@ -48,12 +49,16 @@ struct AnnotationCanvasInputHandler: NSViewRepresentable {
             super.viewDidMoveToWindow()
             detach()
             guard let root = window?.contentView else { return }
-            // A recognizer observes its view and descendants. The transparent
-            // input view is a background sibling, so attach to their ancestor
-            // and restrict recognition to this canvas in the delegate.
             root.addGestureRecognizer(magnifier)
-            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                self?.handleScroll(event) ?? event
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .flagsChanged]) { [weak self] event in
+                guard let self else { return event }
+                if event.type == .flagsChanged {
+                    if self.window?.isKeyWindow == true {
+                        self.onOptionChanged?(event.modifierFlags.contains(.option))
+                    }
+                    return event
+                }
+                return self.handleScroll(event)
             }
         }
 

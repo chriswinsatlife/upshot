@@ -1,7 +1,3 @@
-//
-//  AnnotationCanvas.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
@@ -54,7 +50,6 @@ struct AnnotationCanvas: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var hasActiveInteraction = false
-    /// The active drag began in crop mode, so it ends there too.
     @State private var isCropGesture = false
     @State private var hoveredLocation: CGPoint?
     @State private var currentCursor: AnnotationCanvasCursor = .arrow
@@ -152,8 +147,6 @@ struct AnnotationCanvas: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            // Image, background, AppKit annotations, crop and watermark share
-            // this viewport. Fit padding belongs to the camera, not the view.
             .clipped()
             .coordinateSpace(.named(AnnotationCanvasCoordinateSpace.name))
             .contentShape(Rectangle())
@@ -165,7 +158,8 @@ struct AnnotationCanvas: View {
                         model.beginCanvasPinch(at: anchor, visibleViewport: viewport)
                     },
                     onPinch: model.updateCanvasPinch,
-                    onEndPinch: model.endCanvasPinch
+                    onEndPinch: model.endCanvasPinch,
+                    onOptionChanged: { model.engine.updateCreationArrowDirection(optionHeld: $0) }
                 )
             )
             .gesture(interactionGesture(
@@ -177,12 +171,9 @@ struct AnnotationCanvas: View {
             .onChange(of: viewport.layout, initial: true) { _, layout in
                 if let layout { model.canvasViewport.configure(layout) }
             }
-            // The model has placed the image where it already shows; this
-            // update rendered that, so the fit animates from it.
             .onChange(of: model.canvasRevealID) { _, _ in
                 withAnimation(.canvasMoveIfAllowed) { model.fitCanvas() }
             }
-            // Auto-scroll for a crop drag held near the viewport's edge.
             .task(id: model.isCropDragging) {
                 guard model.isCropDragging else { return }
                 let clock = ContinuousClock()
@@ -315,9 +306,6 @@ struct AnnotationCanvas: View {
                     .allowsHitTesting(false)
                 }
 
-                // Export-exact frame rendered off-main once editing settles.
-                // The gradient-band approximation above stays live underneath
-                // so interaction never waits on a Core Image render.
                 if let settledSceneImage {
                     Image(nsImage: settledSceneImage)
                         .resizable()
@@ -447,10 +435,6 @@ struct AnnotationCanvas: View {
                 clipCorners: clipCorners
             )
 
-            // One engine-drawn layer for every annotation: redactions under the spotlight,
-            // then the spotlight, then the vector shapes and the selection chrome. Replaces the
-            // per-item SwiftUI views, which each owned their own geometry and could not agree
-            // with the exporter.
             AnimatedAnnoCanvasLayer(
                 editor: model.engine,
                 sourceImage: model.previewCGImage,
@@ -458,12 +442,8 @@ struct AnnotationCanvas: View {
                 imageSize: model.imageSize,
                 revision: model.revision
             )
-            // Hit testing is declined everywhere except the text caret, so the drag gesture that
-            // drives the engine still receives everything else.
             .frame(width: viewportSize.width, height: viewportSize.height)
 
-            // Always mounted, so the box rides the image's move into and out
-            // of crop mode instead of appearing at its destination.
             AnnotationCropOverlay(
                 model: model,
                 imageFrame: imageFrame,
@@ -502,8 +482,6 @@ struct AnnotationCanvas: View {
             return
         }
 
-        // Coalesce high-frequency focus-pad and slider updates before entering
-        // the serialized Core Image worker.
         do {
             try await Task.sleep(for: .milliseconds(12))
         } catch {
@@ -539,20 +517,12 @@ struct AnnotationCanvas: View {
         progressivelyBlurredSourceID = ObjectIdentifier(sourceImage)
     }
 
-    /// Pixel width for preview renders (settled scene and clipped blur):
-    /// exactly the pixels the image occupies on screen, including any
-    /// enlargement from the camera projection, so rendered previews are
-    /// indistinguishable from the live view. A generous budget only guards
-    /// pathological canvas sizes; renders are debounced, never per frame.
     private func previewContentPixelWidth(
         imageFrame: CGRect,
         canvasFrame: CGRect,
         viewportSize: CGSize,
         projection: AnnotationCameraProjection
     ) -> CGFloat {
-        // The projection maps the viewport rect onto a quad; the ratio of the
-        // quad's edges to the viewport approximates how much the camera
-        // magnifies the content on screen.
         let quad = projection.quad
         let topWidth = hypot(
             quad.topRight.x - quad.topLeft.x,
@@ -593,8 +563,6 @@ struct AnnotationCanvas: View {
             return
         }
 
-        // Let slider and focus-pad streams go quiet before paying for an
-        // export-exact render; every keystroke restarts this task.
         do {
             try await Task.sleep(for: .milliseconds(200))
         } catch {
@@ -684,7 +652,6 @@ struct AnnotationCanvas: View {
     ) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
-                // Crop mode has no camera effect, so viewport points are used as is.
                 if isCropGesture || (!hasActiveInteraction && model.isCropping) {
                     if !hasActiveInteraction {
                         hasActiveInteraction = true
@@ -761,8 +728,6 @@ struct AnnotationCanvas: View {
         }
     }
 
-    /// The drag's own cursor while dragging, so a fast pointer can't flicker
-    /// it through other zones; otherwise whatever a press would grab.
     private func cropCursor(at location: CGPoint) -> AnnotationCanvasCursor {
         switch model.cropDrag?.target ?? model.cropTarget(at: location) {
         case .handle(let handle): .resize(handle)
@@ -792,9 +757,6 @@ private struct AnnotationMarqueeSelectionView: View {
     }
 }
 
-/// The annotation layer is AppKit, so SwiftUI cannot interpolate it. As an
-/// animatable view it receives every in-between frame of a canvas animation
-/// and draws the annotations with the image instead of at its destination.
 private struct AnimatedAnnoCanvasLayer: View, Animatable {
     let editor: AnnoEditor
     let sourceImage: CGImage?

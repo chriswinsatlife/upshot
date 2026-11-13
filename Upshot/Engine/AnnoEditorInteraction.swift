@@ -1,13 +1,9 @@
 import AppKit
 import Foundation
 
-/// The pointer state machine: which interaction a press starts, how a drag updates it, and what a
-/// release commits. Ported from the drawing-app's `Editor/EditorInteraction.swift`.
 extension AnnoEditor {
-    // MARK: - Down
 
     func pointerDown(_ pointer: PointerInfo) {
-        // A press anywhere commits whatever is being typed, unless it lands on that same shape.
         if let editingId = editingTextId, hitShape(at: pointer.pagePoint)?.id != editingId {
             stopEditingText()
         }
@@ -18,7 +14,6 @@ extension AnnoEditor {
         case .freehand:
             beginDrawing(pointer)
         case .text:
-            // Clicking existing text edits it; clicking empty canvas starts a new one.
             if let shape = hitShape(at: pointer.pagePoint), shape.isText {
                 startEditingText(shape.id)
             } else {
@@ -35,7 +30,6 @@ extension AnnoEditor {
     }
 
     private func beginSelectInteraction(_ pointer: PointerInfo) {
-        // A selection handle takes priority over the shapes under it.
         if let handle = handle(at: pointer.screenPoint), let bounds = selectionBounds {
             switch handle {
             case .arrowStart, .arrowMiddle, .arrowEnd:
@@ -73,9 +67,6 @@ extension AnnoEditor {
             return
         }
 
-        // Nothing under the pointer - but the selection's own bounds act as a drag handle, so a
-        // hollow shape can be moved from its empty middle. Ported from
-        // `isPointInRotatedSelectionBounds`, which tests the *rotated* bounds as a polygon.
         if canDragSelectionBackground,
            let bounds = selectionBounds,
            pointInPolygon(pointer.pagePoint, bounds.pageCorners) {
@@ -97,8 +88,6 @@ extension AnnoEditor {
         return initial
     }
 
-    /// Whether the inside of the selection box can be dragged. Arrows and lines opt out, because
-    /// their bounding box is mostly empty space and dragging from it would feel wrong.
     private var canDragSelectionBackground: Bool {
         if selectedIds.isEmpty { return false }
         if selectedIds.count > 1 { return true }
@@ -106,7 +95,6 @@ extension AnnoEditor {
         return !shape.isArrow
     }
 
-    // MARK: - Creation
 
     private func beginDrawing(_ pointer: PointerInfo) {
         markUndo()
@@ -120,7 +108,6 @@ extension AnnoEditor {
         setInteraction(.drawing(id: shape.id, origin: pointer.pagePoint))
     }
 
-    /// Rectangles, ellipses, redactions and the spotlight highlight all create by dragging a box.
     private func beginBoxShape(_ pointer: PointerInfo) {
         markUndo()
         let kind: AnnoShapeKind
@@ -161,12 +148,11 @@ extension AnnoEditor {
         props.end = Vec(0, 0)
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .arrow(props))
         document.add(shape)
-        // If the arrow starts on a shape, bind its start to that shape right away.
         bindTerminal(arrowId: shape.id, terminal: .start, at: pointer.pagePoint, precise: pointer.alt)
         setInteraction(.creatingArrow(id: shape.id))
+        updateCreationArrowDirection(optionHeld: pointer.alt)
     }
 
-    /// A numbered callout is placed with a click rather than dragged, and auto-numbers itself.
     func createNumberedCircle(at pagePoint: Vec) {
         markUndo()
         var props = NumberedProps()
@@ -187,7 +173,6 @@ extension AnnoEditor {
         (document.shapes.compactMap { $0.numberedProps?.value }.max() ?? 0) + 1
     }
 
-    // MARK: - Move
 
     func pointerMove(_ pointer: PointerInfo) {
         switch interaction {
@@ -213,8 +198,6 @@ extension AnnoEditor {
         notifyChanged()
     }
 
-    /// The pointer held inside `pageLimits`, so an edge or handle being
-    /// dragged stops at the boundary.
     private func limited(_ pointer: PointerInfo) -> PointerInfo {
         guard let limits = pageLimits else { return pointer }
         var pointer = pointer
@@ -225,7 +208,6 @@ extension AnnoEditor {
         return pointer
     }
 
-    // MARK: - Up
 
     func pointerUp(_ pointer: PointerInfo) {
         switch interaction {
@@ -233,7 +215,6 @@ extension AnnoEditor {
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
                     props.isComplete = true
-                    // A stroke that returns near its own start closes, so it can be filled.
                     if props.points.count > 3,
                        Vec.distMin(props.points[0], props.points[props.points.count - 1], props.strokeWidth * 2) {
                         props.isClosed = true
@@ -247,7 +228,6 @@ extension AnnoEditor {
             }
 
         case let .creatingGeo(id, _):
-            // A click without a drag gets a sensibly sized shape rather than a degenerate one.
             if let shape = document.shape(id), let size = boxSize(of: shape), size.width <= 2, size.height <= 2 {
                 let fallback = Swift.max(48, Double(Swift.max(viewport.imageSize.width, viewport.imageSize.height)) * 0.08)
                 setBoxSize(id, width: fallback, height: fallback)
@@ -256,9 +236,10 @@ extension AnnoEditor {
             tool = .select
 
         case let .creatingArrow(id):
+            updateCreationArrowDirection(optionHeld: pointer.alt)
+            NSLog("Annotation arrow committed inverse=%@", String(pointer.alt))
             if let shape = document.shape(id), let props = shape.arrowProps,
                Vec.distMin(props.start, props.end, 4) {
-                // Too short to be an arrow.
                 document.delete([id])
             } else {
                 selectedIds = [id]
@@ -284,7 +265,6 @@ extension AnnoEditor {
         notifyChanged()
     }
 
-    // MARK: - Drawing
 
     private func appendDrawPoint(id: AnnoShapeID, origin: Vec, pointer: PointerInfo) {
         document.update(id) { shape in
@@ -294,16 +274,12 @@ extension AnnoEditor {
                 pointer.pagePoint.y - origin.y,
                 pointer.isPen ? pointer.pressure : 0.5
             )
-            // Skip points that land on top of the previous one; they add nothing and cost a full
-            // re-run of the stroke pipeline.
             if let last = props.points.last, Vec.distMin(last, local, 0.5) { return }
             props.points.append(local)
             shape.kind = .draw(props)
         }
     }
 
-    /// Move a draw shape's origin to its first point's page position, so its local points start at
-    /// (0, 0) and its bounds behave.
     private func normalizeDrawOrigin(_ id: AnnoShapeID) {
         document.update(id) { shape in
             guard case var .draw(props) = shape.kind, let first = props.points.first else { return }
@@ -317,7 +293,6 @@ extension AnnoEditor {
         }
     }
 
-    // MARK: - Box creation
 
     private func boxSize(of shape: AnnoShape) -> CGSize? {
         switch shape.kind {
@@ -356,7 +331,6 @@ extension AnnoEditor {
         var h = abs(pointer.pagePoint.y - origin.y)
 
         if pointer.shift {
-            // Constrain to a square, growing away from the origin corner.
             let side = Swift.max(w, h)
             minX = pointer.pagePoint.x < origin.x ? origin.x - side : origin.x
             minY = pointer.pagePoint.y < origin.y ? origin.y - side : origin.y
@@ -371,9 +345,20 @@ extension AnnoEditor {
         setBoxSize(id, width: w, height: h)
     }
 
-    // MARK: - Arrow creation
+
+    func updateCreationArrowDirection(optionHeld: Bool) {
+        guard tool == .arrow, case let .creatingArrow(id) = interaction else { return }
+        document.update(id) { shape in
+            guard case var .arrow(props) = shape.kind else { return }
+            props.arrowheadStart = optionHeld ? currentArrowheadEnd : currentArrowheadStart
+            props.arrowheadEnd = optionHeld ? currentArrowheadStart : currentArrowheadEnd
+            shape.kind = .arrow(props)
+        }
+        notifyChanged()
+    }
 
     private func updateArrowEnd(id: AnnoShapeID, pointer: PointerInfo) {
+        updateCreationArrowDirection(optionHeld: pointer.alt)
         guard let shape = document.shape(id) else { return }
         var local = document.pointInShapeSpace(shape, pointer.pagePoint)
         if pointer.shift, let props = shape.arrowProps {
@@ -387,7 +372,6 @@ extension AnnoEditor {
         bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
     }
 
-    /// Snap to the nearest 15° from the anchor, the way holding shift on a line should behave.
     private func axisSnapped(from anchor: Vec, to point: Vec) -> Vec {
         let delta = Vec.sub(point, anchor)
         guard delta.len > 0 else { return point }
@@ -396,9 +380,7 @@ extension AnnoEditor {
         return Vec.add(anchor, Vec.fromAngle(angle, delta.len))
     }
 
-    /// Bind an arrow terminal to whatever shape is under the pointer, or clear the binding.
     private func bindTerminal(arrowId: AnnoShapeID, terminal: ArrowTerminal, at pagePoint: Vec, precise: Bool) {
-        // Arrows don't bind to arrows, to themselves, or to the tools that aren't really objects.
         let target = document.shapes.reversed().first { shape in
             guard shape.id != arrowId, !shape.isArrow, !shape.isHighlight, !shape.isRedaction else { return false }
             let local = document.pointInShapeSpace(shape, pagePoint)
@@ -427,24 +409,19 @@ extension AnnoEditor {
             toId: target.id,
             terminal: terminal,
             normalizedAnchor: normalizedAnchor,
-            // Holding alt pins the arrow to the exact point rather than the shape's center.
             isPrecise: precise,
             isExact: false
         ))
         setHintedBinding(target.id)
     }
 
-    // MARK: - Translate
 
     private func translate(origin: Vec, initial: [AnnoShapeID: Vec], pointer: PointerInfo) {
         var dx = pointer.pagePoint.x - origin.x
         var dy = pointer.pagePoint.y - origin.y
         if pointer.shift {
-            // Lock to whichever axis has moved further.
             if abs(dx) > abs(dy) { dy = 0 } else { dx = 0 }
         }
-        // Keep the whole selection inside the limits. Its box where the
-        // move began is today's box less however far it has moved so far.
         if let limits = pageLimits,
            let (firstID, firstStart) = initial.first,
            let first = document.shape(firstID) {
@@ -465,10 +442,7 @@ extension AnnoEditor {
         }
     }
 
-    // MARK: - Resize
 
-    /// Scale the selection about the handle's opposite corner. Work happens in the selection's own
-    /// space, so a rotated single shape resizes along its own axes.
     private func resize(
         handle: AnnoSelectionHandle,
         bounds: AnnoSelectionBounds,
@@ -496,13 +470,11 @@ extension AnnoEditor {
         }
 
         if pointer.shift, handle.isCorner {
-            // Preserve the aspect ratio from the larger of the two scales.
             let s = abs(scaleX) > abs(scaleY) ? abs(scaleX) : abs(scaleY)
             scaleX = s * (scaleX < 0 ? -1 : 1)
             scaleY = s * (scaleY < 0 ? -1 : 1)
         }
 
-        // Don't let a shape collapse to nothing; flipping is fine, zero isn't.
         if abs(scaleX) < 0.01 { scaleX = scaleX < 0 ? -0.01 : 0.01 }
         if abs(scaleY) < 0.01 { scaleY = scaleY < 0 ? -0.01 : 0.01 }
 
@@ -515,7 +487,6 @@ extension AnnoEditor {
         }
     }
 
-    /// Scale one shape about `anchor`, expressed in the selection's space.
     private func applyScale(
         to id: AnnoShapeID,
         scaleX: Double,
@@ -533,8 +504,6 @@ extension AnnoEditor {
         )
         let newPageOrigin = selectionTransform.applyToPoint(scaledOrigin)
 
-        // The shape's own axes, expressed in selection space, tell us how much of each scale
-        // factor lands on its width and height.
         let relativeRotation = toSelection.rotation
         let cosr = abs(cos(relativeRotation))
         let sinr = abs(sin(relativeRotation))
@@ -558,7 +527,6 @@ extension AnnoEditor {
                 props.h = Swift.max(1, abs(props.h * sy))
                 shape.kind = .highlight(props)
             case var .numbered(props):
-                // A callout stays a circle, so it takes the average of the two scales.
                 props.diameter = Swift.max(8, abs(props.diameter * (abs(sx) + abs(sy)) / 2))
                 shape.kind = .numbered(props)
             case var .draw(props):
@@ -571,12 +539,10 @@ extension AnnoEditor {
                 shape.kind = .arrow(props)
             case var .text(props):
                 if isWidthOnly {
-                    // A side handle sets the width text wraps into, rather than scaling the type.
                     let width = props.autoSize ? Double(TextMeasure.measure(props).width) : props.w
                     props.w = Swift.max(TextMeasure.minWidth, abs(width * sx))
                     props.autoSize = false
                 } else {
-                    // Corners scale the type itself, uniformly - text can't stretch on one axis.
                     let uniform = (abs(sx) + abs(sy)) / 2
                     props.fontSize = Swift.max(4, props.fontSize * uniform)
                     if !props.autoSize {
@@ -588,13 +554,11 @@ extension AnnoEditor {
         }
     }
 
-    // MARK: - Rotate
 
     private func rotate(center: Vec, startAngle: Double, initial: AnnoDocument.Snapshot, pointer: PointerInfo) {
         document.restore(initial)
         var delta = Vec.angle(center, pointer.pagePoint) - startAngle
         if pointer.shift {
-            // Snap to 15° increments.
             delta = (delta / (PI / 12)).rounded() * (PI / 12)
         }
         for id in selectedIds {
@@ -607,7 +571,6 @@ extension AnnoEditor {
         }
     }
 
-    // MARK: - Arrow handles
 
     private func dragArrowHandle(id: AnnoShapeID, handle: AnnoSelectionHandle, pointer: PointerInfo) {
         guard let shape = document.shape(id) else { return }
@@ -629,8 +592,6 @@ extension AnnoEditor {
             }
             bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
         case .arrowMiddle:
-            // Bend is the signed distance from the straight line between the terminals to where the
-            // middle handle has been dragged.
             let bindings = document.arrowBindings(id)
             let terminals = ArrowShared.terminalsInArrowSpace(document, shape, bindings)
             let mid = Vec.med(terminals.start, terminals.end)
@@ -638,7 +599,6 @@ extension AnnoEditor {
             guard delta.len > 0 else { return }
             let perpendicular = delta.uni.per
             var bend = -Vec.sub(local, mid).x * perpendicular.x - Vec.sub(local, mid).y * perpendicular.y
-            // Snap back to straight near zero.
             if abs(bend) < ArrowConstants.minArrowBend / 2 { bend = 0 }
             document.update(id) { shape in
                 guard case var .arrow(p) = shape.kind else { return }
@@ -651,14 +611,8 @@ extension AnnoEditor {
     }
 }
 
-// MARK: - Text
 
 extension AnnoEditor {
-    /// Create an empty text shape at a page point and start typing into it.
-    ///
-    /// The shape is placed so the click lands on the vertical middle of the first line, and
-    /// horizontally according to the alignment - which is the anchor `updateEditingText` then keeps
-    /// fixed as the text grows.
     func createText(at pagePoint: Vec) {
         markUndo()
         var props = TextProps()
@@ -691,7 +645,6 @@ extension AnnoEditor {
         notifyChanged()
     }
 
-    /// Finish editing. An empty text shape is thrown away.
     func stopEditingText() {
         guard let id = editingTextId else { return }
         editingTextId = nil
@@ -701,17 +654,10 @@ extension AnnoEditor {
             selectedIds.remove(id)
         }
         onEditingTextChanged?(nil)
-        // Fall back to select once the text is committed, the same as finishing a geo or an arrow.
-        // Safe against the `tool` observer calling back into here: `editingTextId` is already nil,
-        // so the guard at the top returns immediately.
         if tool == .text { tool = .select }
         notifyChanged()
     }
 
-    /// Apply typed text and move the shape so its alignment anchor stays put.
-    ///
-    /// Centred text grows evenly to both sides, end-aligned text grows leftwards, and start-aligned
-    /// text grows rightwards and downwards.
     func updateEditingText(_ id: AnnoShapeID, to text: String) {
         guard let shape = document.shape(id), let props = shape.textProps, props.text != text else { return }
 
@@ -730,8 +676,6 @@ extension AnnoEditor {
 
         document.update(id) { shape in
             if let delta {
-                // The shift happens in the shape's own frame, so rotated text still grows the
-                // right way.
                 let rotated = Vec.rot(delta, shape.rotation)
                 shape.x -= rotated.x
                 shape.y -= rotated.y
