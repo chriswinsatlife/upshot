@@ -1,7 +1,3 @@
-//
-//  SettingsGeneralPane.swift
-//  Upshot
-//
 
 import AppKit
 import ServiceManagement
@@ -38,6 +34,10 @@ struct GeneralSettingsPane: View {
 
     var body: some View {
         SettingsPage {
+            CaptureHistorySettingsSection()
+
+            AutomationSettingsSection()
+
             Section("Permissions") {
                 ForEach(SettingsPermissions.Kind.allCases) { kind in
                     SettingsPermissionRow(kind: kind, permissions: permissions)

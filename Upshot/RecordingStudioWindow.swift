@@ -725,9 +725,10 @@ private struct StudioCanvasComposition: View {
             .clipShape(RoundedRectangle(cornerRadius: layout.cardCornerRadius, style: .continuous))
             .overlay {
                 if let caption = model.keystrokeCaption(at: model.displayTime) {
-                    StudioKeystrokeCaptionView(
+                    RecordingStyledKeystrokeCaptionView(
                         caption: caption,
-                        placement: model.keystrokePlacement,
+                        appearance: model.exportAppearance.keystrokes,
+                        fallbackPlacement: model.keystrokePlacement,
                         cardSize: layout.cardRect.size
                     )
                 }

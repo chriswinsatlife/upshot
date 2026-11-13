@@ -4,7 +4,7 @@ extension UpshotPreferences {
     static let annotationAutomaticallyExpandCanvasKey = "annotationEditor.automaticallyExpandCanvas"
 
     static var annotationAutomaticallyExpandCanvas: Bool {
-        UserDefaults.standard.object(forKey: annotationAutomaticallyExpandCanvasKey) as? Bool ?? true
+        UserDefaults.standard.object(forKey: annotationAutomaticallyExpandCanvasKey) as? Bool ?? false
     }
 
     static let annotationObjectShadowsKey = "annotationEditor.objectShadows"
@@ -16,7 +16,7 @@ extension UpshotPreferences {
     static let annotationDrawingSmoothingKey = "annotationEditor.drawingSmoothing"
 
     static var annotationDrawingSmoothing: Double {
-        min(1, max(0, UserDefaults.standard.object(forKey: annotationDrawingSmoothingKey) as? Double ?? 0.62))
+        min(1, max(0, UserDefaults.standard.object(forKey: annotationDrawingSmoothingKey) as? Double ?? 0))
     }
 
     static let annotationEditorAlwaysOnTopKey = "annotationEditor.alwaysOnTop"

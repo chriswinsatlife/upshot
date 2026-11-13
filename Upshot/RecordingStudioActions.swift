@@ -122,6 +122,7 @@ struct StudioActionFooter: View {
         .popover(isPresented: $isExportOptionsPresented, arrowEdge: .top) {
             RecordingExportOptionsPopover(
                 initialSettings: model.exportSettings,
+                initialDeliveryOptions: model.exportDeliveryOptions,
                 onConfirm: model.export(settings:)
             )
         }

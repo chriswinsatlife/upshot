@@ -8,6 +8,10 @@ struct VideoSettingsPane: View {
         SettingsPage {
             CaptureHotkeySettingsSection(actions: [.screenRecording])
 
+            LiveRecordingSettingsSection()
+
+            RecordingExportSettingsSection()
+
             AfterCaptureActionsSection(type: .recording, title: "After Recording")
 
             Section("After Export") {
@@ -76,6 +80,8 @@ struct OverlaySettingsPane: View {
                 }
                 .toggleStyle(.ink)
             }
+
+            QuickAccessSettingsSection()
 
             Section("Card Actions") {
                 OverlayCardEditor()

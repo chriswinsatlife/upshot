@@ -1,7 +1,3 @@
-//
-//  SettingsScreenshotsPane.swift
-//  Upshot
-//
 
 import SwiftUI
 
@@ -60,6 +56,12 @@ struct ScreenshotsSettingsPane: View {
                 .toggleStyle(.ink)
             }
 
+            AreaSelectionSettingsSection()
+
+            ScreenshotOutputSettingsSection()
+
+            TextRecognitionSettingsSection()
+
             Section("Annotation Editor") {
                 Picker(selection: $startingTool) {
                     Text("Last Used").tag(UpshotPreferences.startingToolLastUsed)
@@ -81,6 +83,8 @@ struct ScreenshotsSettingsPane: View {
                     )
                 }
                 .toggleStyle(.ink)
+
+                AnnotationEditorSettingsSection()
             }
 
             AfterCaptureActionsSection(type: .screenshot, title: "After Capture")
