@@ -15,9 +15,11 @@ final class AreaSelectionLiveMagnifier {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
                 let excluded = content.windows.filter { panelIDs.contains($0.windowID) }
                 let ownApplication = content.applications.first { $0.processID == getpid() }
-                let includedOwnWindows = UpshotPreferences.includeAppWindowsInCaptures
-                    ? content.windows.filter { $0.owningApplication?.processID == getpid() && !panelIDs.contains($0.windowID) }
-                    : content.windows.filter { DesktopIconVisibilityService.shared.coverWindowIDs.contains($0.windowID) }
+                let includedOwnWindows = content.windows.filter {
+                    DesktopIconVisibilityService.shared.coverWindowIDs.contains($0.windowID)
+                        || ($0.owningApplication?.processID == getpid() && !panelIDs.contains($0.windowID)
+                            && ($0.windowLayer == 0 || UpshotPreferences.includeAppWindowsInCaptures))
+                }
                 NSLog("Area live magnifier started: excludedWindows=%ld", excluded.count)
                 var receivedFrame = false
                 while !Task.isCancelled {

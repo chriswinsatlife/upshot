@@ -40,7 +40,7 @@ struct AreaCaptureSnapshot {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let coverIDs = DesktopIconVisibilityService.shared.coverWindowIDs
         let excluded = content.windows.filter {
-            !UpshotPreferences.includeAppWindowsInCaptures && $0.owningApplication?.processID == getpid() && !coverIDs.contains($0.windowID)
+            $0.owningApplication?.processID == getpid() && $0.windowLayer != 0 && !UpshotPreferences.includeAppWindowsInCaptures && !coverIDs.contains($0.windowID)
         }
         var snapshots: [AreaCaptureSnapshot] = []
         let screens = NSScreen.screens.compactMap { screen -> (CGDirectDisplayID, CGRect)? in

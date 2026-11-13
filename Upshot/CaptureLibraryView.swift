@@ -145,7 +145,6 @@ struct CaptureLibraryView: View {
         }
         .onWindowChange { window in
             libraryWindow = window
-            PreviewWindowCaptureExclusion.shared.register(window: window)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             if let window = notification.object as? NSWindow, window === libraryWindow { model.refresh() }
