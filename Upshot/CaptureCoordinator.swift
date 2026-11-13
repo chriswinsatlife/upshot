@@ -48,6 +48,13 @@ final class CaptureCoordinator {
         do {
             guard let selection = try await AreaCaptureSelection.shared.select(allInOne: true, delaySeconds: UpshotPreferences.captureDelaySeconds,
                                                                               includeWindowShadow: UpshotPreferences.captureWindowShadow) else { return nil }
+            if selection.recognizesText {
+                lastAllInOneDispatchedWithoutScreenshot = true
+                AppLog.event("capture", "all_in_one_capture_text_requested", fields: ["delay_seconds": String(describing: selection.delaySeconds)])
+                guard let image = try await ScreenshotManager.shared.image(for: selection, delaySeconds: selection.delaySeconds) else { return nil }
+                await recognizeAndCopyText(in: image)
+                return nil
+            }
             switch selection.kind {
             case .recording:
                 lastAllInOneDispatchedWithoutScreenshot = true
@@ -58,7 +65,7 @@ final class CaptureCoordinator {
                 return await captureScrollingAwaiting(selection: selection)
             case .area, .element, .window, .fullscreen:
                 guard let url = try await ScreenshotManager.shared.capture(selection, includeShadow: UpshotPreferences.captureWindowShadow,
-                                                                           delaySeconds: UpshotPreferences.captureDelaySeconds) else { return nil }
+                                                                           delaySeconds: selection.delaySeconds) else { return nil }
                 return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
             }
         } catch {
@@ -184,7 +191,11 @@ final class CaptureCoordinator {
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return .captureFailed
         }
+        return await recognizeAndCopyText(in: image)
+    }
 
+    @discardableResult
+    private func recognizeAndCopyText(in image: CGImage) async -> CaptureTextOutcome {
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
         let text: String
         do {

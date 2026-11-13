@@ -287,6 +287,19 @@ enum StateRenderCatalog {
                 return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: true, crosshair: false) })
             }
         }
+        for variant in ["aspect", "narrow", "no-selection", "status"] {
+            let size = variant == "narrow" ? CGSize(width: 700, height: 625) : CGSize(width: 1000, height: 625)
+            add("selector-all-in-one-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", size.width, size.height) {
+                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    throw StateRenderFailure(message: "Fixture selector image could not be decoded")
+                }
+                return AnyView(StateRenderAppKitView {
+                    AreaCaptureSelection.renderView(image: image, mode: variant == "status" ? .previousArea : .area, allInOne: true, crosshair: variant == "no-selection" || variant == "status", size: size,
+                                                    aspect: variant == "aspect" ? RecordingAreaAspect(16, 9) : nil,
+                                                    status: variant == "status" ? "No previous screenshot area" : nil)
+                })
+            }
+        }
         for variant in ["area", "crosshair-magnifier", "window", "element"] {
             add("selector-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.areaSelectionCrosshairKey)

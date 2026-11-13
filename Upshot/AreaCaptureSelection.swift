@@ -26,6 +26,8 @@ struct AreaCaptureSelectionResult {
     var composedImageScale: CGFloat?
     var windowIncludesShadow = false
     var windowShowsCursor = false
+    var delaySeconds = 0
+    var recognizesText = false
 
     func logTiming(composedAt time: TimeInterval, acquisition: String, frames: [AreaCaptureSnapshot]? = nil) {
         guard let selectionTime else { return }
@@ -74,6 +76,7 @@ final class AreaCaptureSelection {
     private var selectionError: Error?
     private var cancelled = false
     private var delaySeconds = 0
+    private var requestedDelaySeconds = 0
     private var includeWindowShadow = false
     private var windowShowsCursor = false
     private var sessionID = UUID()
@@ -87,7 +90,10 @@ final class AreaCaptureSelection {
     private(set) var pointer = CGPoint.zero
     private(set) var highlightedRect: CGRect?
     private var hoveredWindow: WindowTarget?
-    private var status: String?
+    private(set) var status: String?
+    private(set) var selfTimerArmed = false
+    private(set) var textRecognitionArmed = false
+    private(set) var aspect: RecordingAreaAspect?
 
     var instruction: String {
         if let status { return status }
@@ -99,7 +105,92 @@ final class AreaCaptureSelection {
         case .element: return highlightedRect == nil ? "No accessible element here · E: area · Esc: cancel" : "Click an element · E: area · Esc: cancel"
         case .scrolling: return "Drag the scrolling capture area · Esc: cancel"
         case .recording: return "Click or press Return to open recording controls"
+        case .timer, .text: return "Drag an area · Esc: cancel"
         }
+    }
+
+    static var selfTimerSeconds: Int { UpshotPreferences.captureDelaySeconds > 0 ? UpshotPreferences.captureDelaySeconds : 5 }
+
+    var canArmCaptureActions: Bool {
+        isAllInOne && [.area, .fullscreen, .window, .element, .previousArea].contains(mode)
+    }
+
+    var canEditSelectionSize: Bool {
+        isAllInOne && start == nil && (mode == .area || mode == .scrolling)
+    }
+
+    var selectionPixelSize: CGSize? {
+        guard let highlightedRect else { return nil }
+        let scale = pixelScale(for: highlightedRect)
+        return CGSize(width: (highlightedRect.width * scale).rounded(), height: (highlightedRect.height * scale).rounded())
+    }
+
+    private var selectionBounds: CGRect {
+        snapshots.reduce(CGRect.null) { $0.union($1.frame) }
+    }
+
+    private func pixelScale(for rect: CGRect) -> CGFloat {
+        snapshots.filter { $0.frame.intersects(rect) }.map(\.scale).max() ?? snapshots.map(\.scale).max() ?? 1
+    }
+
+    func setSelectionPixelSize(width: Int? = nil, height: Int? = nil) {
+        guard canEditSelectionSize, let rect = highlightedRect, !completingSelection else { return }
+        let scale = pixelScale(for: rect)
+        let bounds = selectionBounds
+        var size = CGSize(width: width.map { CGFloat(max($0, 1)) / scale } ?? rect.width,
+                          height: height.map { CGFloat(max($0, 1)) / scale } ?? rect.height)
+        if let aspect {
+            if width != nil { size.height = size.width / aspect.ratio } else { size.width = size.height * aspect.ratio }
+        }
+        size = CGSize(width: min(size.width, bounds.width), height: min(size.height, bounds.height))
+        let resized = RecordingAreaGeometry.moved(CGRect(x: rect.minX, y: rect.maxY - size.height, width: size.width, height: size.height), by: .zero, in: bounds)
+        highlightedRect = AreaCaptureSnapshot.pixelAlignedRect(resized, snapshots: snapshots)
+        if let size = selectionPixelSize { NSLog("All-In-One selection size edited: width=%.0f height=%.0f", size.width, size.height) }
+        redraw()
+    }
+
+    func setAspect(_ selected: RecordingAreaAspect?) {
+        guard !completingSelection else { return }
+        aspect = selected
+        if let selected, canEditSelectionSize, let rect = highlightedRect {
+            highlightedRect = AreaCaptureSnapshot.pixelAlignedRect(RecordingAreaGeometry.reshaped(rect, to: selected.ratio, in: selectionBounds), snapshots: snapshots)
+        }
+        NSLog("All-In-One aspect ratio changed: aspect=%@", selected?.title ?? "freeform")
+        redraw()
+    }
+
+    func restoreKeyboardFocus() {
+        guard let view = views.first(where: { $0.window?.isKeyWindow == true }) ?? views.first else { return }
+        view.window?.makeFirstResponder(view)
+    }
+
+    private func toggleCaptureAction(_ action: AllInOneCaptureMode) {
+        guard canArmCaptureActions else { return }
+        let armed: Bool
+        if action == .timer {
+            selfTimerArmed.toggle()
+            armed = selfTimerArmed
+        } else {
+            textRecognitionArmed.toggle()
+            armed = textRecognitionArmed
+        }
+        delaySeconds = selfTimerArmed ? Self.selfTimerSeconds : requestedDelaySeconds
+        status = nil
+        NSLog("All-In-One capture action changed: action=%@ armed=%d mode=%@ delaySeconds=%ld", action.rawValue, armed, mode.rawValue, delaySeconds)
+        if armed, mode == .area || mode == .previousArea, start == nil, let rect = highlightedRect, rect.width >= 1, rect.height >= 1 {
+            commitSelection()
+            return
+        }
+        updateWindowStream()
+        redraw()
+    }
+
+    private func disarmCaptureActions() {
+        guard selfTimerArmed || textRecognitionArmed else { return }
+        selfTimerArmed = false
+        textRecognitionArmed = false
+        delaySeconds = requestedDelaySeconds
+        NSLog("All-In-One capture actions cleared: mode=%@", mode.rawValue)
     }
 
     func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area, scrolling: Bool = false,
@@ -128,6 +219,10 @@ final class AreaCaptureSelection {
         self.sessionID = sessionID
         selectionError = nil
         self.delaySeconds = delaySeconds
+        requestedDelaySeconds = delaySeconds
+        selfTimerArmed = false
+        textRecognitionArmed = false
+        aspect = nil
         self.includeWindowShadow = includeWindowShadow
         windowShowsCursor = includeWindowCursor && UpshotPreferences.screenshotShowCursor
         frozen = UpshotPreferences.areaSelectionFreezeScreen
@@ -281,6 +376,8 @@ final class AreaCaptureSelection {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             let view = AreaCaptureSelectionView(snapshot: snapshot, frozen: frozen, selector: self)
             panel.contentView = view
+            panel.initialFirstResponder = view
+            panel.makeFirstResponder(view)
             panels.append(panel)
             views.append(view)
             panel.orderFrontRegardless()
@@ -303,23 +400,26 @@ final class AreaCaptureSelection {
         snapshot.magnifierSamplePosition(at: pointer)
     }
 
-    func readout(for snapshot: AreaCaptureSnapshot) -> String {
+    func readout(for snapshot: AreaCaptureSnapshot) -> AreaSelectionReadout {
         let pixel = snapshot.pixelPoint(at: pointer)
-        let x = Int(pixel.x)
-        let y = Int(pixel.y)
-        var text = "X \(x) Y \(y) px"
-        if let highlightedRect {
+        var size: String?
+        if let highlightedRect, highlightedRect.width >= 1, highlightedRect.height >= 1 {
             let scale = snapshots.filter { $0.frame.intersects(highlightedRect) }.map(\.scale).max() ?? snapshot.scale
-            text += " · \(Int(ceil(highlightedRect.width * scale))) × \(Int(ceil(highlightedRect.height * scale))) px"
+            size = "\(Int((highlightedRect.width * scale).rounded())) × \(Int((highlightedRect.height * scale).rounded()))"
         }
-        if !frozen && UpshotPreferences.areaSelectionMagnifier && !streams.contains(where: { $0.displayID == snapshot.displayID && $0.isReady }) { text += " · Live preview unavailable" }
-        return text
+        let previewUnavailable = !frozen && UpshotPreferences.areaSelectionMagnifier && !streams.contains(where: { $0.displayID == snapshot.displayID && $0.isReady })
+        return AreaSelectionReadout(coordinates: "\(Int(pixel.x)), \(Int(pixel.y))", size: size, note: previewUnavailable ? "Live preview unavailable" : nil)
     }
 
     func chooseMode(_ selected: AllInOneCaptureMode) {
         guard !completingSelection else { return }
         guard !isScrollingOnly else { return }
         guard isAllInOne || [.area, .window, .element].contains(selected) else { return }
+        if selected.isCaptureAction {
+            toggleCaptureAction(selected)
+            return
+        }
+        if selected == .scrolling || selected == .recording { disarmCaptureActions() }
         if selected == .element && !AreaSelectionAccessibility.hasPermission {
             finish(nil)
             requestAccessibilityPermission()
@@ -339,7 +439,12 @@ final class AreaCaptureSelection {
         guard !completingSelection else { return }
         pointer = point
         if let start {
-            let rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+            let rect: CGRect
+            if let aspect, mode == .area || mode == .scrolling {
+                rect = RecordingAreaGeometry.drawn(from: start, to: point, ratio: aspect.ratio, fromCenter: false, in: selectionBounds)
+            } else {
+                rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+            }
             highlightedRect = AreaCaptureSnapshot.pixelAlignedRect(rect, snapshots: snapshots)
         } else {
             switch mode {
@@ -351,7 +456,7 @@ final class AreaCaptureSelection {
                 highlightedRect = hoveredWindow?.frame
             case .fullscreen:
                 highlightedRect = snapshots.first { $0.frame.contains(point) }?.frame
-            case .area, .previousArea, .scrolling, .recording: break
+            case .area, .previousArea, .scrolling, .recording, .timer, .text: break
             }
         }
         updateWindowStream()
@@ -410,7 +515,7 @@ final class AreaCaptureSelection {
         }
         guard let rect = highlightedRect, rect.width >= 1, rect.height >= 1 else {
             start = nil
-            if mode == .previousArea { status = "No previous screenshot area · A: area · Esc: cancel" }
+            if mode == .previousArea { status = "No previous screenshot area" }
             redraw()
             return
         }
@@ -424,7 +529,7 @@ final class AreaCaptureSelection {
         case .fullscreen:
             if let displayID = snapshots.first(where: { $0.frame == rect })?.displayID { complete(kind: .fullscreen(displayID), rect: rect, eventTime: eventTime) }
         case .scrolling: complete(kind: .scrolling, rect: rect, eventTime: eventTime)
-        case .recording: break
+        case .recording, .timer, .text: break
         }
     }
 
@@ -494,6 +599,9 @@ final class AreaCaptureSelection {
         result.capturedAt = Date(timeIntervalSinceNow: eventTime - ProcessInfo.processInfo.systemUptime)
         result.windowIncludesShadow = includeWindowShadow
         result.windowShowsCursor = windowShowsCursor
+        result.delaySeconds = delaySeconds
+        result.recognizesText = textRecognitionArmed
+        if selfTimerArmed || textRecognitionArmed { NSLog("All-In-One capture actions applied: selfTimer=%d delaySeconds=%ld captureText=%d", selfTimerArmed, delaySeconds, textRecognitionArmed) }
         if case .window(let windowID) = kind, delaySeconds == 0 {
             completeWindowSelection(result, windowID: windowID, eventTime: eventTime)
             return
@@ -652,18 +760,18 @@ final class AreaCaptureSelectionView: NSView {
         self.frozen = frozen
         self.selector = selector
         super.init(frame: CGRect(origin: .zero, size: snapshot.frame.size))
+        let overlay: NSView
         if selector.isAllInOne {
-            let toolbar = NSHostingView(rootView: AllInOneCaptureToolbar(selector: selector))
-            toolbar.sizingOptions = []
-            toolbar.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(toolbar)
-            NSLayoutConstraint.activate([
-                toolbar.centerXAnchor.constraint(equalTo: centerXAnchor),
-                toolbar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -28),
-                toolbar.widthAnchor.constraint(equalToConstant: min(snapshot.frame.width - 32, 820)),
-                toolbar.heightAnchor.constraint(equalToConstant: snapshot.frame.width < 860 ? 128 : 90)
-            ])
+            overlay = NSHostingView(rootView: AllInOneCaptureToolbar(selector: selector, stacksSizeFields: snapshot.frame.width < AllInOneCaptureToolbar.singleRowMinimumWidth))
+        } else {
+            overlay = AreaCaptureInstructionHostingView(rootView: AreaCaptureInstructionHint(selector: selector))
         }
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.centerXAnchor.constraint(equalTo: centerXAnchor),
+            overlay.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -AllInOneCaptureToolbar.bottomInset)
+        ])
     }
 
     required init?(coder: NSCoder) { nil }
@@ -710,13 +818,10 @@ final class AreaCaptureSelectionView: NSView {
             if !intersection.isNull && !intersection.isEmpty { dimming.appendRect(intersection) }
         }
         dimming.windingRule = .evenOdd
-        NSColor.black.withAlphaComponent(0.25).setFill()
+        NSColor.black.withAlphaComponent(0.3).setFill()
         dimming.fill()
         if let selected {
-            NSColor.white.setStroke()
-            let path = NSBezierPath(rect: selected)
-            path.lineWidth = 1
-            path.stroke()
+            AreaSelectionMagnifier.drawSelectionBorder(in: context, rect: selected)
         }
         if snapshot.frame.contains(selector.pointer) {
             let point = CGPoint(x: selector.pointer.x - snapshot.frame.minX, y: selector.pointer.y - snapshot.frame.minY)
@@ -725,28 +830,31 @@ final class AreaCaptureSelectionView: NSView {
                                         showsCrosshair: UpshotPreferences.areaSelectionCrosshair,
                                         showsMagnifier: UpshotPreferences.areaSelectionMagnifier)
         }
-        guard !selector.isAllInOne else { return }
-        let text = selector.instruction
-        let layout = OverlayTextLayout(text, font: OverlayTextLayout.instructionFont)
-        let size = layout.size
-        let rect = CGRect(x: (bounds.width - size.width) / 2 - 16, y: 36, width: size.width + 32, height: 36)
-        NSColor.black.withAlphaComponent(0.85).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).fill()
-        layout.draw(at: CGPoint(x: rect.minX + 16, y: rect.minY + 10), in: context)
     }
 }
 
+private final class AreaCaptureInstructionHostingView: NSHostingView<AreaCaptureInstructionHint> {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 extension AreaCaptureSelection {
-    static func renderView(image: CGImage, mode: AllInOneCaptureMode, allInOne: Bool, crosshair: Bool) -> NSView {
+    static func renderView(image: CGImage, mode: AllInOneCaptureMode, allInOne: Bool, crosshair: Bool, size: CGSize = CGSize(width: 1000, height: 625),
+                           aspect: RecordingAreaAspect? = nil, status: String? = nil) -> NSView {
         precondition(UpshotStorage.isRenderingStates)
         let selector = AreaCaptureSelection.shared
-        let snapshot = AreaCaptureSnapshot(displayID: 0, frame: CGRect(x: 0, y: 0, width: 1000, height: 625), image: image)
+        let snapshot = AreaCaptureSnapshot(displayID: 0, frame: CGRect(origin: .zero, size: size), image: image)
         selector.snapshots = [snapshot]
         selector.frozen = true
-        selector.mode = mode
         selector.isAllInOne = allInOne
-        selector.pointer = CGPoint(x: 650, y: 370)
-        selector.highlightedRect = crosshair ? nil : CGRect(x: 120, y: 175, width: 620, height: 330)
+        selector.selfTimerArmed = mode == .timer
+        selector.textRecognitionArmed = mode == .text
+        selector.mode = mode == .timer ? .window : mode == .text ? .area : mode
+        selector.aspect = aspect
+        selector.status = status
+        selector.start = nil
+        selector.pointer = CGPoint(x: size.width * 0.65, y: size.height * 0.592)
+        let selection = CGRect(x: size.width * 0.12, y: size.height * 0.28, width: size.width * 0.62, height: size.height * 0.528)
+        selector.highlightedRect = crosshair || mode == .text ? nil : aspect.map { RecordingAreaGeometry.reshaped(selection, to: $0.ratio, in: snapshot.frame) } ?? selection
         return AreaCaptureSelectionView(snapshot: snapshot, frozen: true, selector: selector)
     }
 }

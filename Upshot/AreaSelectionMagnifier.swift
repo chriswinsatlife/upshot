@@ -58,44 +58,143 @@ final class AreaSelectionLiveMagnifier {
     }
 }
 
+struct AreaSelectionReadout {
+    let coordinates: String
+    let size: String?
+    let note: String?
+}
+
 enum AreaSelectionMagnifier {
-    static func draw(in context: CGContext, bounds: CGRect, point: CGPoint, image: CGImage?, samplePosition: CGPoint, readout: String, showsCrosshair: Bool, showsMagnifier: Bool) {
+    private static let sampleSide: CGFloat = 17
+    private static let loupeSide: CGFloat = 119
+    private static let panelPadding: CGFloat = 6
+    private static let loupeRadius: CGFloat = 10
+    private static let panelRadius: CGFloat = 16
+    private static let textInset: CGFloat = 10
+    private static let lineSpacing: CGFloat = 3
+    private static let pointerOffset: CGFloat = 22
+    private static let screenMargin: CGFloat = 8
+
+    private static let sizeFont = font(size: 12, weight: .semibold)
+    private static let detailFont = font(size: 11, weight: .medium)
+    private static let primaryTextColor = CGColor(gray: 1, alpha: 0.96)
+    private static let secondaryTextColor = CGColor(gray: 1, alpha: 0.62)
+    private static let panelFill = CGColor(gray: 0.09, alpha: 0.94)
+    private static let panelStroke = CGColor(gray: 1, alpha: 0.14)
+    private static let loupeStroke = CGColor(gray: 1, alpha: 0.18)
+    private static let guideOuter = CGColor(gray: 0, alpha: 0.45)
+    private static let guideInner = CGColor(gray: 1, alpha: 0.85)
+    private static let pixelOuter = CGColor(gray: 0, alpha: 0.8)
+    private static let pixelInner = CGColor(gray: 1, alpha: 1)
+    private static let crosshairOuter = CGColor(gray: 0, alpha: 0.45)
+    private static let crosshairInner = CGColor(gray: 1, alpha: 0.9)
+    private static let selectionOuter = CGColor(gray: 0, alpha: 0.4)
+    private static let selectionInner = CGColor(gray: 1, alpha: 1)
+    private static let panelShadow = CGColor(gray: 0, alpha: 0.3)
+    private static let loupeBackground = CGColor(gray: 0, alpha: 1)
+
+    static func drawSelectionBorder(in context: CGContext, rect: CGRect) {
+        context.saveGState()
+        context.setLineWidth(1)
+        context.setStrokeColor(selectionOuter)
+        context.stroke(rect.insetBy(dx: -1.5, dy: -1.5))
+        context.setStrokeColor(selectionInner)
+        context.stroke(rect.insetBy(dx: -0.5, dy: -0.5))
+        context.restoreGState()
+    }
+
+    static func draw(in context: CGContext, bounds: CGRect, point: CGPoint, image: CGImage?, samplePosition: CGPoint, readout: AreaSelectionReadout, showsCrosshair: Bool, showsMagnifier: Bool) {
         if showsCrosshair {
             context.saveGState()
-            context.setStrokeColor(NSColor.black.withAlphaComponent(0.7).cgColor)
-            context.setLineWidth(2)
+            context.setStrokeColor(crosshairOuter)
+            context.setLineWidth(1.5)
             crosshair(in: context, bounds: bounds, point: point)
-            context.setStrokeColor(NSColor.white.withAlphaComponent(0.9).cgColor)
+            context.setStrokeColor(crosshairInner)
             context.setLineWidth(0.5)
             crosshair(in: context, bounds: bounds, point: point)
             context.restoreGState()
         }
-        let layout = OverlayTextLayout(readout, font: OverlayTextLayout.magnifierFont)
-        let readoutSize = layout.size
-        let width = max(132, readoutSize.width + 20)
-        let height: CGFloat = showsMagnifier ? 148 : 32
-        let x = min(max(8, point.x + 22 + width <= bounds.maxX - 8 ? point.x + 22 : point.x - width - 22), max(8, bounds.maxX - width - 8))
-        let y = min(max(8, point.y + 22 + height <= bounds.maxY - 8 ? point.y + 22 : point.y - height - 22), max(8, bounds.maxY - height - 8))
-        let frame = CGRect(x: x, y: y, width: width, height: height)
-        NSColor.black.withAlphaComponent(0.92).setFill()
-        NSBezierPath(roundedRect: frame, xRadius: 10, yRadius: 10).fill()
+        let primary = OverlayTextLayout(readout.size ?? readout.coordinates, font: sizeFont, color: primaryTextColor)
+        let secondaryText = [readout.size == nil ? nil : readout.coordinates, readout.note].compactMap { $0 }.joined(separator: " · ")
+        let secondary = secondaryText.isEmpty ? nil : OverlayTextLayout(secondaryText, font: detailFont, color: secondaryTextColor)
+        let textWidth = max(primary.size.width, secondary?.size.width ?? 0)
+        let textHeight = primary.size.height + (secondary.map { $0.size.height + lineSpacing } ?? 0)
+        let width = showsMagnifier ? max(loupeSide + panelPadding * 2, textWidth + textInset * 2) : textWidth + textInset * 2 + 4
+        let height = showsMagnifier ? panelPadding + loupeSide + textInset - 2 + textHeight + textInset - 1 : textHeight + textInset + 4
+        let x = point.x + pointerOffset + width <= bounds.maxX - screenMargin ? point.x + pointerOffset : point.x - width - pointerOffset
+        let y = point.y - pointerOffset - height >= bounds.minY + screenMargin ? point.y - pointerOffset - height : point.y + pointerOffset
+        let frame = CGRect(x: min(max(screenMargin, x), max(screenMargin, bounds.maxX - width - screenMargin)),
+                           y: min(max(screenMargin, y), max(screenMargin, bounds.maxY - height - screenMargin)),
+                           width: width, height: height).integral
+        let radius = showsMagnifier ? panelRadius : frame.height / 2
+        let panel = CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -4), blur: 14, color: panelShadow)
+        context.addPath(panel)
+        context.setFillColor(panelFill)
+        context.fillPath()
+        context.restoreGState()
+        context.saveGState()
+        context.addPath(panel)
+        context.setStrokeColor(panelStroke)
+        context.setLineWidth(1)
+        context.strokePath()
+        context.restoreGState()
         if showsMagnifier {
-            let loupe = CGRect(x: frame.midX - 54, y: frame.minY + 32, width: 108, height: 108)
-            context.saveGState()
-            context.clip(to: loupe)
-            if let image {
-                context.interpolationQuality = .none
-                context.draw(image, in: loupe)
-            }
-            context.setStrokeColor(NSColor.black.cgColor)
-            context.setLineWidth(2)
-            crosshair(in: context, bounds: loupe, point: CGPoint(x: loupe.minX + samplePosition.x * loupe.width, y: loupe.minY + samplePosition.y * loupe.height))
-            context.setStrokeColor(NSColor.white.cgColor)
-            context.setLineWidth(0.5)
-            crosshair(in: context, bounds: loupe, point: CGPoint(x: loupe.minX + samplePosition.x * loupe.width, y: loupe.minY + samplePosition.y * loupe.height))
-            context.restoreGState()
+            let loupe = CGRect(x: frame.midX - loupeSide / 2, y: frame.maxY - panelPadding - loupeSide, width: loupeSide, height: loupeSide)
+            drawLoupe(in: context, loupe: loupe, image: image, samplePosition: samplePosition)
         }
-        layout.draw(at: CGPoint(x: frame.midX - readoutSize.width / 2, y: frame.minY + 10), in: context)
+        let textTop = showsMagnifier ? frame.maxY - panelPadding - loupeSide - textInset + 2 : frame.midY + textHeight / 2
+        primary.draw(at: CGPoint(x: frame.midX - primary.size.width / 2, y: textTop - primary.size.height), in: context)
+        if let secondary {
+            secondary.draw(at: CGPoint(x: frame.midX - secondary.size.width / 2, y: textTop - primary.size.height - lineSpacing - secondary.size.height), in: context)
+        }
+    }
+
+    private static func drawLoupe(in context: CGContext, loupe: CGRect, image: CGImage?, samplePosition: CGPoint) {
+        let shape = CGPath(roundedRect: loupe, cornerWidth: loupeRadius, cornerHeight: loupeRadius, transform: nil)
+        context.saveGState()
+        context.addPath(shape)
+        context.clip()
+        context.setFillColor(loupeBackground)
+        context.fill(loupe)
+        if let image {
+            context.interpolationQuality = .none
+            context.draw(image, in: loupe)
+        }
+        let cell = loupe.width / sampleSide
+        let center = CGPoint(x: loupe.minX + samplePosition.x * loupe.width, y: loupe.minY + samplePosition.y * loupe.height)
+        let pixel = CGRect(x: center.x - cell / 2, y: center.y - cell / 2, width: cell, height: cell)
+        context.setLineWidth(1)
+        context.setStrokeColor(guideOuter)
+        guides(in: context, loupe: loupe, pixel: pixel.insetBy(dx: -1, dy: -1), offset: 0.5)
+        context.setStrokeColor(guideInner)
+        guides(in: context, loupe: loupe, pixel: pixel, offset: 0)
+        context.setStrokeColor(pixelOuter)
+        context.stroke(pixel.insetBy(dx: -1, dy: -1))
+        context.setStrokeColor(pixelInner)
+        context.stroke(pixel)
+        context.restoreGState()
+        context.saveGState()
+        context.addPath(shape)
+        context.setStrokeColor(loupeStroke)
+        context.setLineWidth(1)
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private static func guides(in context: CGContext, loupe: CGRect, pixel: CGRect, offset: CGFloat) {
+        let midX = pixel.midX + offset
+        let midY = pixel.midY + offset
+        context.move(to: CGPoint(x: loupe.minX, y: midY))
+        context.addLine(to: CGPoint(x: pixel.minX, y: midY))
+        context.move(to: CGPoint(x: pixel.maxX, y: midY))
+        context.addLine(to: CGPoint(x: loupe.maxX, y: midY))
+        context.move(to: CGPoint(x: midX, y: loupe.minY))
+        context.addLine(to: CGPoint(x: midX, y: pixel.minY))
+        context.move(to: CGPoint(x: midX, y: pixel.maxY))
+        context.addLine(to: CGPoint(x: midX, y: loupe.maxY))
+        context.strokePath()
     }
 
     private static func crosshair(in context: CGContext, bounds: CGRect, point: CGPoint) {
@@ -104,5 +203,10 @@ enum AreaSelectionMagnifier {
         context.move(to: CGPoint(x: point.x, y: bounds.minY))
         context.addLine(to: CGPoint(x: point.x, y: bounds.maxY))
         context.strokePath()
+    }
+
+    private static func font(size: CGFloat, weight: NSFont.Weight) -> CTFont {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+        return CTFontCreateCopyWithAttributes(font as CTFont, size, nil, nil)
     }
 }
