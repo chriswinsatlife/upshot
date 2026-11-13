@@ -43,6 +43,7 @@ struct RecordingStudioWindow: View {
 struct RecordingStudioContent: View {
     @Bindable var model: RecordingStudioModel
     @State private var isInspectorPresented = true
+    @State private var page: StudioInspectorPage = StudioInspectorPage.renderInitialPage
     @State private var closeGuard = EditorCloseGuard()
 
     var body: some View {
@@ -55,15 +56,29 @@ struct RecordingStudioContent: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                stage
+                HStack(spacing: 0) {
+                    StudioToolRail(
+                        pages: StudioInspectorPage.available(for: model),
+                        highlightedPage: isInspectorPresented
+                            ? StudioInspectorPage.highlightedPage(for: model, current: page)
+                            : nil,
+                        onSelect: select
+                    )
+                    columnDivider
+                    if isInspectorPresented {
+                        StudioInspector(model: model, page: $page)
+                            .frame(width: InspectorMetrics.columnIdealWidth)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                        columnDivider
+                    }
+                    stage
+                }
+                .clipped()
                 StudioTimelineDock(model: model)
             }
         }
         .frame(minWidth: 980, minHeight: 720)
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-        .inspector(isPresented: $isInspectorPresented) {
-            StudioInspector(model: model)
-        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -86,7 +101,7 @@ struct RecordingStudioContent: View {
                         isInspectorPresented.toggle()
                     }
                 } label: {
-                    Image(systemName: "sidebar.right")
+                    Image(systemName: "sidebar.left")
                 }
                 .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
             }
@@ -169,6 +184,20 @@ struct RecordingStudioContent: View {
             }
             .motion(.morph, value: model.isCroppingVideo)
             .motion(.morph, value: isInspectorPresented)
+    }
+
+    private var columnDivider: some View {
+        Rectangle()
+            .fill(Palette.hairline)
+            .frame(width: 1)
+    }
+
+    private func select(_ selected: StudioInspectorPage) {
+        model.clearTimelineSelection()
+        withAnimation(.morphIfAllowed) {
+            page = selected
+            isInspectorPresented = true
+        }
     }
 
     private var floatsChrome: Bool {

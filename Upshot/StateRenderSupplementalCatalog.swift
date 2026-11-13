@@ -53,10 +53,10 @@ enum StateRenderSupplementalCatalog {
                 return AnyView(RecordingStudioStyleStrip(model: model, presetStore: .shared).renderNameEditor.onDisappear { model.teardown() })
             }
         }
-        for variant in ["camera", "cursor", "keystrokes", "look-expanded"] {
-            add("studio-inspector-\(variant)", "RecordingStudioInspector", "struct StudioInspector", 420, 2400) {
+        for variant in ["camera", "cursor", "keystrokes", "look-expanded", "zoom", "audio", "clip"] {
+            add("studio-inspector-\(variant)", "RecordingStudioInspector", "struct StudioInspector", 1440, 1000) {
                 let model = try await fixtures.studioModel()
-                return AnyView(StudioInspector(model: model).onDisappear { model.teardown() })
+                return AnyView(RecordingStudioContent(model: model).onDisappear { model.teardown() })
             }
         }
         add("annotation-load-failed", "AnnotationEditorWindow", "struct AnnotationLoadFailureView", 1280, 900) {
