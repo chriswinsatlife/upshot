@@ -5,6 +5,7 @@ import Foundation
 final class AnnoTextEditorOverlay: NSTextView {
     private weak var editor: AnnoEditor?
     private var shapeId: AnnoShapeID?
+    private var hasReflectedCoordinateSystem = false
 
     var editedShapeId: AnnoShapeID? { shapeId }
 
@@ -96,9 +97,24 @@ final class AnnoTextEditorOverlay: NSTextView {
             textContainer?.size = CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
         }
 
+        if hasReflectedCoordinateSystem {
+            let previousHeight = bounds.height
+            scaleUnitSquare(to: CGSize(width: 1, height: -1))
+            translateOrigin(to: CGPoint(x: 0, y: -previousHeight))
+            hasReflectedCoordinateSystem = false
+        }
+        let reflected = shape.isVerticallyFlipped == true
+        let displacement = reflected ? Vec.rot(Vec(0, height), shape.rotation) : Vec(0, 0)
         frameRotation = 0
-        frame = CGRect(x: origin.x, y: origin.y, width: width, height: height)
+        frame = CGRect(x: origin.x - displacement.x, y: origin.y - displacement.y, width: width, height: height)
+        bounds = CGRect(x: 0, y: 0, width: width, height: height)
         frameRotation = shape.rotation * 180 / .pi
+        if reflected {
+            scaleUnitSquare(to: CGSize(width: 1, height: -1))
+            translateOrigin(to: CGPoint(x: 0, y: -height))
+            hasReflectedCoordinateSystem = true
+        }
+
     }
 
     func loadText() {
