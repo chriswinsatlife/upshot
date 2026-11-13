@@ -37,14 +37,14 @@ final class DesktopIconVisibilityService {
         try shared.setManuallyHidden(!shared.manuallyHidden)
     }
 
-    func beginCapture() async throws -> UUID? {
+    func beginCapture(waitForPresentation: Bool = true) async throws -> UUID? {
         guard UpshotPreferences.screenshotHideDesktopIcons else { return nil }
         let token = UUID()
         let installed = covers.isEmpty
         if installed { try installCovers() }
         captureLeases.insert(token)
         do {
-            if installed { try await Task.sleep(for: .milliseconds(100)) }
+            if installed && waitForPresentation { try await Task.sleep(for: .milliseconds(100)) }
             try Task.checkCancellation()
         } catch {
             endCapture(token)

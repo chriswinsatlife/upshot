@@ -60,6 +60,9 @@ final class AreaCaptureSelection {
     private var screenObserver: NSObjectProtocol?
     private var streams: [AreaCaptureFrameStream] = []
     private var shareableContent: SCShareableContent?
+    private var contentTask: Task<Void, Never>?
+    private var contentError: Error?
+    private var startupTask: Task<Void, Never>?
     private var windowStream: AreaCaptureFrameStream?
     private var windowStreamTask: Task<Void, Never>?
     private var desiredWindowID: CGWindowID?
@@ -111,6 +114,9 @@ final class AreaCaptureSelection {
             DesktopIconVisibilityService.shared.endCapture(desktopIconLease)
             desktopIconLease = nil
             shareableContent = nil
+            contentTask = nil
+            contentError = nil
+            startupTask = nil
             desiredWindowID = nil
             currentWindowID = nil
             completingSelection = false
@@ -148,75 +154,110 @@ final class AreaCaptureSelection {
         }
         do {
             let result = try await withTaskCancellationHandler {
-                desktopIconLease = try await DesktopIconVisibilityService.shared.beginCapture()
-                snapshots = try await AreaCaptureSnapshot.captureAll(desktopIconsPrepared: true)
+                desktopIconLease = try await DesktopIconVisibilityService.shared.beginCapture(waitForPresentation: false)
+                snapshots = try AreaCaptureSnapshot.displayGeometry()
                 try Task.checkCancellation()
-                if !frozen && !cancelled { try await startStreams() }
-                try Task.checkCancellation()
-                if let selectionError { throw selectionError }
                 guard !cancelled else { return nil as AreaCaptureSelectionResult? }
                 return await withCheckedContinuation { continuation in
                     self.continuation = continuation
                     if Task.isCancelled || cancelled { finish(nil); return }
                     showPanels()
+                    beginAcquisition()
                 }
             } onCancel: {
                 Task { @MainActor in
                     if self.sessionID == sessionID { self.cancel() }
                 }
             }
-            try await stopStreams()
+            await stopStreams()
             if let selectionError { throw selectionError }
             guard !cancelled && !Task.isCancelled else { return nil }
             if result?.desktopIconLease != nil { desktopIconLease = nil }
             return result
         } catch {
-            try? await stopStreams()
+            await stopStreams()
             throw error
         }
     }
 
-    private func startStreams() async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        shareableContent = content
-        for snapshot in snapshots {
-            try Task.checkCancellation()
-            guard !cancelled else { return }
-            guard let display = content.displays.first(where: { $0.displayID == snapshot.displayID }) else { throw CocoaError(.fileReadUnknown) }
-            let stream = AreaCaptureFrameStream(displayID: snapshot.displayID, frame: snapshot.frame, didUpdate: { [weak self] in
-                if UpshotPreferences.areaSelectionMagnifier { self?.redraw() }
-            }, didFail: { [weak self] error in
-                self?.selectionError = error
-                self?.cancel()
-            })
-            streams.append(stream)
-            try await stream.start(display: display, content: content)
+    private func loadContent() async throws -> SCShareableContent {
+        if let shareableContent { return shareableContent }
+        if contentTask == nil {
+            contentError = nil
+            contentTask = Task { @MainActor in
+                do { shareableContent = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) }
+                catch { contentError = error }
+            }
         }
-        let deadline = ProcessInfo.processInfo.systemUptime + 3
-        while !streams.allSatisfy(\.isReady) && !cancelled {
-            guard ProcessInfo.processInfo.systemUptime < deadline else { throw CocoaError(.fileReadUnknown) }
-            try await Task.sleep(for: .milliseconds(10))
+        if let contentTask { await contentTask.value }
+        contentTask = nil
+        try Task.checkCancellation()
+        if let contentError { throw contentError }
+        guard let shareableContent else { throw CocoaError(.fileReadUnknown) }
+        return shareableContent
+    }
+
+    private func beginAcquisition() {
+        startupTask = Task { @MainActor in
+            do {
+                let content = try await loadContent()
+                try Task.checkCancellation()
+                if frozen {
+                    let captured = try await AreaCaptureSnapshot.captureAll(desktopIconsPrepared: true, content: content)
+                    try Task.checkCancellation()
+                    guard !cancelled, !completingSelection, continuation != nil else { return }
+                    snapshots = captured
+                    for view in views {
+                        if let snapshot = captured.first(where: { $0.displayID == view.snapshot.displayID }) { view.updateSnapshot(snapshot) }
+                    }
+                    NSLog("Area selector frozen snapshot ready: displays=%ld", captured.count)
+                } else {
+                    await startStreams(content: content)
+                }
+            } catch {
+                if !Task.isCancelled { NSLog("Area selector acquisition unavailable: using screenshot fallback error=%@", error.localizedDescription) }
+            }
         }
     }
 
-    private func stopStreams() async throws {
+    private func startStreams(content: SCShareableContent) async {
+        for snapshot in snapshots {
+            guard !Task.isCancelled, !cancelled, !completingSelection else { return }
+            guard let display = content.displays.first(where: { $0.displayID == snapshot.displayID }) else {
+                NSLog("Area capture stream unavailable: display=%u missing display; using screenshot fallback", snapshot.displayID)
+                continue
+            }
+            let stream = AreaCaptureFrameStream(displayID: snapshot.displayID, frame: snapshot.frame, didUpdate: { [weak self] in
+                if UpshotPreferences.areaSelectionMagnifier { self?.redraw() }
+            }, didFail: { error in
+                NSLog("Area capture stream unavailable: display=%u using screenshot fallback error=%@", snapshot.displayID, error.localizedDescription)
+            })
+            streams.append(stream)
+            do { try await stream.start(display: display, content: content) }
+            catch { NSLog("Area capture stream unavailable: display=%u using screenshot fallback error=%@", snapshot.displayID, error.localizedDescription) }
+        }
+    }
+
+    private func stopStreams() async {
+        startupTask?.cancel()
+        if let startupTask { await startupTask.value }
         windowStreamTask?.cancel()
         if let windowStreamTask { await windowStreamTask.value }
         selectionTask?.cancel()
         if let selectionTask { await selectionTask.value }
+        contentTask?.cancel()
+        if let contentTask { await contentTask.value }
         let allStreams = streams + [windowStream].compactMap { $0 }
         guard !allStreams.isEmpty else { return }
-        var failure: Error?
         var stopped = 0
         var failed = 0
         for stream in allStreams {
             do { try await stream.stop(); stopped += 1 }
-            catch { failure = failure ?? error; failed += 1 }
+            catch { failed += 1 }
         }
         streams.removeAll()
         windowStream = nil
         NSLog("Area capture streams released: retained=0 stopped=%ld failed=%ld", stopped, failed)
-        if let failure { throw failure }
     }
 
     private func requestAccessibilityPermission() {
@@ -228,7 +269,7 @@ final class AreaCaptureSelection {
         for snapshot in snapshots {
             let panel = AreaCaptureSelectionPanel(contentRect: snapshot.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = .screenSaver
-            panel.isOpaque = frozen
+            panel.isOpaque = frozen && snapshot.isCaptured
             panel.backgroundColor = .clear
             panel.hasShadow = false
             panel.hidesOnDeactivate = false
@@ -251,7 +292,7 @@ final class AreaCaptureSelection {
 
     func magnifierImage(for snapshot: AreaCaptureSnapshot) -> CGImage? {
         if !frozen { return streams.first { $0.displayID == snapshot.displayID }?.magnifierImage(at: pointer, geometry: snapshot) }
-        return snapshot.image.cropping(to: snapshot.magnifierPixelRect(at: pointer))
+        return snapshot.isCaptured ? snapshot.image.cropping(to: snapshot.magnifierPixelRect(at: pointer)) : nil
     }
 
     func magnifierSamplePosition(for snapshot: AreaCaptureSnapshot) -> CGPoint {
@@ -326,12 +367,7 @@ final class AreaCaptureSelection {
                 currentWindowID = targetID
                 guard let targetID else { break }
                 do {
-                    let content: SCShareableContent
-                    if let shareableContent { content = shareableContent }
-                    else {
-                        content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-                        shareableContent = content
-                    }
+                    let content = try await loadContent()
                     try Task.checkCancellation()
                     guard !completingSelection, let window = content.windows.first(where: { $0.windowID == targetID }),
                           let target = windows.first(where: { $0.id == targetID }) else { continue }
@@ -434,6 +470,8 @@ final class AreaCaptureSelection {
 
     private func complete(kind: AreaCaptureSelectionResult.Kind, rect: CGRect, eventTime: TimeInterval) {
         guard !completingSelection else { return }
+        completingSelection = true
+        startupTask?.cancel()
         NSLog("Area selector selected: mode=%@ x=%.1f y=%.1f width=%.1f height=%.1f", mode.rawValue, rect.minX, rect.minY, rect.width, rect.height)
         let target: WindowTarget?
         if case .window(let id) = kind {
@@ -459,18 +497,8 @@ final class AreaCaptureSelection {
         case .scrolling, .recording: break
         default:
             if delaySeconds == 0 {
-                do {
-                    if !frozen {
-                        result = try selectionUsingLiveFrames(result, eventTime: eventTime)
-                    }
-                    result.composedImage = try AreaCaptureSnapshot.composite(result.snapshots, in: rect)
-                    result.logTiming(composedAt: ProcessInfo.processInfo.systemUptime, acquisition: frozen ? "frozen" : "stream")
-                } catch {
-                    selectionError = error
-                    NSLog("Area capture selection failed: no usable frame at selection or composition failed error=%@", error.localizedDescription)
-                    finish(nil)
-                    return
-                }
+                completeDisplaySelection(result, eventTime: eventTime)
+                return
             } else {
                 result.desktopIconLease = desktopIconLease
             }
@@ -492,9 +520,7 @@ final class AreaCaptureSelection {
         selectionTask = Task { @MainActor in
             defer { selectionTask = nil }
             do {
-                let content: SCShareableContent
-                if let shareableContent { content = shareableContent }
-                else { content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) }
+                let content = try await loadContent()
                 try Task.checkCancellation()
                 guard let window = content.windows.first(where: { $0.windowID == windowID }) else { throw CocoaError(.fileReadUnknown) }
                 let snapshot = try await AreaCaptureWindowSnapshot.capture(window: window, includeShadow: includeWindowShadow, eventTime: eventTime)
@@ -511,12 +537,47 @@ final class AreaCaptureSelection {
         }
     }
 
-    private func selectionUsingLiveFrames(_ result: AreaCaptureSelectionResult, eventTime: TimeInterval) throws -> AreaCaptureSelectionResult {
-        let selected = try streams.filter { $0.frame.intersects(result.rect) }.map { try $0.snapshot(for: eventTime) }
-        guard !selected.isEmpty else { throw CocoaError(.fileReadUnknown) }
-        var selection = result
-        selection.snapshots = selected
-        return selection
+    private func completeDisplaySelection(_ result: AreaCaptureSelectionResult, eventTime: TimeInterval) {
+        var retained: [CGDirectDisplayID: AreaCaptureSnapshot] = [:]
+        for geometry in result.snapshots where geometry.frame.intersects(result.rect) {
+            if frozen && geometry.isCaptured && (geometry.presentationTime.map { $0 <= eventTime } ?? true) { retained[geometry.displayID] = geometry }
+            else if !frozen, let source = streams.first(where: { $0.displayID == geometry.displayID && $0.isReady }),
+                    let snapshot = try? source.snapshot(for: eventTime) { retained[geometry.displayID] = snapshot }
+        }
+        let participating = result.snapshots.filter { $0.frame.intersects(result.rect) }
+        if retained.count == participating.count && !participating.isEmpty {
+            var selected = result
+            do {
+                selected.snapshots = participating.compactMap { retained[$0.displayID] }
+                selected.composedImage = try AreaCaptureSnapshot.composite(selected.snapshots, in: result.rect)
+                selected.logTiming(composedAt: ProcessInfo.processInfo.systemUptime, acquisition: frozen ? "frozen" : "stream")
+                finish(selected)
+            } catch {
+                selectionError = error
+                finish(nil)
+            }
+            return
+        }
+        selectionTask = Task { @MainActor in
+            defer { selectionTask = nil }
+            do {
+                let content = try await loadContent()
+                var selected = result
+                selected.snapshots = try await AreaCaptureSnapshot.acquireSelection(result.snapshots, in: result.rect, retained: retained) { geometry, rect in
+                    NSLog("Area capture screenshot fallback requested: display=%u reason=missing-frame selectionToRequestMs=%.3f",
+                          geometry.displayID, (ProcessInfo.processInfo.systemUptime - eventTime) * 1000)
+                    return try await AreaCaptureSnapshot.capture(geometry, in: rect, content: content)
+                }
+                try Task.checkCancellation()
+                guard !cancelled, continuation != nil else { return }
+                selected.composedImage = try AreaCaptureSnapshot.composite(selected.snapshots, in: result.rect)
+                selected.logTiming(composedAt: ProcessInfo.processInfo.systemUptime, acquisition: "screenshot-fallback")
+                finish(selected)
+            } catch {
+                if !cancelled { selectionError = error }
+                finish(nil)
+            }
+        }
     }
 
     static func captureSource(in rect: CGRect) -> CaptureSource? {
@@ -574,7 +635,7 @@ private final class AreaCaptureSelectionPanel: NSPanel {
 }
 
 final class AreaCaptureSelectionView: NSView {
-    let snapshot: AreaCaptureSnapshot
+    private(set) var snapshot: AreaCaptureSnapshot
     let frozen: Bool
     unowned let selector: AreaCaptureSelection
     private var tracking: NSTrackingArea?
@@ -600,7 +661,12 @@ final class AreaCaptureSelectionView: NSView {
 
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
-    override var isOpaque: Bool { frozen }
+    override var isOpaque: Bool { frozen && snapshot.isCaptured }
+    func updateSnapshot(_ snapshot: AreaCaptureSnapshot) {
+        self.snapshot = snapshot
+        window?.isOpaque = frozen && snapshot.isCaptured
+        needsDisplay = true
+    }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
 
     override func updateTrackingAreas() {
@@ -629,7 +695,7 @@ final class AreaCaptureSelectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.clear(bounds)
-        if frozen { context.draw(snapshot.image, in: bounds) }
+        if frozen && snapshot.isCaptured { context.draw(snapshot.image, in: bounds) }
         let selected = selector.highlightedRect?.offsetBy(dx: -snapshot.frame.minX, dy: -snapshot.frame.minY)
         let dimming = NSBezierPath(rect: bounds)
         if let selected {

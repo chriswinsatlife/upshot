@@ -190,7 +190,52 @@ struct AreaCaptureOfflineVerification {
         print("PASS stream buffer conversion: BGRA pixels, displayTime host-clock conversion, sample presentation timestamp fallback")
     }
 
-    static func main() throws {
+    static func verifyAcquisitionFallback(first: AreaCaptureSnapshot, second: AreaCaptureSnapshot) async throws {
+        let firstGeometry = try AreaCaptureSnapshot.geometry(displayID: first.displayID, frame: first.frame, scale: first.scale)
+        let secondGeometry = try AreaCaptureSnapshot.geometry(displayID: second.displayID, frame: second.frame, scale: second.scale)
+        precondition(!firstGeometry.isCaptured && firstGeometry.image.width == 1 && firstGeometry.pixelWidth == first.image.width)
+        precondition(firstGeometry.pixelHeight == first.image.height)
+        let point = CGPoint(x: first.frame.midX, y: first.frame.midY)
+        precondition(firstGeometry.pixelPoint(at: point) == first.pixelPoint(at: point))
+        precondition(firstGeometry.magnifierPixelRect(at: point) == first.magnifierPixelRect(at: point))
+        do {
+            _ = try AreaCaptureSnapshot.composite([firstGeometry], in: first.frame)
+            preconditionFailure("Unacquired display geometry must never become capture output")
+        } catch {}
+        var requested: [CGDirectDisplayID] = []
+        let early = try await AreaCaptureSnapshot.acquireSelection([firstGeometry], in: first.frame, retained: [:]) { geometry, rect in
+            precondition(rect == first.frame)
+            requested.append(geometry.displayID)
+            return first
+        }
+        precondition(requested == [first.displayID])
+        let earlyImage = try AreaCaptureSnapshot.composite(early, in: first.frame)
+        precondition(pixels(earlyImage) == pixels(first.image))
+        print("PASS selection before first stream frame: screenshot provider invoked, geometry never used as pixels")
+        requested.removeAll()
+        let rect = first.frame.union(second.frame)
+        let mixed = try await AreaCaptureSnapshot.acquireSelection([firstGeometry, secondGeometry], in: rect, retained: [first.displayID: first]) { geometry, _ in
+            requested.append(geometry.displayID)
+            return second
+        }
+        precondition(requested == [second.displayID])
+        precondition(mixed.count == 2 && mixed[0].image === first.image && mixed[1].image === second.image)
+        requested.removeAll()
+        let allRetained = try await AreaCaptureSnapshot.acquireSelection([firstGeometry, secondGeometry], in: rect,
+                                                                       retained: [first.displayID: first, second.displayID: second]) { _, _ in
+            preconditionFailure("Ready frames must not trigger screenshot acquisition")
+        }
+        precondition(allRetained.count == 2)
+        print("PASS partial stream availability: only the missing display requests a screenshot, ready frames remain retained")
+        _ = try await AreaCaptureSnapshot.acquireSelection([firstGeometry, secondGeometry], in: rect, retained: [:]) { geometry, _ in
+            requested.append(geometry.displayID)
+            return geometry.displayID == first.displayID ? first : second
+        }
+        precondition(requested == [first.displayID, second.displayID])
+        print("PASS unavailable streams: screenshot acquisition completes for every selected display")
+    }
+
+    static func main() async throws {
         let process: pid_t = 9000
         precondition(!AreaCaptureWindowFilter.excludes(windowID: 1, owner: process, layer: 0, currentProcess: process, includeAppWindows: false, coverWindowIDs: []))
         precondition(AreaCaptureWindowFilter.excludes(windowID: 2, owner: process, layer: 1000, currentProcess: process, includeAppWindows: false, coverWindowIDs: []))
@@ -234,6 +279,7 @@ struct AreaCaptureOfflineVerification {
         print("PASS stored frame composition: PNG round trip, exact pixels, negative display origin, 2x scale, asymmetric crop")
         let second = AreaCaptureSnapshot(displayID: 2, frame: CGRect(x: 0, y: 20, width: 40, height: 30),
                                          image: image(width: 40, height: 30, colors: [blue, blue, blue, blue]), presentationTime: 10.005)
+        try await verifyAcquisitionFallback(first: stored, second: second)
         let spanning = try AreaCaptureSnapshot.composite([chosen, second], in: CGRect(x: -10, y: 24, width: 20, height: 8))
         precondition(spanning.width == 40 && spanning.height == 16)
         let data = pixels(spanning)
