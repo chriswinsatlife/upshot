@@ -1,19 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// The Library's inspector: a large preview of the selection, its details,
-/// and a footer of actions built like the editors' footers - one prominent
-/// capsule for the main action, glass buttons for the rest.
 struct CaptureLibraryInspector: View {
     let model: CaptureLibraryModel
+
     @State private var byteCount: Int64?
     @State private var pendingCloudDelete: CaptureLibraryItem?
-    @State private var pendingCloudUpload: CaptureLibraryItem?
     @State private var similar: [CaptureLibraryItem] = []
-    @State private var showsAllText = false
-    @Namespace private var glass
+
     private var items: [CaptureLibraryItem] { model.selectedItems }
     private var index: CaptureLibraryIndex { .shared }
+
+    private var sizeText: String {
+        byteCount.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "Calculating…"
+    }
 
     var body: some View {
         Group {
@@ -21,42 +21,30 @@ struct CaptureLibraryInspector: View {
                 EmptyStateView(
                     systemImage: "photo.on.rectangle.angled",
                     title: "No Selection",
-                    message: "Select a screenshot or recording to see its details."
+                    message: "Select a capture to see its details."
                 )
                 .transition(.opacity)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if items.count == 1, let item = items.first {
-                            header(item)
-                            InspectorGroupBreak()
-                            information(item)
-                            recognizedText(item)
-                            similarCaptures(item)
-                        } else {
-                            multipleSelection
-                        }
+                InterfaceFormPage {
+                    if items.count == 1, let item = items.first {
+                        CaptureLibraryInspectorDetails(model: model, item: item, sizeText: sizeText)
+                        CaptureLibraryInspectorText(model: model, itemID: item.id)
+                        CaptureLibraryInspectorSimilar(model: model, similar: similar)
+                    } else {
+                        CaptureLibraryInspectorSelection(items: items, sizeText: sizeText)
                     }
-                    .padding(.top, InspectorMetrics.horizontalPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollEdgeEffectSoftIfAvailable()
                 .transition(.opacity)
             }
         }
-        // A bar rather than an inset, so the scroll view's soft edge fades
-        // the list out under the buttons instead of showing it through them.
         .safeAreaBarIfAvailable(edge: .bottom) {
             if !items.isEmpty {
-                actionFooter
-                    .transition(.rise)
+                CaptureLibraryInspectorActions(model: model, items: items, pendingCloudDelete: $pendingCloudDelete)
+                    .transition(.opacity)
             }
         }
         .motion(.morph, value: items.isEmpty)
-        .onChange(of: items.map(\.id)) { _, _ in
-            pendingCloudUpload = nil
-            showsAllText = false
-        }
         .task(id: similarityKey) {
             guard items.count == 1, let item = items.first else { similar = []; return }
             let ids = await index.similar(to: item.id, among: model.items.map(\.id), limit: 9)
@@ -88,46 +76,113 @@ struct CaptureLibraryInspector: View {
         }
     }
 
-    // MARK: Header
+    private var similarityKey: String {
+        guard items.count == 1, let item = items.first else { return "" }
+        return "\(item.id)|\(index.analyses[item.id]?.hasFeaturePrint == true)|\(model.items.count)"
+    }
+}
 
-    private func header(_ item: CaptureLibraryItem) -> some View {
-        VStack(alignment: .leading, spacing: Space.l) {
-            Button { model.perform(.preview) } label: {
-                CaptureLibraryThumbnail(item: item)
-                    .aspectRatio(1.45, contentMode: .fit)
-                    .clipShape(.rect(cornerRadius: Radius.card, style: .continuous))
-                    .hairline(radius: Radius.card)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: item.isVideo ? "play.fill" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Palette.label)
-                            .frame(width: 28, height: 28)
-                            .glassEffect(.regular.interactive(), in: .circle)
-                            .padding(Space.m)
-                    }
+private struct CaptureLibraryInspectorDetails: View {
+    let model: CaptureLibraryModel
+    let item: CaptureLibraryItem
+    let sizeText: String
+
+    var body: some View {
+        Section {
+            CaptureLibraryInspectorValueRow("Dimensions", value: item.dimensions)
+            if item.isVideo { CaptureLibraryInspectorValueRow("Duration", value: item.durationText) }
+            CaptureLibraryInspectorValueRow("Size on Disk", value: sizeText)
+            CaptureLibraryInspectorValueRow("Created", value: item.createdAt.formatted(date: .numeric, time: .shortened))
+            if item.modifiedAt.timeIntervalSince(item.createdAt) >= 60 {
+                CaptureLibraryInspectorValueRow("Modified", value: item.modifiedAt.formatted(date: .numeric, time: .shortened))
             }
-            .buttonStyle(.plain)
-            .disabled(model.isBusy)
-            .accessibilityLabel("Quick Look \(item.name)")
-            .help("Quick Look (Space)")
-
-            titleBlock(item)
-
             if let source = item.source {
-                sourceCard(source)
+                InterfaceRow("App") {
+                    Button {
+                        model.searchText = ""
+                        model.scope = .app(source.appKey)
+                    } label: {
+                        Label {
+                            Text(source.appName)
+                        } icon: {
+                            Image(nsImage: LibraryAppIcons.icon(for: source.bundleIdentifier))
+                                .resizable()
+                                .frame(width: IconSize.toast, height: IconSize.toast)
+                        }
+                    }
+                    .help("Show all captures from \(source.appName)")
+                }
+                if let window = source.windowTitle {
+                    CaptureLibraryInspectorValueRow("Window", value: window)
+                }
+            }
+        } header: {
+            VStack(alignment: .leading, spacing: Space.xl) {
+                CaptureLibraryInspectorPreview(model: model, item: item)
+                CaptureLibraryInspectorTitle(model: model, item: item)
+                InterfaceSectionHeader("Information")
             }
         }
-        .padding(.horizontal, InspectorMetrics.horizontalPadding)
+    }
+}
+
+private struct CaptureLibraryInspectorValueRow: View {
+    let title: String
+    let value: String
+
+    init(_ title: String, value: String) {
+        self.title = title
+        self.value = value
     }
 
-    /// The capture's name, or the model's title while the name is still the
-    /// default file name, then its tags and keywords.
-    private func titleBlock(_ item: CaptureLibraryItem) -> some View {
-        let analysis = index.analyses[item.id]
+    var body: some View {
+        InterfaceRow(title) {
+            Text(value)
+                .font(.dsBody.monospacedDigit())
+                .foregroundStyle(Palette.secondaryLabel)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .textSelection(.enabled)
+                .contentTransition(.numericText())
+                .layoutPriority(1)
+        }
+    }
+}
+
+private struct CaptureLibraryInspectorPreview: View {
+    let model: CaptureLibraryModel
+    let item: CaptureLibraryItem
+
+    private var previewAspectRatio: CGFloat {
+        guard item.pixelWidth > 0, item.pixelHeight > 0 else { return 1.6 }
+        return min(max(CGFloat(item.pixelWidth) / CGFloat(item.pixelHeight), 0.75), 2.4)
+    }
+
+    var body: some View {
+        Button { model.perform(.preview) } label: {
+            CaptureLibraryThumbnail(item: item)
+                .aspectRatio(previewAspectRatio, contentMode: .fit)
+                .clipShape(.rect(cornerRadius: Radius.card, style: .continuous))
+                .hairline(radius: Radius.card)
+                .contentShape(.rect(cornerRadius: Radius.card, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isBusy)
+        .accessibilityLabel("Quick Look \(item.name)")
+        .help("Quick Look (Space)")
+    }
+}
+
+private struct CaptureLibraryInspectorTitle: View {
+    let model: CaptureLibraryModel
+    let item: CaptureLibraryItem
+
+    var body: some View {
+        let analysis = CaptureLibraryIndex.shared.analyses[item.id]
         let hasDefaultName = item.name == item.fileURL.lastPathComponent || item.name.hasPrefix("Upshot_")
         let headline = (hasDefaultName ? analysis?.title : nil) ?? item.name
         let secondary = headline == item.name ? analysis?.title : item.name
-        return VStack(alignment: .leading, spacing: Space.s) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Text(headline)
                 .font(.dsTitle)
                 .foregroundStyle(Palette.label)
@@ -145,7 +200,10 @@ struct CaptureLibraryInspector: View {
             }
             LibraryFlowLayout(spacing: Space.s) {
                 if let category = analysis?.category, category != .other {
-                    Button { show(.category(category)) } label: {
+                    Button {
+                        model.searchText = ""
+                        model.scope = .category(category)
+                    } label: {
                         Tag(text: category.title, systemImage: category.symbol)
                     }
                     .buttonStyle(.plain)
@@ -172,108 +230,62 @@ struct CaptureLibraryInspector: View {
             }
             .padding(.top, Space.xxs)
         }
+        .textCase(nil)
     }
+}
 
-    /// Where the capture came from: the app, and the window it showed.
-    /// Choosing it lists every capture from that app.
-    private func sourceCard(_ source: CaptureSource) -> some View {
-        let iconSize: CGFloat = 28
-        let padding: CGFloat = 10
-        return Button { show(.app(source.appKey)) } label: {
-            HStack(spacing: Space.m + 2) {
-                Image(nsImage: LibraryAppIcons.icon(for: source.bundleIdentifier))
-                    .resizable()
-                    .frame(width: iconSize, height: iconSize)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(source.appName)
-                        .font(.dsHeadline)
-                        .foregroundStyle(Palette.label)
-                    if let window = source.windowTitle {
-                        Text(window)
-                            .font(.dsCaption)
-                            .foregroundStyle(Palette.secondaryLabel)
-                            .lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Palette.tertiaryLabel)
-            }
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.fill, in: RoundedRectangle(cornerRadius: Radius.nested(inner: Radius.tile, padding: padding), style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Show all captures from \(source.appName)")
-    }
+private struct CaptureLibraryInspectorText: View {
+    let model: CaptureLibraryModel
+    let itemID: String
 
-    private func show(_ scope: CaptureLibraryScope) {
-        model.searchText = ""
-        model.scope = scope
-    }
+    @State private var showsAllText = false
 
-    private func information(_ item: CaptureLibraryItem) -> some View {
-        InspectorSection("Information") {
-            VStack(spacing: InspectorMetrics.rowSpacing) {
-                detailRow("Dimensions", value: item.dimensions)
-                if item.isVideo { detailRow("Duration", value: item.durationText) }
-                detailRow("Size on disk", value: sizeText)
-                detailRow("Created", value: item.createdAt.formatted(date: .abbreviated, time: .shortened))
-                // Only when it differs from Created at the shown precision.
-                if item.modifiedAt.timeIntervalSince(item.createdAt) >= 60 {
-                    detailRow("Modified", value: item.modifiedAt.formatted(date: .abbreviated, time: .shortened))
-                }
-            }
-        }
-    }
+    private static let previewParagraphCount = 6
 
-    /// The text Vision read in the capture, as paragraphs. While searching,
-    /// paragraphs with a match come first and the matched words are marked.
-    @ViewBuilder
-    private func recognizedText(_ item: CaptureLibraryItem) -> some View {
-        if let analysis = index.analyses[item.id], analysis.version == CaptureAnalysis.currentVersion {
-            let paragraphs = orderedParagraphs(analysis)
-            if !paragraphs.isEmpty {
-                let preview = 6
-                InspectorSection("Text") {
-                    InspectorIconButton(systemName: "doc.on.doc", help: "Copy Text") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(analysis.text, forType: .string)
-                    }
-                } content: {
-                    VStack(alignment: .leading, spacing: Space.m) {
-                        ForEach(Array(paragraphs.prefix(showsAllText ? paragraphs.count : preview).enumerated()), id: \.offset) { _, paragraph in
-                            Text(highlighted(paragraph))
-                                // Only code keeps its line breaks.
-                                .font(paragraph.contains("\n") ? .system(size: 11, design: .monospaced) : .dsCallout)
-                                .foregroundStyle(Palette.label)
-                                .lineSpacing(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if paragraphs.count > preview {
-                            Button(showsAllText ? "Show Less" : "Show All Text") {
-                                withAnimation(.fold) { showsAllText.toggle() }
+    var body: some View {
+        let index = CaptureLibraryIndex.shared
+        Group {
+            if let analysis = index.analyses[itemID], analysis.version == CaptureAnalysis.currentVersion {
+                let paragraphs = orderedParagraphs(analysis)
+                if !paragraphs.isEmpty {
+                    InterfaceSection("Text") {
+                        VStack(alignment: .leading, spacing: Space.m) {
+                            ForEach(Array(paragraphs.prefix(showsAllText ? paragraphs.count : Self.previewParagraphCount).enumerated()), id: \.offset) { _, paragraph in
+                                Text(highlighted(paragraph))
+                                    .font(paragraph.contains("\n") ? .system(size: 11, design: .monospaced) : .dsCallout)
+                                    .foregroundStyle(Palette.label)
+                                    .lineSpacing(Space.xxs)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.plain)
-                            .font(.dsCaption.weight(.medium))
-                            .foregroundStyle(Palette.accent)
+                        }
+                        .textSelection(.enabled)
+                        .padding(.vertical, Space.xs)
+                        HStack(spacing: Space.m) {
+                            Button("Copy Text") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(analysis.text, forType: .string)
+                            }
+                            if paragraphs.count > Self.previewParagraphCount {
+                                Button(showsAllText ? "Show Less" : "Show All Text") {
+                                    withAnimation(.fold) { showsAllText.toggle() }
+                                }
+                            }
                         }
                     }
-                    .textSelection(.enabled)
                 }
-            }
-        } else if index.pendingCount > 0 {
-            InspectorSection("Text") {
-                HStack(spacing: Space.s) {
-                    ProgressView().controlSize(.mini)
-                    Text("Reading text…")
-                        .font(.dsCaption)
-                        .foregroundStyle(Palette.secondaryLabel)
+            } else if index.pendingCount > 0 {
+                InterfaceSection("Text") {
+                    HStack(spacing: Space.s) {
+                        ProgressView().controlSize(.mini)
+                        Text("Reading text…")
+                            .font(.dsBody)
+                            .foregroundStyle(Palette.secondaryLabel)
+                    }
+                    .frame(minHeight: InterfaceMetrics.rowMinimumHeight)
                 }
             }
         }
+        .onChange(of: itemID) { _, _ in showsAllText = false }
     }
 
     private func orderedParagraphs(_ analysis: CaptureAnalysis) -> [String] {
@@ -301,13 +313,15 @@ struct CaptureLibraryInspector: View {
         }
         return text
     }
+}
 
-    /// Captures that look alike, by Vision feature print. Choosing one
-    /// selects it in the browser, widening the view if it's filtered out.
-    @ViewBuilder
-    private func similarCaptures(_ item: CaptureLibraryItem) -> some View {
+private struct CaptureLibraryInspectorSimilar: View {
+    let model: CaptureLibraryModel
+    let similar: [CaptureLibraryItem]
+
+    var body: some View {
         if !similar.isEmpty {
-            InspectorSection("Similar") {
+            InterfaceSection("Similar") {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 3), spacing: Space.m) {
                     ForEach(similar) { match in
                         Button { model.reveal(match.id) } label: {
@@ -321,20 +335,23 @@ struct CaptureLibraryInspector: View {
                         .accessibilityLabel("Select \(match.name)")
                     }
                 }
+                .padding(.vertical, Space.xs)
             }
         }
     }
+}
 
-    private var similarityKey: String {
-        guard items.count == 1, let item = items.first else { return "" }
-        return "\(item.id)|\(index.analyses[item.id]?.hasFeaturePrint == true)|\(model.items.count)"
-    }
+private struct CaptureLibraryInspectorSelection: View {
+    let items: [CaptureLibraryItem]
+    let sizeText: String
 
-    private var multipleSelection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: Space.l) {
-                // A loose fan of the first few, so a multi-selection reads
-                // as a stack of captures rather than a list.
+    var body: some View {
+        Section {
+            CaptureLibraryInspectorValueRow("Screenshots", value: "\(items.filter { !$0.isVideo }.count)")
+            CaptureLibraryInspectorValueRow("Recordings", value: "\(items.filter(\.isVideo).count)")
+            CaptureLibraryInspectorValueRow("Size on Disk", value: sizeText)
+        } header: {
+            VStack(alignment: .leading, spacing: Space.xl) {
                 ZStack {
                     ForEach(Array(items.prefix(3).enumerated().reversed()), id: \.element.id) { index, item in
                         CaptureLibraryThumbnail(item: item)
@@ -350,105 +367,108 @@ struct CaptureLibraryInspector: View {
                 .padding(.top, Space.l)
                 .padding(.horizontal, Space.m)
                 .motion(value: items.count)
-
                 Text("\(items.count) Captures")
                     .font(.dsTitle)
                     .foregroundStyle(Palette.label)
                     .contentTransition(.numericText())
+                InterfaceSectionHeader("Selection")
             }
-            .padding(.horizontal, InspectorMetrics.horizontalPadding)
-
-            InspectorGroupBreak()
-
-            InspectorSection("Selection") {
-                VStack(spacing: InspectorMetrics.rowSpacing) {
-                    detailRow("Screenshots", value: "\(items.filter { !$0.isVideo }.count)")
-                    detailRow("Recordings", value: "\(items.filter(\.isVideo).count)")
-                    detailRow("Size on disk", value: sizeText)
-                }
-            }
+            .textCase(nil)
         }
     }
+}
 
-    private func detailRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title)
-                .font(.inspectorLabel)
-                .foregroundStyle(Palette.secondaryLabel)
-                .fixedSize(horizontal: true, vertical: false)
+private struct CaptureLibraryInspectorActions: View {
+    let model: CaptureLibraryModel
+    let items: [CaptureLibraryItem]
+    @Binding var pendingCloudDelete: CaptureLibraryItem?
+
+    @State private var pendingCloudUpload: CaptureLibraryItem?
+    @State private var copiedAction: CopiedAction?
+    @State private var copiedResetTask: Task<Void, Never>?
+
+    private enum CopiedAction { case capture, link }
+
+    private var single: CaptureLibraryItem? { items.count == 1 ? items.first : nil }
+
+    var body: some View {
+        HStack(spacing: Space.m) {
+            Button { model.perform(.edit) } label: {
+                Label(single?.isVideo == true ? "Edit" : "Annotate", systemImage: single?.isVideo == true ? "film" : "pencil.tip.crop.circle")
+            }
+            .disabled(single == nil)
+
+            Button {
+                model.perform(.copy)
+                confirm(.capture)
+            } label: {
+                Label(copiedAction == .capture ? "Copied" : "Copy", systemImage: copiedAction == .capture ? "checkmark" : "doc.on.doc")
+                    .labelStyle(.iconOnly)
+            }
+            .help(copiedAction == .capture ? "Copied" : "Copy (⌘C)")
+
+            if CloudUploader.shared.isConfigured || items.contains(where: { $0.cloudURL != nil }) {
+                cloudButton
+            }
+
             Spacer(minLength: 0)
-            Text(value)
-                .font(.inspectorValue)
-                .foregroundStyle(Palette.label)
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
-                .contentTransition(.numericText())
-        }
-    }
 
-    private var sizeText: String {
-        byteCount.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "Calculating…"
-    }
-
-    // MARK: Footer
-
-    private var actionFooter: some View {
-        let single = items.count == 1 ? items.first : nil
-        return GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
-            HStack(spacing: GlassMetrics.gap) {
-                GlassActionCapsule(
-                    title: single?.isVideo == true ? "Edit" : "Annotate",
-                    systemImage: single?.isVideo == true ? "film" : "pencil.tip.crop.circle",
-                    isProminent: true
-                ) {
-                    model.perform(.edit)
+            Menu {
+                Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
+                if single != nil {
+                    Button("Rename…", systemImage: "pencil") { model.perform(.rename) }
                 }
-                .disabled(single == nil)
-                .glassEffectID("edit", in: glass)
-
-                GlassConfirmButton(
-                    systemImage: "doc.on.doc",
-                    help: "Copy (⌘C)",
-                    size: GlassMetrics.actionHeight
-                ) {
-                    model.perform(.copy)
+                Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
+                if let item = single, let link = item.cloudURL {
+                    Divider()
+                    if let url = URL(string: link) {
+                        Link(destination: url) { Label("Open Shared Capture", systemImage: "arrow.up.right") }
+                    }
+                    Button("Delete from Cloud…", systemImage: "icloud.slash", role: .destructive) {
+                        pendingCloudDelete = item
+                    }
                 }
-                .glassEffectID("copy", in: glass)
-
-                if CloudUploader.shared.isConfigured || items.contains(where: { $0.cloudURL != nil }) {
-                    cloudButton(single)
-                        .glassEffectID("cloud", in: glass)
-                }
-
-                moreMenu(single)
-                    .glassEffectID("more", in: glass)
+                Divider()
+                Button("Move to Trash…", systemImage: "trash", role: .destructive) { model.perform(.trash) }
+            } label: {
+                Label("More Actions", systemImage: "ellipsis")
+                    .labelStyle(.iconOnly)
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More Actions")
+            .accessibilityLabel("More capture actions")
         }
-        .padding(.horizontal, InspectorMetrics.horizontalPadding)
-        .padding(.top, 10)
-        .padding(.bottom, 16)
+        .buttonStyle(.interfaceAction)
+        .padding(.horizontal, Space.xl)
+        .padding(.top, Space.ml)
+        .padding(.bottom, Space.xl)
         .disabled(model.isBusy)
+        .onChange(of: items.map(\.id)) { _, _ in pendingCloudUpload = nil }
+        .onDisappear { copiedResetTask?.cancel() }
     }
 
     @ViewBuilder
-    private func cloudButton(_ item: CaptureLibraryItem?) -> some View {
-        if let item, item.cloudURL != nil {
-            GlassConfirmButton(
-                systemImage: "link",
-                help: "Copy Cloud Link",
-                size: GlassMetrics.actionHeight
-            ) {
+    private var cloudButton: some View {
+        if let item = single, item.cloudURL != nil {
+            Button {
                 model.copyLink(item)
+                confirm(.link)
+            } label: {
+                Label(copiedAction == .link ? "Copied" : "Copy Cloud Link", systemImage: copiedAction == .link ? "checkmark" : "link")
+                    .labelStyle(.iconOnly)
             }
+            .help(copiedAction == .link ? "Copied" : "Copy Cloud Link")
         } else {
-            GlassIconButton(
-                systemImage: "icloud.and.arrow.up",
-                help: "Share to Cloud",
-                size: GlassMetrics.actionHeight
-            ) {
-                pendingCloudUpload = item
+            Button {
+                pendingCloudUpload = single
+            } label: {
+                Label("Share to Cloud", systemImage: "icloud.and.arrow.up")
+                    .labelStyle(.iconOnly)
             }
-            .disabled(item == nil)
+            .help("Share to Cloud")
+            .disabled(single == nil)
             .popover(item: $pendingCloudUpload, arrowEdge: .top) { item in
                 CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
                     model.upload(item, options: options)
@@ -457,42 +477,17 @@ struct CaptureLibraryInspector: View {
         }
     }
 
-    private func moreMenu(_ item: CaptureLibraryItem?) -> some View {
-        Menu {
-            Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
-            if item != nil {
-                Button("Rename…", systemImage: "pencil") { model.perform(.rename) }
-            }
-            Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
-            if let item, let link = item.cloudURL {
-                Divider()
-                if let url = URL(string: link) {
-                    Link(destination: url) { Label("Open Shared Capture", systemImage: "arrow.up.right") }
-                }
-                Button("Delete from Cloud…", systemImage: "icloud.slash", role: .destructive) {
-                    pendingCloudDelete = item
-                }
-            }
-            Divider()
-            Button("Move to Trash…", systemImage: "trash", role: .destructive) { model.perform(.trash) }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: GlassMetrics.symbolSize, weight: .semibold))
-                .foregroundStyle(Palette.label)
-                .frame(width: GlassMetrics.actionHeight, height: GlassMetrics.actionHeight)
-                .contentShape(Circle())
+    private func confirm(_ action: CopiedAction) {
+        copiedAction = action
+        copiedResetTask?.cancel()
+        copiedResetTask = Task {
+            try? await Task.sleep(for: .seconds(1.4))
+            guard !Task.isCancelled else { return }
+            copiedAction = nil
         }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
-        .fixedSize()
-        .glassEffect(.regular.interactive(), in: .circle)
-        .help("More Actions")
-        .accessibilityLabel("More capture actions")
     }
 }
 
-/// Lays children out in rows, wrapping to the next row when one is full.
 struct LibraryFlowLayout: Layout {
     var spacing: CGFloat
 
