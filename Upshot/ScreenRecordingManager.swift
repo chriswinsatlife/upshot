@@ -187,6 +187,9 @@ final class ScreenRecordingManager {
 
                 let session = try RecordingSessionStore.createSession()
                 self.session = session
+                let focusWarning = await RecordingFocusController.shared.begin()
+                guard isStarting(session: session) else { return }
+                if let focusWarning { Self.presentInputWarnings([focusWarning]) }
                 let content = try await ScreenRecordingCapture.availableContent()
                 guard isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)
@@ -357,6 +360,9 @@ final class ScreenRecordingManager {
 
             let cameraResult = await CameraRecordingManager.shared.stop()
             let result = await writer.finishWriting()
+            if let warning = await RecordingFocusController.shared.restore() {
+                errorMessage = [errorMessage, warning].compactMap { $0 }.joined(separator: "\n\n")
+            }
             finalizeSession(result: result, cameraResult: cameraResult)
         }
     }
@@ -493,10 +499,12 @@ final class ScreenRecordingManager {
         if let session {
             RecordingSessionStore.deleteSession(session)
         }
+        let focusWarning = await RecordingFocusController.shared.restore()
         cleanupAfterRecording()
         errorMessage = "Failed to start screen recording: \(error.localizedDescription)"
         RecordingControlPresenter.shared.hide()
         RecordingAreaHighlightPresenter.shared.hide()
+        if let focusWarning { Self.presentInputWarnings([focusWarning]) }
         Self.presentStartFailureAlert(error: error)
     }
 
