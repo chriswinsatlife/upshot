@@ -1,10 +1,14 @@
 import AppKit
+import SwiftUI
 
 struct AreaCaptureSelectionResult {
     enum Kind {
         case area
         case element
         case window(CGWindowID)
+        case fullscreen(CGDirectDisplayID)
+        case scrolling
+        case recording
     }
 
     let kind: Kind
@@ -15,6 +19,7 @@ struct AreaCaptureSelectionResult {
 }
 
 @MainActor
+@Observable
 final class AreaCaptureSelection {
     static let shared = AreaCaptureSelection()
 
@@ -34,29 +39,45 @@ final class AreaCaptureSelection {
     private let liveMagnifier = AreaSelectionLiveMagnifier()
     private var active = false
     private var frozen = true
-    private(set) var elementSelection = false
-    private(set) var windowSelection = false
+    private(set) var isAllInOne = false
+    private(set) var mode: AllInOneCaptureMode = .area
     private(set) var start: CGPoint?
     private(set) var pointer = CGPoint.zero
     private(set) var highlightedRect: CGRect?
     private var hoveredWindow: WindowTarget?
+    private var status: String?
 
-    func select(smartElement: Bool = false) async throws -> AreaCaptureSelectionResult? {
-        guard !active, !Task.isCancelled else { return nil }
+    var instruction: String {
+        if let status { return status }
+        switch mode {
+        case .area: return highlightedRect == nil ? "Drag across displays · Space: window · E: element · Esc: cancel" : "Drag a new area or press Return · Esc: cancel"
+        case .window: return "Click a window · Space: area · Esc: cancel"
+        case .fullscreen: return "Click a display to capture · Esc: cancel"
+        case .previousArea: return highlightedRect == nil ? "No previous screenshot area · A: area · Esc: cancel" : "Click or press Return to capture the previous area"
+        case .element: return highlightedRect == nil ? "No accessible element here · E: area · Esc: cancel" : "Click an element · E: area · Esc: cancel"
+        case .scrolling: return "Drag the scrolling capture area · Esc: cancel"
+        case .recording: return "Click or press Return to open recording controls"
+        }
+    }
+
+    func select(smartElement: Bool = false, allInOne: Bool = false) async throws -> AreaCaptureSelectionResult? {
+        guard !active, !CaptureCountdownPresenter.shared.isRunning, !Task.isCancelled else { return nil }
         active = true
         defer { active = false; snapshots.removeAll(); windows.removeAll() }
         frozen = UpshotPreferences.areaSelectionFreezeScreen
-        windowSelection = false
-        elementSelection = smartElement
+        isAllInOne = allInOne
+        mode = smartElement ? .element : allInOne ? UpshotPreferences.allInOneLastMode : .area
+        status = nil
         start = nil
-        highlightedRect = nil
+        highlightedRect = allInOne ? AreaSelectionMemory.lastSelectionRect : nil
         pointer = NSEvent.mouseLocation
         windows = Self.windowTargets()
         if smartElement && !AreaSelectionAccessibility.hasPermission {
-            AreaSelectionAccessibility.requestPermission()
-            CaptureTextFeedbackPresenter.shared.showFailure(title: "Enable Accessibility for smart element capture", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            requestAccessibilityPermission()
             return nil
         }
+        if mode == .element && !AreaSelectionAccessibility.hasPermission { mode = .area }
+        if mode == .previousArea { highlightedRect = AreaSelectionMemory.previousScreenshotRect }
         snapshots = try await AreaCaptureSnapshot.captureAll()
         try Task.checkCancellation()
         return await withTaskCancellationHandler {
@@ -68,6 +89,11 @@ final class AreaCaptureSelection {
         } onCancel: {
             Task { @MainActor in self.finish(nil) }
         }
+    }
+
+    private func requestAccessibilityPermission() {
+        AreaSelectionAccessibility.requestPermission()
+        CaptureTextFeedbackPresenter.shared.showFailure(title: "Enable Accessibility for smart element capture", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
     }
 
     private func showPanels() {
@@ -91,13 +117,12 @@ final class AreaCaptureSelection {
         panel?.makeKey()
         panel?.makeFirstResponder(panel?.contentView)
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.finish(nil) }
+            Task { @MainActor [weak self] in self?.finish(nil) }
         }
         move(to: pointer)
-        if !frozen && UpshotPreferences.areaSelectionMagnifier {
-            startLiveMagnifier()
-        }
+        if !frozen && UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() }
         NSLog("Area selector opened: frozen=%d displays=%ld crosshair=%d magnifier=%d", frozen, snapshots.count, UpshotPreferences.areaSelectionCrosshair, UpshotPreferences.areaSelectionMagnifier)
+        if isAllInOne { NSLog("All-In-One opened: mode=%@ restoredSelection=%d", mode.rawValue, highlightedRect != nil) }
     }
 
     private func startLiveMagnifier() {
@@ -134,23 +159,46 @@ final class AreaCaptureSelection {
         return text
     }
 
+    func chooseMode(_ selected: AllInOneCaptureMode) {
+        guard isAllInOne || [.area, .window, .element].contains(selected) else { return }
+        if selected == .element && !AreaSelectionAccessibility.hasPermission {
+            finish(nil)
+            requestAccessibilityPermission()
+            return
+        }
+        mode = selected
+        status = nil
+        start = nil
+        highlightedRect = selected == .previousArea ? AreaSelectionMemory.previousScreenshotRect : nil
+        if selected == .area || selected == .scrolling { highlightedRect = AreaSelectionMemory.lastSelectionRect }
+        move(to: NSEvent.mouseLocation)
+        NSLog("Area selection mode changed: mode=%@", mode.rawValue)
+        if selected == .recording || selected == .previousArea { commitSelection() }
+    }
+
     func move(to point: CGPoint) {
         pointer = point
         if let start {
             highlightedRect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
-        } else if elementSelection {
-            hoveredWindow = windows.first { $0.frame.contains(point) }
-            highlightedRect = hoveredWindow.flatMap { AreaSelectionAccessibility.frame(at: point, processID: $0.processID) }
-        } else if windowSelection {
-            hoveredWindow = windows.first { $0.frame.contains(point) }
-            highlightedRect = hoveredWindow?.frame
+        } else {
+            switch mode {
+            case .element:
+                hoveredWindow = windows.first { $0.frame.contains(point) }
+                highlightedRect = hoveredWindow.flatMap { AreaSelectionAccessibility.frame(at: point, processID: $0.processID) }
+            case .window:
+                hoveredWindow = windows.first { $0.frame.contains(point) }
+                highlightedRect = hoveredWindow?.frame
+            case .fullscreen:
+                highlightedRect = snapshots.first { $0.frame.contains(point) }?.frame
+            case .area, .previousArea, .scrolling, .recording: break
+            }
         }
         redraw()
     }
 
     func mouseDown(at point: CGPoint) {
         move(to: point)
-        guard !windowSelection, !elementSelection else { return }
+        guard mode == .area || mode == .scrolling else { return }
         start = point
         highlightedRect = nil
         redraw()
@@ -158,82 +206,92 @@ final class AreaCaptureSelection {
 
     func mouseUp(at point: CGPoint) {
         move(to: point)
-        if elementSelection {
-            guard let rect = highlightedRect else { NSSound.beep(); return }
-            NSLog("Smart element selected: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
-            complete(kind: .element, rect: rect)
+        commitSelection()
+    }
+
+    private func commitSelection() {
+        if mode == .recording {
+            complete(kind: .recording, rect: AreaSelectionMemory.lastSelectionRect ?? .zero)
             return
         }
-        if windowSelection, let hoveredWindow {
-            complete(kind: .window(hoveredWindow.id), rect: hoveredWindow.frame)
-        } else if let rect = highlightedRect, rect.width >= 1, rect.height >= 1 {
-            complete(kind: .area, rect: rect)
-        } else {
+        guard let rect = highlightedRect, rect.width >= 1, rect.height >= 1 else {
             start = nil
-            highlightedRect = nil
+            if mode == .previousArea { status = "No previous screenshot area · A: area · Esc: cancel" }
             redraw()
+            return
+        }
+        switch mode {
+        case .area, .previousArea: complete(kind: .area, rect: rect)
+        case .element:
+            NSLog("Smart element selected: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
+            complete(kind: .element, rect: rect)
+        case .window:
+            if let hoveredWindow { complete(kind: .window(hoveredWindow.id), rect: rect) }
+        case .fullscreen:
+            if let displayID = snapshots.first(where: { $0.frame == rect })?.displayID { complete(kind: .fullscreen(displayID), rect: rect) }
+        case .scrolling: complete(kind: .scrolling, rect: rect)
+        case .recording: break
         }
     }
 
     func cancel() { finish(nil) }
 
     func keyDown(_ event: NSEvent) {
-        switch event.charactersIgnoringModifiers?.lowercased() {
-        case "e":
-            if !AreaSelectionAccessibility.hasPermission {
-                finish(nil)
-                AreaSelectionAccessibility.requestPermission()
-                CaptureTextFeedbackPresenter.shared.showFailure(title: "Enable Accessibility for smart element capture", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+        if let character = event.charactersIgnoringModifiers?.lowercased() {
+            if isAllInOne, let selected = AllInOneCaptureMode.allCases.first(where: { $0.shortcut == character }) {
+                chooseMode(selected)
                 return
             }
-            elementSelection.toggle()
-            windowSelection = false
-            start = nil
-            highlightedRect = nil
-            NSLog("Smart element selection changed: enabled=%d", elementSelection)
-            move(to: NSEvent.mouseLocation)
-            return
-        case "x":
-            UpshotPreferences.areaSelectionCrosshair.toggle()
-            NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
-            redraw()
-            return
-        case "m":
-            UpshotPreferences.areaSelectionMagnifier.toggle()
-            NSLog("Area magnifier changed: enabled=%d", UpshotPreferences.areaSelectionMagnifier)
-            if !frozen {
-                if UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() } else { liveMagnifier.stop() }
+            switch character {
+            case "a": chooseMode(.area); return
+            case "e": chooseMode(mode == .element ? .area : .element); return
+            case "x":
+                UpshotPreferences.areaSelectionCrosshair.toggle()
+                NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
+                redraw()
+                return
+            case "m":
+                UpshotPreferences.areaSelectionMagnifier.toggle()
+                NSLog("Area magnifier changed: enabled=%d", UpshotPreferences.areaSelectionMagnifier)
+                if !frozen {
+                    if UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() } else { liveMagnifier.stop() }
+                }
+                redraw()
+                return
+            default: break
             }
-            redraw()
-            return
-        default: break
         }
         switch event.keyCode {
         case 53: finish(nil)
-        case 49:
-            elementSelection = false
-            windowSelection.toggle()
-            start = nil
-            highlightedRect = nil
-            move(to: NSEvent.mouseLocation)
+        case 49: chooseMode(mode == .window ? .area : .window)
+        case 36, 76: commitSelection()
         default: break
         }
     }
 
     private func complete(kind: AreaCaptureSelectionResult.Kind, rect: CGRect) {
-        NSLog("Area selector selected: x=%.1f y=%.1f width=%.1f height=%.1f window=%d", rect.minX, rect.minY, rect.width, rect.height, windowSelection)
+        NSLog("Area selector selected: mode=%@ x=%.1f y=%.1f width=%.1f height=%.1f", mode.rawValue, rect.minX, rect.minY, rect.width, rect.height)
         let target: WindowTarget?
         if case .window(let id) = kind {
             target = windows.first { $0.id == id }
         } else {
-            target = windows.first { $0.frame.contains(CGPoint(x: rect.midX, y: rect.midY)) }
-                ?? windows.filter { $0.frame.intersects(rect) }.max {
-                    let left = $0.frame.intersection(rect)
-                    let right = $1.frame.intersection(rect)
-                    return left.width * left.height < right.width * right.height
-                }
+            target = Self.target(in: rect, windows: windows)
         }
+        if isAllInOne { AreaSelectionMemory.rememberSelection(mode: mode, rect: rect) }
         finish(AreaCaptureSelectionResult(kind: kind, rect: rect, snapshots: snapshots, frozen: frozen, source: target?.source))
+    }
+
+    static func captureSource(in rect: CGRect) -> CaptureSource? {
+        target(in: rect, windows: windowTargets())?.source
+    }
+
+    private static func target(in rect: CGRect, windows: [WindowTarget]) -> WindowTarget? {
+        windows.first { $0.frame.contains(CGPoint(x: rect.midX, y: rect.midY)) }
+            ?? windows.filter { $0.frame.intersects(rect) }.max {
+                let left = $0.frame.intersection(rect)
+                let right = $1.frame.intersection(rect)
+                return left.width * left.height < right.width * right.height
+            }
     }
 
     private func redraw() {
@@ -289,6 +347,18 @@ private final class AreaCaptureSelectionView: NSView {
         self.frozen = frozen
         self.selector = selector
         super.init(frame: CGRect(origin: .zero, size: snapshot.frame.size))
+        if selector.isAllInOne {
+            let toolbar = NSHostingView(rootView: AllInOneCaptureToolbar(selector: selector))
+            toolbar.sizingOptions = []
+            toolbar.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(toolbar)
+            NSLayoutConstraint.activate([
+                toolbar.centerXAnchor.constraint(equalTo: centerXAnchor),
+                toolbar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -28),
+                toolbar.widthAnchor.constraint(equalToConstant: min(snapshot.frame.width - 32, 820)),
+                toolbar.heightAnchor.constraint(equalToConstant: snapshot.frame.width < 860 ? 128 : 90)
+            ])
+        }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -325,7 +395,10 @@ private final class AreaCaptureSelectionView: NSView {
         if frozen { context.draw(snapshot.image, in: bounds) }
         let selected = selector.highlightedRect?.offsetBy(dx: -snapshot.frame.minX, dy: -snapshot.frame.minY)
         let dimming = NSBezierPath(rect: bounds)
-        if let selected { dimming.appendRect(selected.intersection(bounds)) }
+        if let selected {
+            let intersection = selected.intersection(bounds)
+            if !intersection.isNull && !intersection.isEmpty { dimming.appendRect(intersection) }
+        }
         dimming.windingRule = .evenOdd
         NSColor.black.withAlphaComponent(0.25).setFill()
         dimming.fill()
@@ -342,9 +415,8 @@ private final class AreaCaptureSelectionView: NSView {
                                         showsCrosshair: UpshotPreferences.areaSelectionCrosshair,
                                         showsMagnifier: UpshotPreferences.areaSelectionMagnifier)
         }
-        let text = selector.elementSelection
-            ? (selector.highlightedRect == nil ? "No accessible element here · E: area · Esc: cancel" : "Click element · E: area · Esc: cancel")
-            : selector.windowSelection ? "Click a window · Space: area · E: element · Esc: cancel" : "Drag across displays · Space: window · E: element · Esc: cancel"
+        guard !selector.isAllInOne else { return }
+        let text = selector.instruction
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white]
         let size = (text as NSString).size(withAttributes: attributes)
         let rect = CGRect(x: (bounds.width - size.width) / 2 - 16, y: 36, width: size.width + 32, height: 36)

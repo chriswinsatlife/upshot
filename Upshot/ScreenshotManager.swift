@@ -68,6 +68,14 @@ final class ScreenshotManager {
             return (left.isNull ? 0 : left.width * left.height) < (right.isNull ? 0 : right.width * right.height)
         }?.displayID
         lastAreaCaptureSource = selection.source
+        switch selection.kind {
+        case .fullscreen(let displayID):
+            guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
+            return await captureFullscreen(displayID: displayID)
+        case .scrolling, .recording:
+            throw CocoaError(.featureUnsupported)
+        case .area, .element, .window: break
+        }
         if case .window(let windowID) = selection.kind {
             guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
             var arguments = ["-l", "\(windowID)"]
@@ -89,7 +97,7 @@ final class ScreenshotManager {
         }
         do {
             let snapshots = try await AreaCaptureSnapshot.captureAll()
-            let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: CaptureSourceProbe(tracksPointer: false).finish(.area))
+            let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: AreaCaptureSelection.captureSource(in: rect))
             NSLog("Previous screenshot area capture started")
             return try await capture(selection, includeShadow: false, delaySeconds: delaySeconds)
         } catch {

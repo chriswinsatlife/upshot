@@ -19,6 +19,8 @@ final class CaptureCoordinator {
 
     var onShowPreview: ((URL, CGDirectDisplayID?, CaptureSource?) -> URL)?
 
+    var onScrollingCaptureRequested: ((CGRect) -> Void)?
+
     private init() {}
 
     private var textCaptureInProgress = false
@@ -34,6 +36,40 @@ final class CaptureCoordinator {
 
     func captureArea() {
         Task { await performCaptureArea() }
+    }
+
+    func captureAllInOne() {
+        Task { await captureAllInOneAwaiting() }
+    }
+
+    @discardableResult
+    func captureAllInOneAwaiting() async -> URL? {
+        do {
+            guard let selection = try await AreaCaptureSelection.shared.select(allInOne: true) else { return nil }
+            switch selection.kind {
+            case .recording:
+                NSLog("All-In-One recording controls requested")
+                RecordingBarPresenter.shared.showPicker()
+                return nil
+            case .scrolling:
+                if let onScrollingCaptureRequested {
+                    NSLog("All-In-One scrolling capture dispatched")
+                    onScrollingCaptureRequested(selection.rect)
+                } else {
+                    NSLog("All-In-One scrolling capture placeholder selected")
+                    CaptureTextFeedbackPresenter.shared.showFailure(title: "Scrolling capture is not available yet", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+                }
+                return nil
+            case .area, .element, .window, .fullscreen:
+                guard let url = try await ScreenshotManager.shared.capture(selection, includeShadow: UpshotPreferences.captureWindowShadow,
+                                                                           delaySeconds: UpshotPreferences.captureDelaySeconds) else { return nil }
+                return finishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
+            }
+        } catch {
+            NSLog("All-In-One capture failed: %@", String(describing: error))
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
+        }
     }
 
     func captureSmartElement() {
