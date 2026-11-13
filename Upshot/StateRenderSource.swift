@@ -204,7 +204,7 @@ enum StateRenderSource {
             ("private final class RecordingSourceTargetPanel: NSPanel {", 237),
             ("private final class RecordingSourceTargetSheetView: NSView {", 241),
             ("private struct RecordingSourceTargetOverlay: View {", 282),
-            ("private struct RecordingSourceTargetCard: View {", 339),
+            ("private struct RecordingSourceTargetCard: View {", 355),
         ],
         "Upshot/RecordingStudioInspector.swift": [
             ("private enum StudioTranscriptTab: Hashable {", 15),

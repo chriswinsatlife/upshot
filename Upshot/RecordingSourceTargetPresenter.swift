@@ -113,7 +113,7 @@ final class RecordingSourceTargetPresenter {
         }
 
         let scale = screen.backingScaleFactor
-        let size = "\(Int(screen.frame.width * scale))×\(Int(screen.frame.height * scale))"
+        let size = "\(Int(screen.frame.width * scale)) × \(Int(screen.frame.height * scale))"
         let fps = screen.maximumFramesPerSecond
         return Target(
             source: .display(displayID),
@@ -136,7 +136,7 @@ final class RecordingSourceTargetPresenter {
         let scale = NSScreen.screens
             .first { NSMouseInRect(CGPoint(x: hit.frame.midX, y: hit.frame.midY), $0.frame, false) }?
             .backingScaleFactor ?? 2
-        let size = "\(Int(hit.frame.width * scale))×\(Int(hit.frame.height * scale))"
+        let size = "\(Int(hit.frame.width * scale)) × \(Int(hit.frame.height * scale))"
         let icon = app.flatMap { NSRunningApplication(processIdentifier: $0.processID)?.icon }
 
         return Target(
@@ -285,33 +285,49 @@ private struct RecordingSourceTargetOverlay: View {
     @State private var presenter = RecordingSourceTargetPresenter.shared
 
     var body: some View {
-        GeometryReader { _ in
-            if let target = presenter.target,
-               let local = localRect(for: target.frame) {
-                let visible = local.intersection(CGRect(origin: .zero, size: screenFrame.size))
-                let shape = RoundedRectangle(cornerRadius: highlightRadius(for: target), style: .continuous)
+        let target = presenter.target
+        let local = target.flatMap { localRect(for: $0.frame) }
+        let shape = RoundedRectangle(cornerRadius: target.map(highlightRadius(for:)) ?? 0, style: .continuous)
 
+        ZStack(alignment: .topLeading) {
+            Color(nsColor: RecordingAreaHighlightView.screenDimmingColor)
+                .mask {
+                    Rectangle()
+                        .overlay(alignment: .topLeading) {
+                            if let local {
+                                shape
+                                    .frame(width: local.width, height: local.height)
+                                    .offset(x: local.minX, y: local.minY)
+                                    .blendMode(.destinationOut)
+                            }
+                        }
+                        .compositingGroup()
+                }
+
+            if let target, let local {
                 shape
-                    .fill(Palette.highlight.opacity(0.28))
-                    .overlay {
-                        shape.strokeBorder(Palette.highlight, lineWidth: 2)
-                    }
+                    .strokeBorder(Palette.highlight, lineWidth: 2)
                     .frame(width: local.width, height: local.height)
-                    .position(x: local.midX, y: local.midY)
+                    .offset(x: local.minX, y: local.minY)
+
                 if ownsCard(for: target) {
+                    let visible = local.intersection(CGRect(origin: .zero, size: screenFrame.size))
                     RecordingSourceTargetCard(target: target)
                         .position(x: visible.midX, y: visible.midY)
                         .transition(.opacity)
                 }
             }
         }
+        .frame(width: screenFrame.width, height: screenFrame.height, alignment: .topLeading)
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
+
     private func highlightRadius(for target: RecordingSourceTargetPresenter.Target) -> CGFloat {
         if case .display = target.source { return 0 }
-        return 16
+        return Radius.panel
     }
+
     private func localRect(for frame: CGRect) -> CGRect? {
         guard frame.intersects(screenFrame) else { return nil }
         return CGRect(
@@ -339,49 +355,54 @@ private struct RecordingSourceTargetOverlay: View {
 private struct RecordingSourceTargetCard: View {
     let target: RecordingSourceTargetPresenter.Target
 
-    private var isDisplay: Bool {
-        if case .display = target.source { return true }
-        return false
-    }
+    private static let maximumHeaderWidth: CGFloat = 360
+    private static let iconSide = InterfaceMetrics.flyoutRowHeight - Space.m
 
     var body: some View {
-        VStack(spacing: 10) {
-            if let icon = target.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 56, height: 56)
+        InterfaceFlyoutMenu {
+            HStack(spacing: Space.ml) {
+                icon
+                VStack(alignment: .leading, spacing: InterfaceMetrics.rowLabelToDetailSpacing) {
+                    Text(target.title)
+                        .font(.dsHeadline)
+                        .foregroundStyle(Palette.label)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(target.detail)
+                        .font(.dsCaption)
+                        .foregroundStyle(Palette.secondaryLabel)
+                        .lineLimit(1)
+                }
             }
+            .padding(Space.m)
+            .frame(maxWidth: Self.maximumHeaderWidth, alignment: .leading)
+            .accessibilityElement(children: .combine)
 
-            VStack(spacing: 4) {
-                Text(target.title)
-                    .font(.system(size: isDisplay ? 30 : 22, weight: .bold))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                Text(target.detail)
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .opacity(0.85)
-            }
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
+            InterfaceFlyoutDivider()
 
-            HStack(spacing: 6) {
-                Image(systemName: "record.circle")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Start Recording")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .frame(height: 32)
-            .background(Palette.record, in: Capsule())
-            .overlay {
-                Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-            }
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
-            .padding(.top, 4)
+            InterfaceFlyoutRow("Start Recording", systemImage: "record.circle") {}
         }
-        .frame(maxWidth: 420)
-        .padding(20)
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        if let image = target.icon {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: Self.iconSide, height: Self.iconSide)
+        } else {
+            Image(systemName: target.isDisplay ? "display" : "macwindow")
+                .font(.system(size: IconSize.toolbar, weight: .regular))
+                .foregroundStyle(Palette.label)
+                .frame(width: Self.iconSide, height: Self.iconSide)
+        }
+    }
+}
+
+private extension RecordingSourceTargetPresenter.Target {
+    var isDisplay: Bool {
+        if case .display = source { return true }
+        return false
     }
 }
 
@@ -393,7 +414,8 @@ extension RecordingSourceTargetPresenter {
         shared.target = Target(source: window ? .window(0) : .display(0),
                                frame: window ? CGRect(x: 100, y: 100, width: 800, height: 450) : frame,
                                title: window ? "Release Overview" : "Display 1",
-                               detail: window ? "1600 × 900" : "2000 × 1250", icon: nil)
+                               detail: window ? "Upshot · 1600 × 900" : "2000 × 1250 · 60 FPS",
+                               icon: window ? NSImage(named: NSImage.applicationIconName) : nil)
         return RecordingSourceTargetOverlay(screenFrame: frame)
     }
 }
