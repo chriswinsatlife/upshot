@@ -78,11 +78,11 @@ struct AnnotationSwatchRow: View {
         Circle()
             .fill(fill)
             .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-            .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 0.5))
+            .overlay(Circle().strokeBorder(Palette.strongHairline, lineWidth: 0.5))
             .padding(Self.selectionRingInset)
             .overlay {
                 Circle()
-                    .strokeBorder(Palette.accent, lineWidth: 2)
+                    .strokeBorder(Palette.label, lineWidth: 2)
                     .opacity(isSelected ? 1 : 0)
             }
             .frame(width: Self.cellSize, height: Self.cellSize)
