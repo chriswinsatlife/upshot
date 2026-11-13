@@ -76,6 +76,7 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
         let termination = body["termination"] as? [String: Any]
         var fields = ["report": filename, "incident_id": body["incident"] as? String ?? header["incident_id"] as? String ?? "unavailable", "exception": exception?["type"] as? String ?? "unavailable", "signal": exception?["signal"] as? String ?? "unavailable", "termination_namespace": termination?["namespace"] as? String ?? "unavailable", "crash_time": body["captureTime"] as? String ?? header["timestamp"] as? String ?? "unavailable"]
         if let code = termination?["code"] as? NSNumber { fields["termination_code"] = code.stringValue }
+        if let processID = body["pid"] as? NSNumber { fields["crashed_pid"] = processID.stringValue }
         return fields
     }
 

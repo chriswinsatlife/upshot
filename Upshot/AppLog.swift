@@ -77,7 +77,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
             lockDescriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
             openFile()
         } catch {
-            Logger(subsystem: AppLog.subsystem, category: "logging").error("event=file_log_unavailable error=\(AppLog.error(error), privacy: .public)")
+            reportFileFailure("file_log_unavailable", fields: ["error": AppLog.error(error)])
         }
     }
 
@@ -92,7 +92,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         let line = format(area: area, event: event, fields: fields)
         events.append(line)
         if events.count > 200 { events.removeFirst(events.count - 200) }
-        emit(line, area: area)
+        emit(line, area: area, isFailure: fields["error"] != nil || fields["outcome"] == "failed" || event.contains("failed"))
     }
 
     func recordCrash(event: String, fields: [String: String], previousSession: Bool = false) {
@@ -101,11 +101,17 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         guard !recordingCrash else { return }
         recordingCrash = true
         defer { recordingCrash = false }
-        let breadcrumbs = previousSession ? previousEvents : events
+        let breadcrumbs: [String]
+        if previousSession, let processID = fields["crashed_pid"] {
+            breadcrumbs = previousEvents.filter { $0.contains("pid=\"\(processID)\"") }
+        } else {
+            breadcrumbs = previousSession ? previousEvents : events
+        }
         let crashID = UUID().uuidString
         var crashFields = fields
         crashFields["crash_id"] = crashID
         crashFields["breadcrumb_count"] = String(breadcrumbs.count)
+        crashFields["breadcrumb_source"] = previousSession ? "previous_logged_process" : "current_process"
         let crash = format(area: "crash", event: event, fields: crashFields)
         let trail = breadcrumbs.enumerated().map { index, line in
             format(area: "crash", event: "crash_breadcrumb", fields: ["crash_id": crashID, "index": String(index), "original": line])
@@ -151,8 +157,12 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         return logger
     }
 
-    private func emit(_ line: String, area: String) {
-        logger(area: area).notice("\(line, privacy: .public)")
+    private func emit(_ line: String, area: String, isFailure: Bool) {
+        if isFailure {
+            logger(area: area).error("\(line, privacy: .public)")
+        } else {
+            logger(area: area).notice("\(line, privacy: .public)")
+        }
         let data = Data((line + "\n").utf8)
         append(data)
     }
@@ -183,7 +193,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
             var status = stat()
             if fstat(descriptor, &status) == 0 { fileBytes = Int(status.st_size) }
         } else {
-            Logger(subsystem: AppLog.subsystem, category: "logging").error("event=file_log_open_failed errno=\(errno)")
+            reportFileFailure("file_log_open_failed", fields: ["errno": String(errno)])
         }
     }
 
@@ -212,13 +222,18 @@ nonisolated final class AppLogStore: @unchecked Sendable {
                 let result = Darwin.write(descriptor, base.advanced(by: offset), bytes.count - offset)
                 if result < 0, errno == EINTR { continue }
                 guard result > 0 else {
-                    Logger(subsystem: AppLog.subsystem, category: "logging").error("event=file_log_write_failed errno=\(errno)")
+                    reportFileFailure("file_log_write_failed", fields: ["errno": String(errno)])
                     return
                 }
                 offset += result
                 fileBytes += result
             }
         }
+    }
+
+    private func reportFileFailure(_ event: String, fields: [String: String]) {
+        let line = format(area: "logging", event: event, fields: fields)
+        logger(area: "logging").error("\(line, privacy: .public)")
     }
 
     private static func readPreviousEvents(fileURL: URL, backupCount: Int) -> [String] {
