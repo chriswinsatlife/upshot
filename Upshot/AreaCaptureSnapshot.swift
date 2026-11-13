@@ -5,6 +5,7 @@ struct AreaCaptureSnapshot {
     let displayID: CGDirectDisplayID
     let frame: CGRect
     let image: CGImage
+    var presentationTime: TimeInterval?
 
     var scale: CGFloat { CGFloat(image.width) / frame.width }
 
@@ -34,8 +35,8 @@ struct AreaCaptureSnapshot {
         return CGRect(x: x, y: y, width: ceil(rect.maxX * scale) / scale - x, height: ceil(rect.maxY * scale) / scale - y)
     }
 
-    static func captureAll() async throws -> [AreaCaptureSnapshot] {
-        let lease = try await DesktopIconVisibilityService.shared.beginCapture()
+    static func captureAll(desktopIconsPrepared: Bool = false) async throws -> [AreaCaptureSnapshot] {
+        let lease = desktopIconsPrepared ? nil : try await DesktopIconVisibilityService.shared.beginCapture()
         defer { DesktopIconVisibilityService.shared.endCapture(lease) }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let coverIDs = DesktopIconVisibilityService.shared.coverWindowIDs
@@ -56,8 +57,10 @@ struct AreaCaptureSnapshot {
             configuration.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))
             configuration.showsCursor = false
             configuration.ignoreShadowsDisplay = false
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            snapshots.append(AreaCaptureSnapshot(displayID: displayID, frame: frame, image: image))
+            let sample = try await SCScreenshotManager.captureSampleBuffer(contentFilter: filter, configuration: configuration)
+            let image = try AreaCaptureFrameStream.image(from: sample)
+            snapshots.append(AreaCaptureSnapshot(displayID: displayID, frame: frame, image: image,
+                                                presentationTime: AreaCaptureFrameStream.presentationTime(of: sample)))
         }
         guard !snapshots.isEmpty else { throw CocoaError(.fileReadUnknown) }
         return snapshots

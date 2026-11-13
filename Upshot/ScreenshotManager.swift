@@ -44,7 +44,8 @@ final class ScreenshotManager {
     func captureWindow(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
         if UpshotPreferences.screenshotShowCursor {
             do {
-                guard let selection = try await AreaCaptureSelection.shared.select(initialMode: .window) else { return nil }
+                guard let selection = try await AreaCaptureSelection.shared.select(initialMode: .window, delaySeconds: delaySeconds,
+                                                                                  includeWindowShadow: includeShadow) else { return nil }
                 return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
             } catch {
                 NSLog("Window capture failed: %@", error.localizedDescription)
@@ -79,7 +80,8 @@ final class ScreenshotManager {
 
     func captureArea(includeShadow: Bool = false, delaySeconds: Int = 0, smartElement: Bool = false) async -> URL? {
         do {
-            guard let selection = try await AreaCaptureSelection.shared.select(smartElement: smartElement) else { return nil }
+            guard let selection = try await AreaCaptureSelection.shared.select(smartElement: smartElement, delaySeconds: delaySeconds,
+                                                                              includeWindowShadow: includeShadow) else { return nil }
             return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
         } catch {
             NSLog("Area capture failed: %@", String(describing: error))
@@ -89,6 +91,7 @@ final class ScreenshotManager {
     }
 
     func capture(_ selection: AreaCaptureSelectionResult, includeShadow: Bool, delaySeconds: Int) async throws -> URL? {
+        defer { DesktopIconVisibilityService.shared.endCapture(selection.desktopIconLease) }
         lastAreaCaptureDisplayID = nil
         lastAreaCaptureSource = nil
         lastAreaCaptureDisplayID = selection.snapshots.max {
@@ -98,27 +101,23 @@ final class ScreenshotManager {
         }?.displayID
         lastAreaCaptureSource = selection.source
         switch selection.kind {
-        case .fullscreen(let displayID):
-            guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
-            let url = await captureFullscreen(displayID: displayID)
-            if delaySeconds == 0 {
-                lastCaptureMetadata.skipBackgroundPreset = selection.skipBackgroundPreset
-                lastCaptureMetadata.capturedAt = selection.capturedAt
-            }
-            return url
         case .scrolling, .recording:
             throw CocoaError(.featureUnsupported)
-        case .area, .element, .window: break
+        case .area, .element, .window, .fullscreen: break
         }
-        if case .window(let windowID) = selection.kind {
+        if case .window(let windowID) = selection.kind, includeShadow {
             guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
-            var arguments = ["-l", "\(windowID)"]
-            if !includeShadow { arguments.append("-o") }
+            let arguments = ["-l", "\(windowID)"]
             NSLog("Area window capture started: window=%u shadow=%d", windowID, includeShadow)
             let metadata = ScreenshotCaptureMetadata(captureType: .window,
                 skipBackgroundPreset: delaySeconds > 0 ? NSEvent.modifierFlags.contains(.shift) : selection.skipBackgroundPreset,
                 capturedAt: delaySeconds > 0 ? Date() : selection.capturedAt)
-            let url = await runScreencapture(args: arguments + ScreenshotCursorService.noninteractiveCaptureArguments)
+            let url = await runScreencapture(args: arguments + ScreenshotCursorService.noninteractiveCaptureArguments,
+                                           desktopIconsPrepared: selection.desktopIconLease != nil)
+            if url != nil, let selectionTime = selection.selectionTime {
+                NSLog("Area capture timing: acquisition=window-shadow selectionToFrameMs=unavailable selectionToComposedMs=%.3f",
+                      (ProcessInfo.processInfo.systemUptime - selectionTime) * 1000)
+            }
             lastCaptureMetadata = metadata
             return url
         }
@@ -127,11 +126,26 @@ final class ScreenshotManager {
         let topLeft = ActiveDisplayResolver.quartzPoint(fromAppKit: CGPoint(x: selection.rect.minX, y: selection.rect.maxY))
         let bounds = CGRect(origin: topLeft, size: selection.rect.size)
         let delayedCursor = delaySeconds > 0 ? ScreenshotCursorService.snapshot() : selection.cursor
-        lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .area, bounds: bounds, sourceScale: scale,
+        let captureType: ScreenshotOutputCaptureType
+        switch selection.kind {
+        case .window: captureType = .window
+        case .fullscreen: captureType = .fullscreen
+        default: captureType = .area
+        }
+        lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: captureType, bounds: bounds, sourceScale: scale,
                                                         cursor: delayedCursor, skipBackgroundPreset: delaySeconds > 0 ? NSEvent.modifierFlags.contains(.shift) : selection.skipBackgroundPreset,
                                                         capturedAt: delaySeconds > 0 ? Date() : selection.capturedAt)
-        let url = try writeAreaImage(image, scale: scale)
-        AreaSelectionMemory.rememberScreenshot(rect: selection.rect)
+        let outputImage: CGImage
+        if case .fullscreen(let displayID) = selection.kind {
+            outputImage = NotchBarTrimmer.trimmingEmptyMenuBar(image, displayID: displayID)
+        } else {
+            outputImage = image
+        }
+        let url = try writeAreaImage(outputImage, scale: scale)
+        switch selection.kind {
+        case .area, .element: AreaSelectionMemory.rememberScreenshot(rect: selection.rect)
+        default: break
+        }
         return url
     }
 
@@ -154,25 +168,26 @@ final class ScreenshotManager {
     }
 
     func image(for selection: AreaCaptureSelectionResult, delaySeconds: Int) async throws -> CGImage? {
+        defer { DesktopIconVisibilityService.shared.endCapture(selection.desktopIconLease) }
+        guard !Task.isCancelled else { return nil }
+        if delaySeconds == 0, let image = selection.composedImage { return image }
         guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
         let snapshots: [AreaCaptureSnapshot]
-        if selection.frozen && delaySeconds == 0 {
+        if delaySeconds == 0 {
             snapshots = selection.snapshots
         } else {
-            snapshots = try await AreaCaptureSnapshot.captureAll()
+            snapshots = try await AreaCaptureSnapshot.captureAll(desktopIconsPrepared: selection.desktopIconLease != nil)
         }
-        return try AreaCaptureSnapshot.composite(snapshots, in: selection.rect)
+        let image = try AreaCaptureSnapshot.composite(snapshots, in: selection.rect)
+        selection.logTiming(composedAt: ProcessInfo.processInfo.systemUptime, acquisition: delaySeconds > 0 ? "countdown" : "frozen", frames: snapshots)
+        return image
     }
 
     private func prepareCapture(_ selection: AreaCaptureSelectionResult, delaySeconds: Int) async -> Bool {
         let displayID = selection.snapshots.first { $0.frame.contains(CGPoint(x: selection.rect.midX, y: selection.rect.midY)) }?.displayID
             ?? selection.snapshots.first { $0.frame.intersects(selection.rect) }?.displayID
         guard await CaptureCountdownPresenter.shared.runIfNeeded(seconds: delaySeconds, displayID: displayID) else { return false }
-        do {
-            try await Task.sleep(for: .milliseconds(120))
-            try Task.checkCancellation()
-            return true
-        } catch { return false }
+        return !Task.isCancelled
     }
 
     private func writeAreaImage(_ image: CGImage, scale: CGFloat) throws -> URL {
@@ -191,10 +206,10 @@ final class ScreenshotManager {
     }
 
 
-    private func runScreencapture(args: [String]) async -> URL? {
+    private func runScreencapture(args: [String], desktopIconsPrepared: Bool = false) async -> URL? {
         let lease: UUID?
         do {
-            lease = try await DesktopIconVisibilityService.shared.beginCapture()
+            lease = desktopIconsPrepared ? nil : try await DesktopIconVisibilityService.shared.beginCapture()
         } catch {
             NSLog("Screenshot acquisition failed: %@", error.localizedDescription)
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))

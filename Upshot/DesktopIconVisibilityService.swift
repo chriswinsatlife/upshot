@@ -40,16 +40,17 @@ final class DesktopIconVisibilityService {
     func beginCapture() async throws -> UUID? {
         guard UpshotPreferences.screenshotHideDesktopIcons else { return nil }
         let token = UUID()
-        if covers.isEmpty { try installCovers() }
+        let installed = covers.isEmpty
+        if installed { try installCovers() }
         captureLeases.insert(token)
         do {
-            try await Task.sleep(for: .milliseconds(100))
+            if installed { try await Task.sleep(for: .milliseconds(100)) }
             try Task.checkCancellation()
         } catch {
             endCapture(token)
             throw error
         }
-        NSLog("Screenshot output: desktop icons hidden for capture")
+        NSLog("Screenshot output: desktop icons hidden for capture installed=%d leases=%ld", installed, captureLeases.count)
         return token
     }
 

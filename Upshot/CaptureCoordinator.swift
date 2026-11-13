@@ -46,7 +46,8 @@ final class CaptureCoordinator {
     func captureAllInOneAwaiting() async -> URL? {
         lastAllInOneDispatchedWithoutScreenshot = false
         do {
-            guard let selection = try await AreaCaptureSelection.shared.select(allInOne: true) else { return nil }
+            guard let selection = try await AreaCaptureSelection.shared.select(allInOne: true, delaySeconds: UpshotPreferences.captureDelaySeconds,
+                                                                              includeWindowShadow: UpshotPreferences.captureWindowShadow) else { return nil }
             switch selection.kind {
             case .recording:
                 lastAllInOneDispatchedWithoutScreenshot = true
