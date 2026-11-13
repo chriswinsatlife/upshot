@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 nonisolated struct ScreenshotPixelOptions: Sendable {
     var convertToSRGB = false
+    var scaleToOneX = false
 }
 
 nonisolated struct ScreenshotPixelProcessingResult: Sendable {
@@ -28,25 +29,30 @@ nonisolated enum ScreenshotPixelProcessor {
         let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
         let scale = sourceScale.flatMap { $0.isFinite && $0 >= 1 ? $0 : nil }
             ?? max(1, dpi / 72)
-        let outputImage = try process(image: image, options: options)
-        try writePNG(outputImage, to: url, scale: scale)
+        let outputScale: CGFloat = options.scaleToOneX ? 1 : scale
+        let outputImage = try process(image: image, sourceScale: scale, options: options)
+        try writePNG(outputImage, to: url, scale: outputScale)
         return ScreenshotPixelProcessingResult(
             width: outputImage.width,
             height: outputImage.height,
             sourceScale: scale,
-            outputScale: scale
+            outputScale: outputScale
         )
     }
 
-    static func process(image: CGImage, options: ScreenshotPixelOptions) throws -> CGImage {
-        guard options.convertToSRGB else { return image }
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        let context = try bitmapContext(width: image.width, height: image.height, colorSpace: colorSpace)
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    static func process(image: CGImage, sourceScale: CGFloat = 1, options: ScreenshotPixelOptions) throws -> CGImage {
+        let scale = options.scaleToOneX && sourceScale.isFinite ? max(1, sourceScale) : 1
+        guard options.convertToSRGB || scale > 1 else { return image }
+        let colorSpace = options.convertToSRGB
+            ? CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+            : colorSpace(for: image)
+        let width = max(1, Int((CGFloat(image.width) / scale).rounded()))
+        let height = max(1, Int((CGFloat(image.height) / scale).rounded()))
+        let context = try bitmapContext(width: width, height: height, colorSpace: colorSpace)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let converted = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        NSLog("Screenshot output: sRGB conversion completed")
+        if options.convertToSRGB { NSLog("Screenshot output: sRGB conversion completed") }
+        if scale > 1 { NSLog("Screenshot output: Retina 1x scaling completed width=%d height=%d", width, height) }
         return converted
     }
 
