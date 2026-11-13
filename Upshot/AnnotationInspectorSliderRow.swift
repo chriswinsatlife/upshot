@@ -8,6 +8,8 @@ struct AnnotationInspectorSliderRow: View {
 
     static let sliderMinimumWidth: CGFloat = 72
 
+    @Environment(\.annotationInspectorSliderLabelWidth) private var labelWidth
+
     init(_ title: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, format: InspectorValueFormat) {
         self.title = title
         self._value = value
@@ -19,6 +21,7 @@ struct AnnotationInspectorSliderRow: View {
         HStack(alignment: .center, spacing: InterfaceMetrics.rowControlSpacing) {
             InterfaceRowLabel(title)
                 .fixedSize()
+                .frame(width: labelWidth, alignment: .leading)
             Slider(value: clampedValue, in: range)
                 .labelsHidden()
                 .controlSize(.small)

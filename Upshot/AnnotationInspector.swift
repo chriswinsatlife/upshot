@@ -81,6 +81,7 @@ struct AnnotationEditorInspector: View {
                     onPreview: { model.previewBackground($0, isHovering: $1) },
                     onEndPreview: { model.previewBackground = nil }
                 )
+                .annotationInspectorSliderLabels(["Padding", "Corners", "Shadow"])
             } header: {
                 sectionHeader("Frame") {
                     if !usesDefaultFrame {
@@ -116,6 +117,7 @@ struct AnnotationEditorInspector: View {
                         ),
                         onEditorAction: onEditorAction
                     )
+                    .annotationInspectorSliderLabels(["Thickness", "Opacity"])
                 }
             }
 
@@ -148,6 +150,7 @@ struct AnnotationEditorInspector: View {
                         ),
                         onEditorAction: onEditorAction
                     )
+                    .annotationInspectorSliderLabels(["Tilt X", "Tilt Y", "Roll", "Field of view", "Zoom", "Pan X", "Pan Y", "Rotate X", "Rotate Y"])
                 }
             }
 
@@ -171,6 +174,7 @@ struct AnnotationEditorInspector: View {
                         ),
                         onEditorAction: onEditorAction
                     )
+                    .annotationInspectorSliderLabels(["Strength", "Falloff", "Focus", "Angle"])
                 }
             }
 
@@ -200,6 +204,7 @@ struct AnnotationEditorInspector: View {
                         focusedField: focusedField,
                         onFocusCleared: onEditorAction
                     )
+                    .annotationInspectorSliderLabels(["Image size", "Density", "Size", "Angle", "Opacity"])
                 }
             }
         }
