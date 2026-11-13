@@ -102,21 +102,21 @@ struct UnsplashBackgroundSection: View {
 
     @State private var browser = UnsplashBrowser.shared
     @State private var keyDraft = ""
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 7, alignment: .top), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: Space.m, alignment: .top), count: 3)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            HStack(spacing: 8) {
-                InspectorGroupLabel("Unsplash")
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.m) {
+                InterfaceSectionHeader("Unsplash")
                 Spacer(minLength: 0)
                 Link(destination: UnsplashClient.unsplashURL) {
-                    HStack(spacing: 3) {
+                    HStack(spacing: Space.xxs) {
                         Text("Photos from Unsplash")
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: IconSize.disclosureChevron, weight: .semibold))
                     }
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.secondaryLabel)
                 }
                 .buttonStyle(.plain)
             }
@@ -130,8 +130,8 @@ struct UnsplashBackgroundSection: View {
 
             if let errorMessage = browser.errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.destructiveLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -139,26 +139,20 @@ struct UnsplashBackgroundSection: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField("Search photos", text: $browser.query)
-                .textFieldStyle(.plain)
-                .font(.inspectorValue)
-                .onSubmit { browser.submit() }
+        HStack(spacing: Space.s) {
+            InterfaceSidebarSearchField(prompt: "Search photos", text: $browser.query) {
+                browser.submit()
+            }
             if browser.isLoading {
-                ProgressView().controlSize(.mini)
+                ProgressView().controlSize(.small)
             }
         }
-        .padding(.horizontal, 8)
-        .inspectorField()
     }
 
     @ViewBuilder
     private var results: some View {
         if !browser.photos.isEmpty {
-            LazyVGrid(columns: columns, spacing: 7) {
+            LazyVGrid(columns: columns, spacing: Space.m) {
                 ForEach(browser.photos) { photo in
                     UnsplashPhotoTile(
                         photo: photo,
@@ -174,38 +168,37 @@ struct UnsplashBackgroundSection: View {
             }
             if browser.hasMore {
                 Button(browser.isLoading ? "Loading…" : "Show More") { browser.loadMore() }
-                    .buttonStyle(.plain)
-                    .font(.inspectorLabel.weight(.medium))
-                    .foregroundStyle(Palette.label)
+                    .buttonStyle(.interfaceAction)
                     .disabled(browser.isLoading)
             }
         } else if !browser.isLoading, browser.errorMessage == nil {
             Text("No photos found.")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(.dsCaption)
+                .foregroundStyle(Palette.secondaryLabel)
         }
     }
 
     private var keyForm: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                TextField("Unsplash Access Key", text: $keyDraft)
-                    .textFieldStyle(.plain)
-                    .font(.inspectorValue)
-                    .onSubmit { browser.saveKey(keyDraft) }
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack(spacing: Space.s) {
+                HStack(spacing: 0) {
+                    TextField("", text: $keyDraft, prompt: Text("Unsplash Access Key"))
+                        .labelsHidden()
+                        .textFieldStyle(.plain)
+                        .font(.dsBody)
+                        .onSubmit { browser.saveKey(keyDraft) }
+                        .accessibilityLabel("Unsplash Access Key")
+                }
+                .interfaceFieldChrome()
                 Button("Save") { browser.saveKey(keyDraft) }
-                    .buttonStyle(.plain)
-                    .font(.inspectorLabel.weight(.medium))
-                    .foregroundStyle(Palette.label)
+                    .buttonStyle(.interfaceAction)
                     .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .padding(.horizontal, 8)
-            .inspectorField()
 
             Link(destination: UnsplashClient.developersURL) {
                 Text("This build has no Unsplash key. Create a free app on Unsplash and paste its Access Key.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.secondaryLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .buttonStyle(.plain)
@@ -228,7 +221,7 @@ private struct UnsplashPhotoTile: View {
     let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             InspectorTile(
                 title: "Photo by \(photo.user.name) on Unsplash",
                 aspectRatio: 1.35,
@@ -257,20 +250,20 @@ private struct UnsplashPhotoTile: View {
 
             Link(destination: photo.photographerURL) {
                 Text(photo.user.name)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.secondary)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.secondaryLabel)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 3)
+            .padding(.horizontal, Space.xxs)
             .help("\(photo.user.name) on Unsplash")
         }
     }
 
     private var placeholder: Color {
         guard let hex = photo.color?.trimmingCharacters(in: CharacterSet(charactersIn: "#")),
-              hex.count == 6, let value = Int(hex, radix: 16) else { return Color.primary.opacity(0.08) }
+              hex.count == 6, let value = Int(hex, radix: 16) else { return Palette.controlFill }
         return Color(
             red: Double((value >> 16) & 0xFF) / 255,
             green: Double((value >> 8) & 0xFF) / 255,
