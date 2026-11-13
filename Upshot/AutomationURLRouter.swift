@@ -32,15 +32,7 @@ enum AutomationURLRouter {
     ]
 
     private static func confirm(_ action: CaptureHotkeyAction) -> Bool {
-        NSApp.activate()
-        let alert = NSAlert()
-        alert.messageText = "Allow a link to run \u{201C}\(action.title)\u{201D}?"
-        alert.informativeText = "Another app or a web page opened an Upshot link that uploads, shares, deletes, or saves changes."
-        alert.addButton(withTitle: "Run")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[1].keyEquivalent = "\u{1b}"
-        alert.buttons[0].keyEquivalent = ""
-        return alert.runModal() == .alertFirstButtonReturn
+        AppAlerts.automationConfirmation(actionTitle: action.title).runModal() == .run
     }
 
     static func handle(_ url: URL) {
@@ -57,10 +49,7 @@ enum AutomationURLRouter {
                 AppLog.event("automation", "url_scheme_cancelled", fields: ["url": url.absoluteString])
             } catch {
                 AppLog.event("automation", "url_scheme_failed", fields: ["error": AppLog.error(error)])
-                let alert = NSAlert()
-                alert.messageText = "Upshot could not perform the URL action"
-                alert.informativeText = error.localizedDescription
-                alert.runModal()
+                AppAlerts.automationFailed(error: error).runModal()
             }
         }
     }

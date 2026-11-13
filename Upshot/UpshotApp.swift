@@ -191,18 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let unsavedProjectCount = StudioProjectRegistry.shared.unsavedProjectCount
         let unsavedCount = CaptureShelf.shared.unsavedItems.count
         if ScreenRecordingManager.shared.isActive {
-            NSApp.activate(ignoringOtherApps: true)
-
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "A screen recording is still in progress"
-            alert.informativeText = unsavedCount > 0
-                ? "Upshot will finish and save the recording before quitting. You also have \(unsavedCount) unsaved capture\(unsavedCount == 1 ? "" : "s") that will be discarded."
-                : "Upshot will finish and save the recording before quitting. This can take a moment for a long recording."
-            alert.addButton(withTitle: "Cancel")
-            alert.addButton(withTitle: "Finish Recording and Quit")
-
-            guard alert.runModal() == .alertSecondButtonReturn else {
+            guard AppAlerts.quitDuringRecording(unsavedCaptureCount: unsavedCount).runModal() == .finishAndQuit else {
                 return .terminateCancel
             }
 
@@ -219,28 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard unsavedCount > 0 else { return .terminateNow }
 
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = unsavedCount == 1
-            ? "You have 1 unsaved capture"
-            : "You have \(unsavedCount) unsaved captures"
-        var informativeText = """
-        These captures haven't been saved to your Mac and will be lost if you quit. \
-        Turn on Auto Save in Settings to keep every capture automatically.
-        """
-        if unsavedProjectCount > 0 {
-            informativeText += """
-            \n\n\(unsavedProjectCount) recording project\(unsavedProjectCount == 1 ? " has" : "s have") \
-            unsaved edits. Those are kept and restored the next time you open them.
-            """
-        }
-        alert.informativeText = informativeText
-
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Quit Anyway")
-
-        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        let alert = AppAlerts.quitWithUnsavedCaptures(captureCount: unsavedCount, unsavedProjectCount: unsavedProjectCount)
+        return alert.runModal() == .quit ? .terminateNow : .terminateCancel
     }
 }

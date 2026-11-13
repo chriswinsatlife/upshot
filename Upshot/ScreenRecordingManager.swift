@@ -425,8 +425,8 @@ final class ScreenRecordingManager {
             if let session {
                 RecordingSessionStore.deleteSession(session)
             }
-            errorMessage = result.error.map { "Recording failed: \($0.localizedDescription)" }
-                ?? "Failed to finish recording."
+            errorMessage = result.error?.localizedDescription
+                ?? "The recording file couldn\u{2019}t be finished."
             RecordingControlPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             if action == .terminate {
@@ -445,7 +445,7 @@ final class ScreenRecordingManager {
         }
 
         if let error = result.error {
-            let warning = "Recording ended early (\(error.localizedDescription)). Everything captured so far was saved."
+            let warning = AppAlerts.recordingStoppedMessage(error: error)
             errorMessage = [errorMessage, warning]
                 .compactMap { $0 }
                 .joined(separator: "\n\n")
@@ -482,7 +482,7 @@ final class ScreenRecordingManager {
             errorMessage = "Screen recording failed to start: \(error.localizedDescription)"
             finishAction = .discard
         } else {
-            errorMessage = "Recording stopped (\(error.localizedDescription)). Everything captured so far was saved."
+            errorMessage = AppAlerts.recordingStoppedMessage(error: error)
             finishAction = .preview
         }
         stopCaptureAndFinish()
@@ -491,7 +491,7 @@ final class ScreenRecordingManager {
     private func handleWriterFailure(_ error: Error) {
         guard state == .recording || state == .paused else { return }
 
-        errorMessage = "Recording stopped (\(error.localizedDescription)). Everything captured so far was saved."
+        errorMessage = AppAlerts.recordingStoppedMessage(error: error)
         finishAction = .preview
         terminationCompletion = nil
         stopCaptureAndFinish()
@@ -557,25 +557,13 @@ final class ScreenRecordingManager {
 
     private static func presentInputWarnings(_ warnings: [String]) {
         guard !warnings.isEmpty else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Some recording inputs are unavailable"
-        alert.informativeText = warnings.joined(separator: "\n\n")
-        alert.addButton(withTitle: "Continue")
-        alert.runModal()
+        AppAlerts.recordingInputsUnavailable(warnings: warnings).runModal()
     }
 
     private static func presentRecordingResultAlert(message: String, footageWasSaved: Bool) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = footageWasSaved ? .informational : .critical
-        alert.messageText = footageWasSaved
-            ? "The recording ended early, but your footage was saved"
-            : "The recording could not be saved"
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        (footageWasSaved
+            ? AppAlerts.recordingEndedEarly(message: message)
+            : AppAlerts.recordingNotSaved(message: message)).runModal()
     }
 
     private static func ensureScreenCapturePermission() -> Bool {
@@ -586,18 +574,7 @@ final class ScreenRecordingManager {
             return true
         }
 
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Screen Recording permission needed"
-        alert.informativeText = """
-        Upshot can't record until it's allowed under Privacy & Security > \
-        Screen & System Audio Recording. After turning it on, quit and reopen \
-        Upshot - macOS applies the permission on relaunch.
-        """
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn,
+        if AppAlerts.screenRecordingPermission.runModal() == .openSystemSettings,
            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
@@ -605,13 +582,7 @@ final class ScreenRecordingManager {
     }
 
     private static func presentStartFailureAlert(error: Error) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Couldn't start the recording"
-        alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        AppAlerts.recordingStartFailed(error: error).runModal()
     }
 
     private func beginActivity() {

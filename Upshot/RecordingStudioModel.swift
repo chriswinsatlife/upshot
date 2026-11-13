@@ -1612,7 +1612,7 @@ final class RecordingStudioModel {
                 }
             }
             if !rejected.isEmpty {
-                self?.mediaImportError = "Couldn't add \(rejected.joined(separator: ", ")). Images, GIFs and audio files can be added."
+                self?.mediaImportError = AppAlerts.studioMediaRejectedMessage(fileNames: rejected)
             }
         }
     }
@@ -2180,8 +2180,7 @@ final class RecordingStudioModel {
             flashSaveConfirmation()
             return true
         } catch {
-            FailureAlert.present(message: "The recording project could not be saved", error: error,
-                                 detail: "Your editor will stay open. Try saving again after resolving the problem.")
+            FailureAlert.present(.saveRecordingProject, error: error)
             return false
         }
     }

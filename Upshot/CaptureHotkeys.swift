@@ -390,10 +390,7 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
                 AppLog.event("settings", "automation_action_cancelled", fields: ["action": String(describing: route)])
             } catch {
                 AppLog.event("settings", "automation_action_failed", fields: ["action": String(describing: route), "error": AppLog.error(error)])
-                let alert = NSAlert()
-                alert.messageText = title
-                alert.informativeText = error.localizedDescription
-                alert.runModal()
+                AppAlerts.shortcutActionFailed(actionTitle: title, error: error).runModal()
             }
         }
     }

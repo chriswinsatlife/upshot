@@ -34,6 +34,15 @@ enum RecordingInputAuthorization {
             }
         }
 
+        fileprivate var alertInput: AppAlerts.RecordingInput {
+            switch self {
+            case .camera:
+                .camera
+            case .microphone:
+                .microphone
+            }
+        }
+
         fileprivate var settingsURL: URL? {
             let pane: String
             switch self {
@@ -78,24 +87,12 @@ enum RecordingInputAuthorization {
     }
 
     private static func presentDeniedAlert(for input: Input, isRestricted: Bool) {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "\(input.title) access needed"
-
         if isRestricted {
-            alert.informativeText = "Upshot can't use the \(input.title.lowercased()) because access is restricted on this Mac."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            AppAlerts.recordingInputRestricted(input.alertInput).runModal()
             return
         }
 
-        alert.informativeText = "Allow Upshot to use the \(input.title.lowercased()) in Privacy & Security, then select it again."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
-
-        if alert.runModal() == .alertFirstButtonReturn,
+        if AppAlerts.recordingInputPermission(input.alertInput).runModal() == .openSystemSettings,
            let settingsURL = input.settingsURL {
             NSWorkspace.shared.open(settingsURL)
         }

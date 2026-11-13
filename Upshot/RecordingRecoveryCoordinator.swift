@@ -38,15 +38,7 @@ enum RecordingRecoveryCoordinator {
             }
 
             guard recoveredCount > 0 else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.messageText = recoveredCount == 1
-                ? "Recovered an interrupted recording"
-                : "Recovered \(recoveredCount) interrupted recordings"
-            alert.informativeText = "The playable footage was preserved in History and can be reopened in Upshot Studio."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            AppAlerts.recordingsRecovered(count: recoveredCount).runModal()
         }
     }
 
