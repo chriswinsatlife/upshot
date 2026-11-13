@@ -12,6 +12,8 @@ nonisolated enum ScreenshotOutputMetadata {
 
     static func hasAppliedBackgroundPreset(properties: [CFString: Any]) -> Bool {
         let png = properties[kCGImagePropertyPNGDictionary] as? [CFString: Any]
+        let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
         return png?[kCGImagePropertyPNGDescription] as? String == backgroundPresetDescription
+            || tiff?[kCGImagePropertyTIFFImageDescription] as? String == backgroundPresetDescription
     }
 }

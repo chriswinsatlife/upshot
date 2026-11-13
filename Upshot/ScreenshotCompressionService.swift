@@ -1,8 +1,3 @@
-//
-//  ScreenshotCompressionService.swift
-//  Upshot
-//
-
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -65,14 +60,21 @@ enum ScreenshotCompressionService {
             throw CocoaError(.fileWriteUnknown)
         }
 
-        let options: [CFString: Any] = [
+        let sourceProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+        var options: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: min(max(quality, 0.1), 1)
         ]
+        options[kCGImagePropertyDPIWidth] = sourceProperties[kCGImagePropertyDPIWidth]
+        options[kCGImagePropertyDPIHeight] = sourceProperties[kCGImagePropertyDPIHeight]
+        if ScreenshotOutputMetadata.hasAppliedBackgroundPreset(properties: sourceProperties) {
+            options[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFImageDescription: ScreenshotOutputMetadata.backgroundPresetDescription]
+        }
         CGImageDestinationAddImage(destination, flattenedImage, options as CFDictionary)
 
         guard CGImageDestinationFinalize(destination) else {
             throw CocoaError(.fileWriteUnknown)
         }
+        NSLog("Screenshot output: JPEG compression completed filename=%@ width=%d height=%d", outputURL.lastPathComponent, flattenedImage.width, flattenedImage.height)
 
         return ScreenshotCompressionResult(
             outputURL: outputURL,
@@ -87,8 +89,10 @@ enum ScreenshotCompressionService {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let hasRetinaSuffix = baseName.hasSuffix("@2x")
+        let stem = hasRetinaSuffix ? String(baseName.dropLast(3)) : baseName
         return directory
-            .appendingPathComponent("\(baseName)-compressed-\(UUID().uuidString.prefix(6))")
+            .appendingPathComponent("\(stem)-compressed-\(UUID().uuidString.prefix(6))\(hasRetinaSuffix ? "@2x" : "")")
             .appendingPathExtension("jpg")
     }
 
