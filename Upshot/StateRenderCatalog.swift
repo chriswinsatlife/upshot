@@ -99,18 +99,15 @@ enum StateRenderCatalog {
                 return view()
             }
         }
-        let advancedStates: [(String, Int, Bool, String?)] = [
-            ("settings-advanced", 0, true, nil),
-            ("settings-advanced-history-one-week", 7, true, nil),
-            ("settings-advanced-history-custom", 10, true, nil),
-            ("settings-advanced-analysis-off", 0, false, nil),
-            ("settings-advanced-configuration-failure", 0, true, "[preferences]\nplaySounds = yes\n")
+        let advancedStates: [(String, Int, String?)] = [
+            ("settings-advanced", 0, nil),
+            ("settings-advanced-history-one-week", 7, nil),
+            ("settings-advanced-history-custom", 10, nil),
+            ("settings-advanced-configuration-failure", 0, "[preferences]\nplaySounds = yes\n")
         ]
-        for (name, retentionDays, analyzeCaptures, configurationText) in advancedStates {
-            add(name, "SettingsAdvancedPane", "struct SettingsAdvancedPane", 800, 560) {
+        for (name, retentionDays, configurationText) in advancedStates {
+            add(name, "SettingsAdvancedPane", "struct SettingsAdvancedPane", 800, 420) {
                 UpshotStorage.defaults.set(retentionDays, forKey: UpshotPreferences.historyRetentionDaysKey)
-                UpshotStorage.defaults.set(analyzeCaptures, forKey: UpshotPreferences.libraryAnalyzeCapturesKey)
-                UpshotStorage.defaults.set(false, forKey: UpshotPreferences.librarySortExistingKey)
                 if let configurationText {
                     try Data(configurationText.utf8).write(to: UpshotStorage.configurationFileURL)
                     AutomationConfiguration.shared.synchronize()
