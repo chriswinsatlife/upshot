@@ -11,6 +11,7 @@ struct RecordingMenuBarLabel: View {
             } icon: {
                 Image(systemName: manager.state == .paused ? "pause.circle.fill" : "record.circle.fill")
             }
+            .labelStyle(.titleAndIcon)
             .accessibilityLabel(manager.state == .paused
                 ? "Recording paused at \(elapsed)"
                 : "Recording, \(elapsed) elapsed")

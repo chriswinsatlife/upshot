@@ -1,4 +1,3 @@
-
 import AppKit
 import SwiftUI
 
@@ -31,7 +30,6 @@ final class RecordingBarPresenter {
 
     private init() {}
 
-
     func toggleTeleprompter() {
         withAnimation(BarMetrics.modeChange) { isTeleprompterOpen.toggle() }
         if isTeleprompterOpen { panel?.makeKey() }
@@ -41,7 +39,6 @@ final class RecordingBarPresenter {
         guard isTeleprompterOpen else { return }
         withAnimation(BarMetrics.modeChange) { isTeleprompterOpen = false }
     }
-
 
     func togglePicker() {
         if let panel, panel.isVisible, mode == .picker {
@@ -64,7 +61,6 @@ final class RecordingBarPresenter {
         panel.makeKey()
         warmCameraPreviewIfEnabled()
     }
-
 
     func showRecording(displayID: CGDirectDisplayID?) {
         let panel = panel ?? makePanel()
@@ -110,7 +106,6 @@ final class RecordingBarPresenter {
             y: panel.frame.maxY - point.y
         ))
     }
-
 
     var barFrame: CGRect? {
         guard let panel, panel.isVisible, barFrameInPanel != .zero else { return nil }
@@ -238,7 +233,6 @@ private final class RecordingBarHostingView<Content: View>: NSHostingView<Conten
         return super.hitTest(point)
     }
 }
-
 
 private struct RecordingBarView: View {
     @State private var presenter = RecordingBarPresenter.shared

@@ -1,4 +1,3 @@
-
 import AppKit
 import AVFoundation
 @preconcurrency import CoreMedia
@@ -150,9 +149,8 @@ final class ScreenRecordingManager {
             nil
         }
     }
-    
-    private init() {}
 
+    private init() {}
 
     func startRecording(source: ScreenRecordingSource) {
         guard state == .idle else { return }
@@ -160,6 +158,7 @@ final class ScreenRecordingManager {
 
         let targetDisplayID = source.displayID ?? ActiveDisplayResolver.activeDisplayID(preferPointer: true) ?? CGMainDisplayID()
         state = .starting
+        elapsedTime = 0
         errorMessage = nil
         displayID = targetDisplayID
         currentSource = source
@@ -169,6 +168,8 @@ final class ScreenRecordingManager {
         CaptureShelfPresenter.shared.setTargetDisplay(targetDisplayID)
         RecordingControlPresenter.shared.show(displayID: targetDisplayID)
         RecordingAreaHighlightPresenter.shared.show(source: source)
+        RecordingPenPresenter.shared.prepare(source: source)
+        RecordingPenPresenter.shared.onChange = { [writer] in writer.refreshPenFrame() }
 
         Task {
             do {
@@ -198,6 +199,7 @@ final class ScreenRecordingManager {
                     outputURL: session.screenURL,
                     videoWidth: target.width,
                     videoHeight: target.height,
+                    mapsPenToWindowContent: target.tracksDynamicGeometry,
                     includesSystemAudio: options.capturesSystemAudio,
                     includesMicrophone: options.microphoneDeviceID != nil
                 )
@@ -286,6 +288,7 @@ final class ScreenRecordingManager {
     func pauseRecording() {
         guard state == .recording else { return }
 
+        RecordingPenPresenter.shared.setPaused(true)
         writer.pause()
         pointerActivityRecorder.pause()
         keystrokeRecorder.pause()
@@ -305,6 +308,7 @@ final class ScreenRecordingManager {
         }
 
         self.pausedAt = nil
+        RecordingPenPresenter.shared.setPaused(false)
         writer.resume()
         pointerActivityRecorder.resume()
         keystrokeRecorder.resume()
@@ -312,6 +316,7 @@ final class ScreenRecordingManager {
         TeleprompterController.shared.setPaused(false)
         state = .recording
         updateElapsedTime()
+        NSLog("[Upshot] Recording timer resumed at \(formattedElapsedTime)")
     }
 
     func restartRecording() {
@@ -347,6 +352,7 @@ final class ScreenRecordingManager {
 
         isStopping = true
         state = .finishing
+        RecordingPenPresenter.shared.setPaused(true)
         timer?.invalidate()
         pointerActivityRecorder.stop()
         keystrokeRecorder.stop()
@@ -357,9 +363,11 @@ final class ScreenRecordingManager {
             } catch {
                 print("Screen recording capture stop failed: \(error)")
             }
+            RecordingAreaHighlightPresenter.shared.hide()
 
             let cameraResult = await CameraRecordingManager.shared.stop()
             let result = await writer.finishWriting()
+            RecordingPenPresenter.shared.finish()
             if let warning = await RecordingFocusController.shared.restore() {
                 errorMessage = [errorMessage, warning].compactMap { $0 }.joined(separator: "\n\n")
             }
@@ -496,6 +504,8 @@ final class ScreenRecordingManager {
         await writer.cancel()
         await CameraRecordingManager.shared.cancel()
         pointerActivityRecorder.stop()
+        RecordingAreaHighlightPresenter.shared.hide()
+        RecordingPenPresenter.shared.finish()
         if let session {
             RecordingSessionStore.deleteSession(session)
         }
@@ -621,12 +631,22 @@ final class ScreenRecordingManager {
 
     private func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+        let timer = Timer(timeInterval: 0.25, repeats: true) { _ in
             Task { @MainActor in
                 ScreenRecordingManager.shared.updateElapsedTime()
-                RecordingAreaHighlightPresenter.shared.update()
+                guard RecordingAreaHighlightPresenter.shared.update() else {
+                    ScreenRecordingManager.shared.handleCaptureError(NSError(
+                        domain: "UpshotRecording",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "The display configuration changed."]
+                    ))
+                    return
+                }
+                RecordingPenPresenter.shared.updateGeometry()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func updateElapsedTime() {
@@ -646,6 +666,7 @@ final class ScreenRecordingManager {
     }
 
     private func cleanupAfterRecording() {
+        RecordingPenPresenter.shared.finish()
         RecordingAreaHighlightPresenter.shared.hide()
         timer?.invalidate()
         timer = nil
@@ -877,11 +898,10 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
             }
 
         if includesAppWindows {
-            let excludedWindowIDs = RecordingAreaHighlightPresenter.shared.windowIDs
+            let excludedWindowIDs = RecordingAreaHighlightPresenter.shared.windowIDs.union(RecordingPenPresenter.shared.windowIDs)
             return SCContentFilter(
                 display: display,
-                including: content.applications,
-                exceptingWindows: content.windows.filter { excludedWindowIDs.contains($0.windowID) }
+                excludingWindows: content.windows.filter { excludedWindowIDs.contains($0.windowID) }
             )
         }
         return SCContentFilter(
@@ -987,6 +1007,9 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     private var needsPauseDurationUpdate = false
     private var failureError: Error?
     private var didReportFailure = false
+    private var latestScreenSample: SendableSampleBuffer?
+    private var hasWrittenPen = false
+    private var mapsPenToWindowContent = false
 
     var onFailure: ((Error) -> Void)?
 
@@ -994,6 +1017,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         outputURL: URL,
         videoWidth: Int,
         videoHeight: Int,
+        mapsPenToWindowContent: Bool,
         includesSystemAudio: Bool,
         includesMicrophone: Bool
     ) throws {
@@ -1054,6 +1078,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
             self.microphoneInput = microphoneInput
             pixelBufferAdaptor = adaptor
             self.outputURL = outputURL
+            self.mapsPenToWindowContent = mapsPenToWindowContent
             isSessionStarted = false
             sessionStartTime = nil
             isPaused = false
@@ -1093,6 +1118,25 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         }
     }
 
+    func refreshPenFrame() {
+        let latest = writingQueue.sync { latestScreenSample }
+        guard let latest else { return }
+        var timing = CMSampleTimingInfo(
+            duration: .invalid,
+            presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
+            decodeTimeStamp: .invalid
+        )
+        var refreshed: CMSampleBuffer?
+        guard CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: latest.sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleBufferOut: &refreshed
+        ) == noErr, let refreshed else { return }
+        writeVideoSample(refreshed)
+    }
+
     func writeVideoSample(_ sampleBuffer: CMSampleBuffer) {
         let sendableSampleBuffer = SendableSampleBuffer(sampleBuffer)
         writingQueue.sync { [weak self, sendableSampleBuffer] in
@@ -1105,6 +1149,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
 
                 let sampleBuffer = sendableSampleBuffer.sampleBuffer
                 guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+                self.latestScreenSample = sendableSampleBuffer
                 let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
                 if !self.isSessionStarted {
@@ -1116,10 +1161,39 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                 guard self.handlePauseState(sampleTime: time) else { return }
 
                 let adjustedPTS = self.adjustedTime(time)
-                guard adjustedPTS >= .zero, self.checkWriterHealth() else { return }
+                guard adjustedPTS >= .zero, adjustedPTS > self.latestAdjustedTime || self.latestAdjustedTime == .zero, self.checkWriterHealth() else { return }
                 guard videoInput.isReadyForMoreMediaData else { return }
 
-                if pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: adjustedPTS) {
+                let strokes = RecordingPenStrokeStore.shared.snapshot
+                let composited: CVPixelBuffer
+                do {
+                    let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]]
+                    let frame = attachments?.first
+                    let contentRect = (frame?[.contentRect] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
+                    let scale = (frame?[.scaleFactor] as? NSNumber)?.doubleValue ?? 1
+                    let pixelContentRect = contentRect.map {
+                        CGRect(x: $0.minX * scale, y: $0.minY * scale, width: $0.width * scale, height: $0.height * scale)
+                    }
+                    composited = try RecordingPenCompositor.composite(
+                        pixelBuffer,
+                        strokes: strokes,
+                        pool: pixelBufferAdaptor.pixelBufferPool,
+                        contentRect: self.mapsPenToWindowContent ? pixelContentRect : nil
+                    )
+                } catch {
+                    self.failureError = error
+                    if !self.didReportFailure {
+                        self.didReportFailure = true
+                        self.onFailure?(error)
+                    }
+                    NSLog("[Upshot] Recording live pen compositing failed: \(error.localizedDescription)")
+                    return
+                }
+                if pixelBufferAdaptor.append(composited, withPresentationTime: adjustedPTS) {
+                    if !strokes.isEmpty, !self.hasWrittenPen {
+                        self.hasWrittenPen = true
+                        NSLog("[Upshot] Recording live pen pixels written to screen movie")
+                    }
                     self.latestAdjustedTime = adjustedPTS
                 } else {
                     _ = self.checkWriterHealth()
@@ -1288,6 +1362,8 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     }
 
     private func cleanup() {
+        latestScreenSample = nil
+        hasWrittenPen = false
         assetWriter = nil
         videoInput = nil
         systemAudioInput = nil

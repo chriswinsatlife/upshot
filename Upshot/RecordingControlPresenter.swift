@@ -1,20 +1,6 @@
-//
-//  RecordingControlPresenter.swift
-//  Upshot
-//
-//  Created by Codex on 01/05/26.
-//
-//  The in-session mode of the floating bar: elapsed time and the transport
-//  controls for the recording that's running. It shares its panel and chrome
-//  with the pre-record picker (RecordingPickerBar), so starting a recording
-//  morphs one into the other instead of swapping windows.
-//
-
 import AppKit
 import SwiftUI
 
-/// Retained as the entry point callers already use; the bar itself is owned
-/// by RecordingBarPresenter.
 @MainActor
 enum RecordingControlPresenter {
     static var shared: RecordingBarPresenter { RecordingBarPresenter.shared }
@@ -26,17 +12,14 @@ extension RecordingBarPresenter {
     }
 }
 
-// MARK: - Controls
-
 struct RecordingSessionControls: View {
     @State private var manager = ScreenRecordingManager.shared
+    @State private var pen = RecordingPenPresenter.shared
 
     private var isPaused: Bool {
         manager.state == .paused
     }
 
-    /// Starting and finishing are both moments where the transport can't
-    /// safely be driven - the capture graph is being wired up or torn down.
     private var isSettling: Bool {
         manager.state == .starting || manager.state == .finishing
     }
@@ -59,6 +42,25 @@ struct RecordingSessionControls: View {
                 }
             }
             .disabled(isSettling)
+
+            BarActionButton(
+                id: .pen,
+                title: pen.isEnabled ? "Stop drawing" : "Draw on recording",
+                systemImage: "pencil.tip.crop.circle",
+                isSelected: pen.isEnabled
+            ) {
+                RecordingPenPresenter.toggleLivePen()
+            }
+            .disabled(manager.state != .recording)
+
+            BarActionButton(
+                id: .clearPen,
+                title: "Clear pen annotations",
+                systemImage: "eraser"
+            ) {
+                RecordingPenPresenter.clearLivePen()
+            }
+            .disabled(manager.state != .recording || !pen.hasStrokes)
 
             BarActionButton(
                 id: .restart,
@@ -104,8 +106,6 @@ struct RecordingSessionControls: View {
                 .font(.system(size: 16, weight: .medium, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(BarMetrics.activeTint)
-                // Fixed width so the clock ticking over from 9:59 to 10:00
-                // doesn't nudge the whole bar sideways.
                 .frame(minWidth: 56, alignment: .leading)
         }
         .padding(.leading, 8)

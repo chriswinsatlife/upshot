@@ -28,10 +28,12 @@ final class RecordingAreaHighlightPresenter {
         NSLog("[Upshot] Recording dimming started on \(panels.count) displays")
     }
 
-    func update() {
-        guard let source else { return }
+    @discardableResult
+    func update() -> Bool {
+        guard let source else { return true }
         if screenFrames != NSScreen.screens.map(\.frame) {
-            rebuildPanels()
+            NSLog("[Upshot] Recording dimming detected a display configuration change")
+            return false
         }
         let recordingRect = source.liveRecordingRect
         for panel in panels {
@@ -39,6 +41,7 @@ final class RecordingAreaHighlightPresenter {
             view.highlightRect = recordingRect.offsetBy(dx: -panel.frame.minX, dy: -panel.frame.minY)
             view.needsDisplay = true
         }
+        return true
     }
 
     func hide() {
@@ -72,10 +75,12 @@ final class RecordingAreaHighlightPresenter {
             panel.hidesOnDeactivate = false
             panel.level = .screenSaver
             panel.ignoresMouseEvents = true
-            panel.sharingType = .none
+            panel.sharingType = .readOnly
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
             panel.isReleasedWhenClosed = false
-            panel.contentView = RecordingAreaHighlightView(frame: CGRect(origin: .zero, size: frame.size))
+            let view = RecordingAreaHighlightView(frame: CGRect(origin: .zero, size: frame.size))
+            view.highlightRect = source?.liveRecordingRect.offsetBy(dx: -frame.minX, dy: -frame.minY) ?? .zero
+            panel.contentView = view
             panel.orderFrontRegardless()
             return panel
         }
@@ -109,9 +114,14 @@ private final class RecordingAreaHighlightView: NSView {
     var highlightRect: CGRect = .zero
 
     override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        bounds.fill(using: .copy)
         NSColor.black.withAlphaComponent(0.32).setFill()
         bounds.fill()
         NSColor.clear.setFill()
-        highlightRect.intersection(bounds).fill(using: .clear)
+        let visibleRecordingRect = highlightRect.intersection(bounds)
+        if !visibleRecordingRect.isEmpty {
+            visibleRecordingRect.fill(using: .clear)
+        }
     }
 }
