@@ -14,11 +14,11 @@ final class AreaSelectionLiveMagnifier {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
                 let excluded = content.windows.filter { panelIDs.contains($0.windowID) }
-                guard excluded.count == panelIDs.count else {
-                    NSLog("Area live magnifier unavailable: selector windows could not be excluded")
-                    return
-                }
+                let ownApplication = content.applications.first { $0.processID == getpid() }
+                let includedOwnWindows = UpshotPreferences.includeAppWindowsInCaptures
+                    ? content.windows.filter { $0.owningApplication?.processID == getpid() && !panelIDs.contains($0.windowID) } : []
                 NSLog("Area live magnifier started: excludedWindows=%ld", excluded.count)
+                var receivedFrame = false
                 while !Task.isCancelled {
                     let pointer = NSEvent.mouseLocation
                     guard let snapshot = snapshots.first(where: { $0.frame.contains(pointer) }),
@@ -26,20 +26,29 @@ final class AreaSelectionLiveMagnifier {
                         try await Task.sleep(for: .milliseconds(120))
                         continue
                     }
-                    let side = 17 / snapshot.scale
-                    let sample = CGRect(x: min(max(pointer.x - side / 2, snapshot.frame.minX), snapshot.frame.maxX - side),
-                                        y: min(max(pointer.y - side / 2, snapshot.frame.minY), snapshot.frame.maxY - side), width: side, height: side)
+                    let pixels = snapshot.magnifierPixelRect(at: pointer)
                     let configuration = SCStreamConfiguration()
-                    configuration.sourceRect = CGRect(x: sample.minX - snapshot.frame.minX, y: snapshot.frame.maxY - sample.maxY, width: side, height: side)
-                    configuration.width = 17
-                    configuration.height = 17
+                    configuration.sourceRect = CGRect(x: pixels.minX / snapshot.scale, y: pixels.minY / snapshot.scale, width: pixels.width / snapshot.scale, height: pixels.height / snapshot.scale)
+                    configuration.width = Int(pixels.width)
+                    configuration.height = Int(pixels.height)
                     configuration.showsCursor = false
                     configuration.ignoreShadowsDisplay = false
-                    let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(display: display, excludingWindows: excluded), configuration: configuration)
+                    let filter: SCContentFilter
+                    if let ownApplication {
+                        filter = SCContentFilter(display: display, excludingApplications: [ownApplication], exceptingWindows: includedOwnWindows)
+                    } else {
+                        guard excluded.count == panelIDs.count else { throw CocoaError(.fileReadUnknown) }
+                        filter = SCContentFilter(display: display, excludingWindows: excluded)
+                    }
+                    let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
                     try Task.checkCancellation()
-                    self?.samplePosition = CGPoint(x: (pointer.x - sample.minX) / side, y: (pointer.y - sample.minY) / side)
+                    self?.samplePosition = snapshot.magnifierSamplePosition(at: pointer)
                     self?.image = image
                     self?.displayID = snapshot.displayID
+                    if !receivedFrame {
+                        receivedFrame = true
+                        NSLog("Area live magnifier updated: display=%u pixels=%ldx%ld", snapshot.displayID, image.width, image.height)
+                    }
                     didUpdate()
                     try await Task.sleep(for: .milliseconds(120))
                 }

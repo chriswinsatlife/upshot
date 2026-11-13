@@ -39,6 +39,7 @@ final class ScreenshotManager {
 
 
     func captureWindow(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
+        NSLog("Window capture started: shadow=%d delay=%ld", includeShadow, delaySeconds)
         var args = ["-w"]
         if !includeShadow {
             args.append("-o")
@@ -84,7 +85,8 @@ final class ScreenshotManager {
             return await runScreencapture(args: arguments)
         }
         guard let image = try await image(for: selection, delaySeconds: delaySeconds) else { return nil }
-        let url = try writeAreaImage(image)
+        let scale = selection.snapshots.filter { $0.frame.intersects(selection.rect) }.map(\.scale).max() ?? 1
+        let url = try writeAreaImage(image, scale: scale)
         AreaSelectionMemory.rememberScreenshot(rect: selection.rect)
         return url
     }
@@ -129,12 +131,12 @@ final class ScreenshotManager {
         } catch { return false }
     }
 
-    private func writeAreaImage(_ image: CGImage) throws -> URL {
+    private func writeAreaImage(_ image: CGImage, scale: CGFloat) throws -> URL {
         let url = URL(fileURLWithPath: generateTempPath(extension: "png"))
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyDPIWidth: 72 * scale, kCGImagePropertyDPIHeight: 72 * scale] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
         NSLog("Area capture saved: pixels=%ldx%ld file=%@", image.width, image.height, url.lastPathComponent)
         return url
@@ -157,6 +159,7 @@ final class ScreenshotManager {
                 do {
                     try process.run()
                     process.waitUntilExit()
+                    NSLog("Native screenshot finished: status=%d file=%@", process.terminationStatus, URL(fileURLWithPath: filePath).lastPathComponent)
 
                     if process.terminationStatus == 0,
                        FileManager.default.fileExists(atPath: filePath) {

@@ -131,25 +131,17 @@ final class AreaCaptureSelection {
 
     func magnifierImage(for snapshot: AreaCaptureSnapshot) -> CGImage? {
         if !frozen { return liveMagnifier.displayID == snapshot.displayID ? liveMagnifier.image : nil }
-        let x = (pointer.x - snapshot.frame.minX) * snapshot.scale
-        let y = (snapshot.frame.maxY - pointer.y) * snapshot.scale
-        let rect = CGRect(x: min(max(0, floor(x) - 8), CGFloat(snapshot.image.width) - 17),
-                          y: min(max(0, floor(y) - 8), CGFloat(snapshot.image.height) - 17), width: 17, height: 17)
-        return snapshot.image.cropping(to: rect)
+        return snapshot.image.cropping(to: snapshot.magnifierPixelRect(at: pointer))
     }
 
     func magnifierSamplePosition(for snapshot: AreaCaptureSnapshot) -> CGPoint {
-        if !frozen { return liveMagnifier.samplePosition }
-        let x = (pointer.x - snapshot.frame.minX) * snapshot.scale
-        let y = (snapshot.frame.maxY - pointer.y) * snapshot.scale
-        let originX = min(max(0, floor(x) - 8), CGFloat(snapshot.image.width) - 17)
-        let originY = min(max(0, floor(y) - 8), CGFloat(snapshot.image.height) - 17)
-        return CGPoint(x: (floor(x) + 0.5 - originX) / 17, y: 1 - (floor(y) + 0.5 - originY) / 17)
+        frozen ? snapshot.magnifierSamplePosition(at: pointer) : liveMagnifier.samplePosition
     }
 
     func readout(for snapshot: AreaCaptureSnapshot) -> String {
-        let x = Int(floor((pointer.x - snapshot.frame.minX) * snapshot.scale))
-        let y = Int(floor((snapshot.frame.maxY - pointer.y) * snapshot.scale))
+        let pixel = snapshot.pixelPoint(at: pointer)
+        let x = Int(pixel.x)
+        let y = Int(pixel.y)
         var text = "X \(x) Y \(y) px"
         if let highlightedRect {
             let scale = snapshots.filter { $0.frame.intersects(highlightedRect) }.map(\.scale).max() ?? snapshot.scale
@@ -179,12 +171,13 @@ final class AreaCaptureSelection {
     func move(to point: CGPoint) {
         pointer = point
         if let start {
-            highlightedRect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+            let rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+            highlightedRect = AreaCaptureSnapshot.pixelAlignedRect(rect, snapshots: snapshots)
         } else {
             switch mode {
             case .element:
                 hoveredWindow = windows.first { $0.frame.contains(point) }
-                highlightedRect = hoveredWindow.flatMap { AreaSelectionAccessibility.frame(at: point, processID: $0.processID) }
+                highlightedRect = hoveredWindow.flatMap { AreaSelectionAccessibility.frame(at: point, processID: $0.processID) }.map { AreaCaptureSnapshot.pixelAlignedRect($0, snapshots: snapshots) }
             case .window:
                 hoveredWindow = windows.first { $0.frame.contains(point) }
                 highlightedRect = hoveredWindow?.frame
@@ -236,6 +229,21 @@ final class AreaCaptureSelection {
 
     func cancel() { finish(nil) }
 
+    func toggleCrosshair() {
+        UpshotPreferences.areaSelectionCrosshair.toggle()
+        NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
+        redraw()
+    }
+
+    func toggleMagnifier() {
+        UpshotPreferences.areaSelectionMagnifier.toggle()
+        NSLog("Area magnifier changed: enabled=%d", UpshotPreferences.areaSelectionMagnifier)
+        if active && !frozen {
+            if UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() } else { liveMagnifier.stop() }
+        }
+        redraw()
+    }
+
     func keyDown(_ event: NSEvent) {
         if let character = event.charactersIgnoringModifiers?.lowercased() {
             if isAllInOne, let selected = AllInOneCaptureMode.allCases.first(where: { $0.shortcut == character }) {
@@ -246,17 +254,10 @@ final class AreaCaptureSelection {
             case "a": chooseMode(.area); return
             case "e": chooseMode(mode == .element ? .area : .element); return
             case "x":
-                UpshotPreferences.areaSelectionCrosshair.toggle()
-                NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
-                redraw()
+                toggleCrosshair()
                 return
             case "m":
-                UpshotPreferences.areaSelectionMagnifier.toggle()
-                NSLog("Area magnifier changed: enabled=%d", UpshotPreferences.areaSelectionMagnifier)
-                if !frozen {
-                    if UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() } else { liveMagnifier.stop() }
-                }
-                redraw()
+                toggleMagnifier()
                 return
             default: break
             }

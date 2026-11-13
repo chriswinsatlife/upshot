@@ -56,6 +56,7 @@ final class CaptureCountdownPresenter {
     }
 
     func cancel() {
+        if isRunning { NSLog("Capture countdown dismissed") }
         countdownTask?.cancel()
         countdownTask = nil
         runID = nil

@@ -8,6 +8,32 @@ struct AreaCaptureSnapshot {
 
     var scale: CGFloat { CGFloat(image.width) / frame.width }
 
+    func pixelPoint(at point: CGPoint) -> CGPoint {
+        CGPoint(x: min(max(0, floor((point.x - frame.minX) * scale)), CGFloat(image.width - 1)),
+                y: min(max(0, floor((frame.maxY - point.y) * scale)), CGFloat(image.height - 1)))
+    }
+
+    func magnifierPixelRect(at point: CGPoint) -> CGRect {
+        let pixel = pixelPoint(at: point)
+        let side = min(17, CGFloat(min(image.width, image.height)))
+        return CGRect(x: min(max(0, pixel.x - floor(side / 2)), CGFloat(image.width) - side),
+                      y: min(max(0, pixel.y - floor(side / 2)), CGFloat(image.height) - side), width: side, height: side)
+    }
+
+    func magnifierSamplePosition(at point: CGPoint) -> CGPoint {
+        let pixel = pixelPoint(at: point)
+        let sample = magnifierPixelRect(at: point)
+        return CGPoint(x: (pixel.x + 0.5 - sample.minX) / sample.width,
+                       y: 1 - (pixel.y + 0.5 - sample.minY) / sample.height)
+    }
+
+    static func pixelAlignedRect(_ rect: CGRect, snapshots: [AreaCaptureSnapshot]) -> CGRect {
+        let scale = snapshots.filter { $0.frame.intersects(rect) }.map(\.scale).max() ?? 1
+        let x = floor(rect.minX * scale) / scale
+        let y = floor(rect.minY * scale) / scale
+        return CGRect(x: x, y: y, width: ceil(rect.maxX * scale) / scale - x, height: ceil(rect.maxY * scale) / scale - y)
+    }
+
     static func captureAll() async throws -> [AreaCaptureSnapshot] {
         var snapshots: [AreaCaptureSnapshot] = []
         let screens = NSScreen.screens.compactMap { screen -> (CGDirectDisplayID, CGRect)? in
