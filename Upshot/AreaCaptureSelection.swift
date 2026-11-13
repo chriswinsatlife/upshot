@@ -25,6 +25,7 @@ struct AreaCaptureSelectionResult {
     var desktopIconLease: UUID?
     var composedImageScale: CGFloat?
     var windowIncludesShadow = false
+    var windowShowsCursor = false
 
     func logTiming(composedAt time: TimeInterval, acquisition: String, frames: [AreaCaptureSnapshot]? = nil) {
         guard let selectionTime else { return }
@@ -74,6 +75,7 @@ final class AreaCaptureSelection {
     private var cancelled = false
     private var delaySeconds = 0
     private var includeWindowShadow = false
+    private var windowShowsCursor = false
     private var sessionID = UUID()
     private var active = false
     private var cursor: ScreenshotCursorSnapshot?
@@ -101,7 +103,7 @@ final class AreaCaptureSelection {
     }
 
     func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area, scrolling: Bool = false,
-                delaySeconds: Int = 0, includeWindowShadow: Bool = false) async throws -> AreaCaptureSelectionResult? {
+                delaySeconds: Int = 0, includeWindowShadow: Bool = false, includeWindowCursor: Bool = true) async throws -> AreaCaptureSelectionResult? {
         guard !active, !CaptureCountdownPresenter.shared.isRunning, !Task.isCancelled else { return nil }
         cursor = ScreenshotCursorService.snapshot()
         active = true
@@ -127,6 +129,7 @@ final class AreaCaptureSelection {
         selectionError = nil
         self.delaySeconds = delaySeconds
         self.includeWindowShadow = includeWindowShadow
+        windowShowsCursor = includeWindowCursor && UpshotPreferences.screenshotShowCursor
         frozen = UpshotPreferences.areaSelectionFreezeScreen
         isAllInOne = allInOne
         isScrollingOnly = scrolling
@@ -376,7 +379,7 @@ final class AreaCaptureSelection {
                         NSLog("Area window stream unavailable: window=%u error=%@", targetID, error.localizedDescription)
                     })
                     windowStream = source
-                    try await source.start(window: window, includeShadow: includeWindowShadow)
+                    try await source.start(window: window, includeShadow: includeWindowShadow, showsCursor: windowShowsCursor)
                 } catch {
                     NSLog("Area window stream unavailable: window=%u error=%@", targetID, error.localizedDescription)
                     if let windowStream { try? await windowStream.stop() }
@@ -489,6 +492,7 @@ final class AreaCaptureSelection {
         result.selectionTime = eventTime
         result.capturedAt = Date(timeIntervalSinceNow: eventTime - ProcessInfo.processInfo.systemUptime)
         result.windowIncludesShadow = includeWindowShadow
+        result.windowShowsCursor = windowShowsCursor
         if case .window(let windowID) = kind, delaySeconds == 0 {
             completeWindowSelection(result, windowID: windowID, eventTime: eventTime)
             return
@@ -523,7 +527,8 @@ final class AreaCaptureSelection {
                 let content = try await loadContent()
                 try Task.checkCancellation()
                 guard let window = content.windows.first(where: { $0.windowID == windowID }) else { throw CocoaError(.fileReadUnknown) }
-                let snapshot = try await AreaCaptureWindowSnapshot.capture(window: window, includeShadow: includeWindowShadow, eventTime: eventTime)
+                let snapshot = try await AreaCaptureWindowSnapshot.capture(window: window, includeShadow: includeWindowShadow,
+                                                                          showsCursor: windowShowsCursor, eventTime: eventTime)
                 try Task.checkCancellation()
                 guard !cancelled, continuation != nil else { return }
                 selected.composedImage = snapshot.image

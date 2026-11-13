@@ -153,7 +153,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
               frames.capacity, maximumFramesPerSecond)
     }
 
-    func start(window: SCWindow, includeShadow: Bool) async throws {
+    func start(window: SCWindow, includeShadow: Bool, showsCursor: Bool) async throws {
         windowID = window.windowID
         let filter = SCContentFilter(desktopIndependentWindow: window)
         windowScale = CGFloat(filter.pointPixelScale)
@@ -168,8 +168,8 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB
-        configuration.showsCursor = false
         configuration.includeChildWindows = false
+        configuration.showsCursor = showsCursor
         configuration.ignoreShadowsSingleWindow = !includeShadow
         let maximumFramesPerSecond = max(1, NSScreen.screens.first {
             ActiveDisplayResolver.displayID(for: $0) == displayID

@@ -7,18 +7,18 @@ struct AreaCaptureWindowSnapshot {
     let presentationTime: TimeInterval?
     let requestTime: TimeInterval
 
-    static func configuration(includeShadow: Bool) -> SCScreenshotConfiguration {
+    static func configuration(includeShadow: Bool, showsCursor: Bool = false) -> SCScreenshotConfiguration {
         let configuration = SCScreenshotConfiguration()
         configuration.ignoreShadows = !includeShadow
         configuration.includeChildWindows = false
-        configuration.showsCursor = false
+        configuration.showsCursor = showsCursor
         configuration.dynamicRange = .sdr
         return configuration
     }
 
-    static func capture(window: SCWindow, includeShadow: Bool, eventTime: TimeInterval? = nil) async throws -> AreaCaptureWindowSnapshot {
+    static func capture(window: SCWindow, includeShadow: Bool, showsCursor: Bool = false, eventTime: TimeInterval? = nil) async throws -> AreaCaptureWindowSnapshot {
         let filter = SCContentFilter(desktopIndependentWindow: window)
-        let configuration = configuration(includeShadow: includeShadow)
+        let configuration = configuration(includeShadow: includeShadow, showsCursor: showsCursor)
         let requestTime = ProcessInfo.processInfo.systemUptime
         if let eventTime {
             NSLog("Area window screenshot requested: window=%u shadow=%d selectionToRequestMs=%.3f",

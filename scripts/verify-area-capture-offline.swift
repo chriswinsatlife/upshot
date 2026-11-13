@@ -7,6 +7,7 @@ import ScreenCaptureKit
 
 enum UpshotPreferences {
     static let includeAppWindowsInCaptures = false
+    static let screenshotShowCursor = false
 }
 
 final class DesktopIconVisibilityService {
@@ -249,6 +250,8 @@ struct AreaCaptureOfflineVerification {
         let shadowConfiguration = AreaCaptureWindowSnapshot.configuration(includeShadow: true)
         precondition(!shadowConfiguration.ignoreShadows && !shadowConfiguration.includeChildWindows && !shadowConfiguration.showsCursor)
         print("PASS shadowed window screenshot configuration: shadows enabled without child windows")
+        precondition(AreaCaptureWindowSnapshot.configuration(includeShadow: true, showsCursor: true).showsCursor)
+        print("PASS optional window cursor rendering configuration")
         let output = URL(fileURLWithPath: ".local/verification/area-capture", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let red = CGColor(red: 1, green: 0, blue: 0, alpha: 1)
