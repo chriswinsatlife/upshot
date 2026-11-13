@@ -67,6 +67,7 @@ enum StateRenderer {
     static let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow))
     static var renderLevel: NSWindow.Level { NSWindow.Level(rawValue: desktopLevel - 1) }
     static let captureMethod = "screenCaptureKitDisplayFrame"
+    static let frameworkDefaults: [String: Any] = ["AVDesktopPlaybackControlsControllerShowsDurationInsteadOfTimeRemainingDefaultsKey": true]
     private static var definitionsByName: [String: StateRenderDefinition] = [:]
 
     private struct Selection {
@@ -127,6 +128,7 @@ enum StateRenderer {
             if let root = UpshotStorage.fixtureRoot { try? FileManager.default.removeItem(at: root) }
         }
         _ = try StateRenderDisplay.frame
+        UserDefaults.standard.setVolatileDomain(StateRenderer.frameworkDefaults, forName: UserDefaults.argumentDomain)
         let fixtures = try await StateRenderFixtures.make()
         fixtureVideoURL = fixtures.project.screenURL
         try StateRenderDesktop.install(fixtureImage: fixtures.image)
@@ -159,6 +161,8 @@ enum StateRenderer {
         try JSONSerialization.data(withJSONObject: completedInventory, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("catalog.json"), options: .atomic)
         try contactSheet(entries: entries, output: output)
+        UserDefaults.standard.synchronize()
+        try await Task.sleep(for: .seconds(2))
         try isolation.verify(to: output)
         let manifest = StateRenderManifest(states: entries, isolationVerified: true,
                                           defaultsSuite: UpshotStorage.fixtureIdentifier,
