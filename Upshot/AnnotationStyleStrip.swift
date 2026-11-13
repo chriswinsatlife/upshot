@@ -1,14 +1,3 @@
-//
-//  AnnotationStyleStrip.swift
-//  Upshot
-//
-//  The annotator's saved styles as thumbnails of this screenshot wearing
-//  them, the same strip Studio shows. Clicking one applies it; the last tile
-//  saves the current look. A style's menu sets it as the default for new
-//  screenshots, exports it or deletes it, and the header's menu imports
-//  styles shared as files.
-//
-
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -200,8 +189,6 @@ struct AnnotationStyleStrip: View {
         return model.imageSize.width / model.imageSize.height
     }
 
-    // MARK: Saving
-
     private var duplicateNamePreset: AnnotationBackgroundPreset? {
         presetStore.preset(named: draftName)
     }
@@ -264,7 +251,6 @@ struct AnnotationStyleStrip: View {
         isNameEditorPresented = false
     }
 
-    /// A small copy of the screenshot for the thumbnails.
     nonisolated private static func thumbnail(for url: URL?) async -> CGImage? {
         guard let url else { return nil }
         return await Task.detached(priority: .utility) {
@@ -277,8 +263,6 @@ struct AnnotationStyleStrip: View {
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }.value
     }
-
-    // MARK: Sharing
 
     private func importPresets() {
         let panel = NSOpenPanel()
@@ -412,8 +396,6 @@ private struct PresetTransferAlert: Identifiable {
     let message: String
 }
 
-/// A style drawn the way the canvas lays it out: the background, then the
-/// screenshot inset by the padding with its corners, border and shadow.
 struct AnnotationStylePreview: View {
     let settings: AnnotationBackgroundSettings
     let image: CGImage?
@@ -467,4 +449,8 @@ struct AnnotationStylePreview: View {
             .frame(width: size.width, height: size.height)
         }
     }
+}
+
+extension AnnotationStyleStrip {
+    var renderNameEditor: some View { nameEditor }
 }

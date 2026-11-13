@@ -129,3 +129,19 @@ final class ScrollingCaptureControlPanel: NSObject, NSWindowDelegate {
         return false
     }
 }
+
+extension ScrollingCaptureControlPanel {
+    static func renderContent(running: Bool, automatic: Bool, finishing: Bool) -> NSView {
+        precondition(UpshotStorage.isRenderingStates)
+        let control = ScrollingCaptureControlPanel(rect: .zero)
+        control.panel.level = StateRenderer.renderLevel
+        control.modeControl.selectedSegment = automatic ? 1 : 0
+        control.update(height: running || finishing ? 2460 : 0,
+                       status: finishing ? "Stitching captured frames…" : running ? "Scroll down slowly inside the selected area. Stop saves the image." : "Select the scrolling content only. Press Start, then scroll down slowly.",
+                       running: running, hasFrames: running, finishing: finishing)
+        let content = control.panel.contentView!
+        control.panel.contentView = nil
+        control.close()
+        return content
+    }
+}

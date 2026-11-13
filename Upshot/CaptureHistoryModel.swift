@@ -161,3 +161,11 @@ enum CaptureHistoryActions {
         return true
     }
 }
+
+extension CaptureHistoryModel {
+    func installRenderItems(_ fixtureItems: [CaptureLibraryItem]) {
+        precondition(UpshotStorage.isRenderingStates)
+        items = fixtureItems
+        updateVisibleItems()
+    }
+}

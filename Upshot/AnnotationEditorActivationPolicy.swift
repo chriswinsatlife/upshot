@@ -1,26 +1,16 @@
-//
-//  AnnotationEditorActivationPolicy.swift
-//  Upshot
-//
-
 import AppKit
 
-/// Manages the app's activation policy so that regular windows (annotation
-/// editor, settings) show the Dock icon and appear in Cmd-Tab.  Uses
-/// reference counting so the policy stays `.regular` until *all* windows leave.
 @MainActor
 enum AppActivationPolicy {
     fileprivate static var activeWindowCount = 0
-    /// Editors opened from the capture shelf, which tuck it while open.
+
     private static var shelfEditorCount = 0
 
-    /// Call when a regular window (annotation editor, video editor, settings, etc.) appears.
-    /// Pass `hidePreview: true` for editing flows launched from the preview panel.
     static func enter(hidePreview: Bool = false) {
+        guard !UpshotStorage.isRenderingStates else { return }
         activeWindowCount += 1
         if hidePreview {
-            // The shelf tucks into the screen edge rather than covering the
-            // editor; its handle stays to bring it back.
+
             shelfEditorCount += 1
             CaptureShelf.shared.tuck(.editor)
         }
@@ -29,9 +19,8 @@ enum AppActivationPolicy {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Call when a regular window closes.
-    /// Pass `restorePreview: true` for editing flows launched from the preview panel.
     static func leave(restorePreview: Bool = false) {
+        guard !UpshotStorage.isRenderingStates else { return }
         activeWindowCount = max(0, activeWindowCount - 1)
         if restorePreview {
             shelfEditorCount = max(0, shelfEditorCount - 1)
@@ -49,19 +38,17 @@ enum AppActivationPolicy {
 }
 
 extension AppActivationPolicy {
-    /// The policy while a regular window is open: `.regular`, unless the user
-    /// keeps Upshot out of the Dock.
+
     static var windowPolicy: NSApplication.ActivationPolicy {
         UpshotPreferences.hideDockIcon ? .accessory : .regular
     }
 
-    /// Applies a change to the Hide Dock icon setting to the open windows.
     static func dockIconPreferenceDidChange() {
+        guard !UpshotStorage.isRenderingStates else { return }
         guard activeWindowCount > 0 else { return }
         NSApp.setActivationPolicy(windowPolicy)
         NSApp.activate(ignoringOtherApps: true)
     }
 }
 
-/// Legacy alias so existing annotation editor callsites still compile.
 typealias AnnotationEditorActivationPolicy = AppActivationPolicy

@@ -1,4 +1,3 @@
-
 import AppKit
 import AVFoundation
 import CoreGraphics
@@ -581,12 +580,10 @@ final class RecordingStudioModel {
         wallpaperCacheLease = nil
     }
 
-
     func applyStylePreset(_ preset: RecordingStudioStylePreset) {
         style = preset.value
         appliedStylePresetID = preset.id
     }
-
 
     func togglePlayback() {
         if isPlaying {
@@ -697,7 +694,6 @@ final class RecordingStudioModel {
             }
         }
     }
-
 
     var canUndo: Bool {
         _ = undoRevision
@@ -979,7 +975,6 @@ final class RecordingStudioModel {
         }
     }
 
-
     private func replaceZoomCues(_ cues: [ZoomCue]) {
         zoomCues = cues.sorted { $0.start < $1.start }
         if zoomEditSnapshot != nil {
@@ -1149,7 +1144,6 @@ final class RecordingStudioModel {
     var selectedCue: ZoomCue? {
         zoomCues.first { $0.id == selectedCueID }
     }
-
 
     var selectedLayoutCue: RecordingCameraLayoutCue? {
         cameraLayoutCues.first { $0.id == selectedLayoutCueID }
@@ -1334,7 +1328,6 @@ final class RecordingStudioModel {
         replaceLayoutCues(cues)
     }
 
-
     var selectedText: RecordingTextOverlay? {
         textOverlays.first { $0.id == selectedTextID }
     }
@@ -1440,7 +1433,6 @@ final class RecordingStudioModel {
             self.selectedTextID = nil
         }
     }
-
 
     var selectedRedaction: RecordingRedaction? {
         redactions.first { $0.id == selectedRedactionID }
@@ -1587,7 +1579,6 @@ final class RecordingStudioModel {
             self.movePlayers(to: self.displayTime)
         }
     }
-
 
     var mediaDirectoryURL: URL? {
         session?.directoryURL.appendingPathComponent("media", isDirectory: true)
@@ -1761,7 +1752,6 @@ final class RecordingStudioModel {
         return composition
     }
 
-
     var selectedImage: RecordingImageOverlay? {
         imageOverlays.first { $0.id == selectedImageID }
     }
@@ -1845,7 +1835,6 @@ final class RecordingStudioModel {
             self.selectedImageID = nil
         }
     }
-
 
     var selectedAudioClip: RecordingAudioClip? {
         audioClips.first { $0.id == selectedAudioClipID }
@@ -1936,7 +1925,6 @@ final class RecordingStudioModel {
             self.selectedAudioClipID = nil
         }
     }
-
 
     private func sourceRange(
         startingAt editorTime: TimeInterval,
@@ -2118,7 +2106,6 @@ final class RecordingStudioModel {
         projectSaveTask?.cancel()
         writeDraftNow()
     }
-
 
     var editDocument: RecordingEditDocument {
         currentDocument()
@@ -2305,7 +2292,6 @@ final class RecordingStudioModel {
         !pointerCapture.keystrokes.isEmpty
     }
 
-
     var canTranscribe: Bool {
         manifest?.includesMicrophone == true
     }
@@ -2387,7 +2373,6 @@ final class RecordingStudioModel {
         guard hasSubtitles else { return nil }
         return subtitleTimeline.cue(at: clipTimeline.sourceTime(at: currentTime))
     }
-
 
     var hasTranscriptWords: Bool {
         !transcriptWords.isEmpty
@@ -2574,7 +2559,6 @@ final class RecordingStudioModel {
         return CGSize(width: videoSize.width / scale, height: videoSize.height / scale)
     }
 
-
     var isVideoCropped: Bool {
         RecordingVideoCropGeometry.isCropped(videoCropRect)
     }
@@ -2636,7 +2620,6 @@ final class RecordingStudioModel {
             in: videoCropBounds
         ))
     }
-
 
     var isVideoCropDragging: Bool { videoCropDrag != nil }
 
@@ -2742,7 +2725,6 @@ final class RecordingStudioModel {
     var showsCameraLayer: Bool {
         hasCameraVideo && style.camera.isVisible
     }
-
 
     private func makeExportConfiguration(includesGIF: Bool = false) -> RecordingStudioExporter.Configuration {
         let reframe = makeReframeTrack()
@@ -2865,7 +2847,6 @@ final class RecordingStudioModel {
         previewReframe = makeReframeTrack()
         motionTimeline = makeMotionTimeline(reframe: previewReframe)
     }
-
 
     var basePreviewCanvasSize: CGSize {
         exportAspect == .original
@@ -3007,7 +2988,6 @@ final class RecordingStudioModel {
             exportState = .idle
         }
     }
-
 
     var hasAudio: Bool {
         hasRecordedAudio || replacementAudio != nil
@@ -3163,7 +3143,6 @@ final class RecordingStudioModel {
         }
     }
 
-
     var canShareToCloud: Bool {
         CloudUploader.shared.isConfigured
     }
@@ -3280,5 +3259,32 @@ struct RecordingZoomTimelineBlock: Identifiable, Equatable, Sendable {
 
     var id: UUID {
         cue.id
+    }
+}
+
+extension RecordingStudioModel {
+    func installRenderOverlays() {
+        precondition(UpshotStorage.isRenderingStates)
+        var text = RecordingTextOverlay(start: 0.5, end: 6)
+        text.text = "Capture Walkthrough"
+        text.center = CGPoint(x: 0.5, y: 0.85)
+        text.fontSize = 0.05
+        textOverlays = [text]
+        redactions = [RecordingRedaction(start: 1, end: 5)]
+        imageOverlays = [RecordingImageOverlay(fileName: "overlay.png", displayName: "Release Overview", start: 3, end: 7)]
+        audioClips = [RecordingAudioClip(fileName: "narration.wav", displayName: "Narration", start: 0, fileDuration: 8)]
+        subtitleCues = [RecordingSubtitleCue(start: 0, end: 4, text: "Capture a clear view of the work."), RecordingSubtitleCue(start: 4, end: 8, text: "Annotate the details and share the result.")]
+        subtitleTimeline = SubtitleTimeline(cues: subtitleCues)
+        transcriptWords = ["Capture", "a", "clear", "view", "of", "the", "work."].enumerated().map { index, text in
+            RecordingTranscriptWord(text: text + " ", start: Double(index) * 0.5, end: Double(index + 1) * 0.5)
+        }
+        addZoomCue(at: 1)
+        selectedCueID = nil
+        addLayoutCue(at: 4)
+        selectedLayoutCueID = nil
+        selectedTextID = nil
+        selectedRedactionID = nil
+        selectedImageID = nil
+        selectedAudioClipID = nil
     }
 }

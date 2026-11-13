@@ -110,7 +110,7 @@ final class RecordingPenPresenter {
     }
 }
 
-private final class RecordingPenView: NSView {
+final class RecordingPenView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 

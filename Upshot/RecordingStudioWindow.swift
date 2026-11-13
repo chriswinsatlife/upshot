@@ -1,4 +1,3 @@
-
 import AppKit
 import AVFoundation
 import SwiftUI
@@ -41,7 +40,7 @@ struct RecordingStudioWindow: View {
     }
 }
 
-private struct RecordingStudioContent: View {
+struct RecordingStudioContent: View {
     @Bindable var model: RecordingStudioModel
     @State private var isInspectorPresented = true
     @State private var closeGuard = EditorCloseGuard()
@@ -239,7 +238,6 @@ private struct RecordingStudioContent: View {
         }
     }
 }
-
 
 private struct StudioCanvas: View {
     @Bindable var model: RecordingStudioModel
@@ -1092,7 +1090,6 @@ private struct StudioSubtitleBarView: View {
         return combined
     }
 }
-
 
 private extension RecordingKeystrokePlacement {
     var alignment: Alignment {

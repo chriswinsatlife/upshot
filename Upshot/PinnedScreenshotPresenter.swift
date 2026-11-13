@@ -70,7 +70,7 @@ final class PinnedScreenshotPresenter {
         appearance = PinnedScreenshotAppearance()
         appearanceObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
-            object: UserDefaults.standard,
+            object: UpshotStorage.defaults,
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshAppearance() }
@@ -125,12 +125,12 @@ private final class PinnedPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private struct PinnedScreenshotView: View {
+struct PinnedScreenshotView: View {
     let image: NSImage
     let url: URL
     let onClose: () -> Void
 
-    @State private var isHovered = false
+    @State private var isHovered = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("hover")
     @State private var didCopy = false
     @AppStorage(UpshotPreferences.pinnedScreenshotRoundedCornersKey) private var roundedCorners = true
     @AppStorage(UpshotPreferences.pinnedScreenshotBorderKey) private var border = true

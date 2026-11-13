@@ -43,7 +43,7 @@ private final class CaptureCodePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-private struct CaptureCodeFeedbackView: View {
+struct CaptureCodeFeedbackView: View {
     let detection: CaptureCodeDetection
     let dismiss: () -> Void
     @State private var copied: Set<String> = []

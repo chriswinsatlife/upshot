@@ -5,7 +5,7 @@ struct CaptureShelfCard: View {
     let item: ShelfItem
     let shelf: CaptureShelf
 
-    @State private var isHovered = false
+    @State private var isHovered = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("hover")
     @State private var layoutStore = OverlayCardLayoutStore.shared
     @State private var uploader = CloudUploader.shared
     @AppStorage(UpshotPreferences.previewOverlaySizeKey) private var overlaySize = QuickAccessOverlaySize.small
@@ -67,7 +67,6 @@ struct CaptureShelfCard: View {
     private var isFrosted: Bool {
         showsActions || item.activity != nil || isUploading || item.flash != nil
     }
-
 
     @ViewBuilder
     private var overlay: some View {
@@ -154,7 +153,6 @@ struct CaptureShelfCard: View {
         Rectangle().fill(.black.opacity(opacity))
     }
 
-
     private var actions: some View {
         let layout = layoutStore.layout
         return ZStack {
@@ -235,7 +233,6 @@ struct CaptureShelfCard: View {
     private func perform(_ action: OverlayCardAction) {
         shelf.perform(action, id: item.id)
     }
-
 
     @ViewBuilder
     private var contextMenu: some View {

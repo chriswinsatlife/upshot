@@ -71,7 +71,6 @@ final class CaptureShelf {
         items.first { $0.id == id }
     }
 
-
     func tuck(_ reason: TuckReason) {
         guard !tuckReasons.contains(reason) else { return }
         noteMotion()
@@ -96,7 +95,6 @@ final class CaptureShelf {
             tuckReasons.removeAll()
         }
     }
-
 
     func add(url: URL) {
         let showsCard = AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot)
@@ -192,7 +190,6 @@ final class CaptureShelf {
         return false
     }
 
-
     func dismiss(id: ShelfItem.ID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         if QuickLookPreviewPresenter.currentURL == items[index].url {
@@ -247,7 +244,6 @@ final class CaptureShelf {
         }
     }
 
-
     func setHovered(_ id: ShelfItem.ID, _ isHovered: Bool) {
         if isHovered {
             hoveredID = id
@@ -277,7 +273,6 @@ final class CaptureShelf {
             NSLog("Quick Access drag item=%@ outcome=%@ keepWithOption=%@ card=retained", id.uuidString, completed ? "completed" : "cancelled", keepWithOption.description)
         }
     }
-
 
     @discardableResult
     static func performHoveredAction(_ action: OverlayCardAction) -> Bool {
@@ -509,7 +504,6 @@ final class CaptureShelf {
             }
         }
     }
-
 
     static let slide = Animation.smooth(duration: 0.38)
 
@@ -780,7 +774,6 @@ final class CaptureShelf {
         }
     }
 
-
     private func copyVideoToClipboard(_ url: URL, itemID: ShelfItem.ID?) async -> Bool {
         do {
             let deliverable = try await prepareDeliverable(from: url, itemID: itemID)
@@ -814,5 +807,18 @@ final class CaptureShelf {
 
     private func presentRecordingFailure(_ message: String, error: Error) {
         FailureAlert.present(message: message, error: error, detail: "Your recording is safe in its project.")
+    }
+}
+
+extension CaptureShelf {
+    func installRenderItems(_ fixtureItems: [ShelfItem], tucked: Bool = false) {
+        precondition(UpshotStorage.isRenderingStates)
+        for task in autoCloseTasks.values { task.cancel() }
+        autoCloseTasks = [:]
+        capacity = 10
+        items = fixtureItems
+        tuckReasons = tucked ? [.user] : []
+        isMoving = false
+        hoveredID = nil
     }
 }

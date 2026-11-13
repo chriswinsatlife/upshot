@@ -1,21 +1,7 @@
-//
-//  SettingsComponents.swift
-//  Upshot
-//
-//  The pieces every Settings pane is made of. Panes stay native grouped
-//  forms - that is what a Mac settings window should feel like - but their
-//  buttons, shortcuts and status marks come from the app's own glass set so
-//  Settings reads as the same product as the editors.
-//
-
 import AppKit
 import AVFoundation
 import SwiftUI
 
-// MARK: - Page
-
-/// The scaffold for one pane: a grouped form with the standard insets and
-/// the app's accent switch in place of the system one.
 struct SettingsPage<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -28,8 +14,6 @@ struct SettingsPage<Content: View>: View {
     }
 }
 
-/// The same label rhythm across settings panes, with descriptions allowed to
-/// wrap at the window's minimum width instead of being vertically truncated.
 struct SettingsControlLabel: View {
     let title: String
     let detail: String
@@ -50,7 +34,6 @@ struct SettingsControlLabel: View {
     }
 }
 
-/// A compact glass button for actions inside a form row.
 struct SettingsButton: View {
     let title: String
     var systemImage: String? = nil
@@ -76,11 +59,6 @@ struct SettingsButton: View {
     }
 }
 
-// MARK: - Permissions
-
-/// Live status of the system permissions Upshot leans on. Polled while
-/// Settings is open, because the system never tells an app when the user
-/// flips a switch in Privacy & Security.
 @MainActor
 @Observable
 final class SettingsPermissions {
@@ -137,6 +115,7 @@ final class SettingsPermissions {
     }
 
     func beginWatching() {
+        guard !UpshotStorage.isRenderingStates else { granted = StateRenderer.scenario.contains("denied") ? [] : Set(Kind.allCases); return }
         watchers += 1
         refresh()
         guard pollTask == nil else { return }
@@ -220,8 +199,6 @@ struct SettingsPermissionRow: View {
     }
 }
 
-/// Always-visible readiness summary at the bottom of the Settings sidebar:
-/// whether Upshot can capture right now, and how to start.
 struct SettingsStatusFooter: View {
     let permissions: SettingsPermissions
 

@@ -20,15 +20,12 @@ nonisolated enum CaptureLibraryFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// What the sidebar has selected: a kind of capture, a smart category, or
-/// the app captures came from (by `CaptureSource.appKey`).
 nonisolated enum CaptureLibraryScope: Hashable, Sendable {
     case kind(CaptureLibraryFilter)
     case category(CaptureCategory)
     case app(String)
 }
 
-/// One row of the sidebar's Apps section.
 nonisolated struct CaptureLibraryAppFacet: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
@@ -53,8 +50,6 @@ nonisolated enum CaptureLibraryLayout: String, CaseIterable {
     case grid, list
 }
 
-/// Immutable, inexpensive row data. Resolving packages and reading file metadata
-/// happens in the scanner, never in a cell's body or a selection update.
 nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
     let id: String
     let historyIDs: Set<UUID>
@@ -138,7 +133,7 @@ final class CaptureLibraryModel {
     private(set) var screenshotCount = 0
     private(set) var categoryFacets: [(category: CaptureCategory, count: Int)] = []
     private(set) var appFacets: [CaptureLibraryAppFacet] = []
-    /// The folded words of the active search, for highlighting text matches.
+
     private(set) var searchTokens: [String] = []
     private(set) var isLoading = false
     var operationTitle: String?
@@ -151,8 +146,7 @@ final class CaptureLibraryModel {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var visibleIndices: [String: Int] = [:]
     @ObservationIgnored private var itemsByID: [String: CaptureLibraryItem] = [:]
-    /// Folded search text per capture, rebuilt off the main actor for the
-    /// captures whose metadata or analysis changed.
+
     @ObservationIgnored private var corpus: [String: String] = [:]
     @ObservationIgnored private var corpusItems: [String: CaptureLibraryItem] = [:]
     @ObservationIgnored private var corpusTask: Task<Void, Never>?
@@ -171,8 +165,6 @@ final class CaptureLibraryModel {
 
     func item(id: String) -> CaptureLibraryItem? { itemsByID[id] }
 
-    /// Selects a capture, widening the browser first if the current scope
-    /// or search hides it.
     func reveal(_ id: String) {
         guard itemsByID[id] != nil else { return }
         if visibleIndices[id] == nil {
@@ -193,7 +185,6 @@ final class CaptureLibraryModel {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Search text is only kept in memory while the Library is open.
     func windowDidOpen() {
         isWindowOpen = true
         CaptureLibraryIndex.shared.libraryDidOpen()
@@ -231,7 +222,7 @@ final class CaptureLibraryModel {
         let activeSessionPath = ScreenRecordingManager.shared.activeSessionDirectoryURL?.standardizedFileURL.path
         isLoading = true
         refreshTask = Task {
-            // Coalesce capture completion, project saves and window activation.
+
             try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
             let scan = Task.detached(priority: .userInitiated) {
@@ -252,17 +243,14 @@ final class CaptureLibraryModel {
         }
     }
 
-    /// Called by the index after it publishes a batch of analyses.
     func indexDidChange(changed: Set<String>) {
         updateFacets()
         rebuildCorpus(changed: changed)
         if case .category = scope { updateVisibleItems() }
     }
 
-    /// Re-folds search text for captures that are new, changed, or newly
-    /// analyzed; everything else keeps its cached text.
     private func rebuildCorpus(changed: Set<String>) {
-        // Opening the Library loads the index, which rebuilds it all.
+
         guard isWindowOpen, CaptureLibraryIndex.shared.isLoaded else { return }
         pendingCorpusIDs.formUnion(changed)
         corpusTask?.cancel()
@@ -286,8 +274,6 @@ final class CaptureLibraryModel {
         }
     }
 
-    /// Sidebar counts. Categories are listed by size with Other last; apps
-    /// by size, then name.
     private func updateFacets() {
         let index = CaptureLibraryIndex.shared
         let analyses = index.analyses
@@ -303,7 +289,7 @@ final class CaptureLibraryModel {
             if ($0.category == .other) != ($1.category == .other) { return $1.category == .other }
             return $0.count != $1.count ? $0.count > $1.count : $0.category.title < $1.category.title
         }
-        // No categories are known until the index has loaded.
+
         if index.isLoaded, !sortedCategories.elementsEqual(categoryFacets, by: { $0 == $1 }) { categoryFacets = sortedCategories }
         let sortedApps = apps.map {
             CaptureLibraryAppFacet(id: $0.key, name: $0.value.source.appName,
@@ -418,10 +404,6 @@ nonisolated enum CaptureLibraryScanner {
         return entries
     }
 
-    /// The file's modification date, or nil when it's missing. Resource
-    /// values would stay cached on the URL, which every item keeps; `stat`
-    /// leaves nothing behind. The date is made as Foundation makes it, so
-    /// thumbnail keys, and the index entries keyed by them, don't change.
     private static func modificationDate(of url: URL) -> Date? {
         var info = stat()
         guard stat(url.path, &info) == 0 else { return nil }
@@ -441,5 +423,22 @@ nonisolated enum CaptureLibraryScanner {
             total += Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
         }
         return total
+    }
+}
+
+extension CaptureLibraryModel {
+    func installRenderItems(_ fixtureItems: [CaptureLibraryItem]) {
+        precondition(UpshotStorage.isRenderingStates)
+        refreshTask?.cancel()
+        searchTask?.cancel()
+        searchText = ""
+        scope = .kind(.all)
+        items = fixtureItems
+        itemsByID = Dictionary(uniqueKeysWithValues: fixtureItems.map { ($0.id, $0) })
+        screenshotCount = fixtureItems.filter { !$0.isVideo }.count
+        updateFacets()
+        updateVisibleItems()
+        selection = []
+        isLoading = false
     }
 }

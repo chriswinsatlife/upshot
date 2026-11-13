@@ -1,25 +1,11 @@
-//
-//  CameraRecordingManager.swift
-//  Upshot
-//
-//  Captures the webcam alongside a screen recording. The camera is written
-//  to its own camera.mov inside the recording session (never burned into
-//  the screen video) so the studio editor can restyle, reposition, or drop
-//  the bubble in post. A floating circular preview shows the user what the
-//  camera sees while recording; the preview panel is excluded from capture.
-//
-//  Sync: AVCaptureSession stamps buffers with the same host clock
-//  ScreenCaptureKit uses, so the first camera frame's PTS minus the screen
-//  writer's session start gives an exact timeline offset for the editor.
-//
-
 import AppKit
 import AVFoundation
 @preconcurrency import CoreMedia
 import Observation
+import QuartzCore
 
 nonisolated struct CameraRecordingResult: Sendable {
-    /// Host-clock seconds of the first written camera frame.
+
     let firstFrameUptime: TimeInterval
     let pixelWidth: Int
     let pixelHeight: Int
@@ -27,7 +13,8 @@ nonisolated struct CameraRecordingResult: Sendable {
 
 nonisolated enum RecordingDeviceCatalog {
     static func cameras() -> [AVCaptureDevice] {
-        AVCaptureDevice.DiscoverySession(
+        guard !UpshotStorage.isRenderingStates else { return [] }
+        return AVCaptureDevice.DiscoverySession(
             deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
             mediaType: .video,
             position: .unspecified
@@ -35,7 +22,8 @@ nonisolated enum RecordingDeviceCatalog {
     }
 
     static func microphones() -> [AVCaptureDevice] {
-        AVCaptureDevice.DiscoverySession(
+        guard !UpshotStorage.isRenderingStates else { return [] }
+        return AVCaptureDevice.DiscoverySession(
             deviceTypes: [.microphone],
             mediaType: .audio,
             position: .unspecified
@@ -61,20 +49,12 @@ final class CameraRecordingManager {
     private var previewPanel: NSPanel?
     private var activePreviewDisplayID: CGDirectDisplayID?
     private(set) var isRunning = false
-    /// True once frames are actually being written to a `camera.mov`, as
-    /// opposed to just warming the sensor for the floating preview.
+
     private(set) var isWriting = false
     private var activeDeviceID: String?
 
     private init() {}
 
-    /// Starts the capture session and shows the floating preview, without
-    /// writing anything to disk yet. Call this as soon as the camera is
-    /// enabled in the pre-record picker (or whenever it's re-shown with the
-    /// camera already on) so the sensor's exposure/white-balance ramp - the
-    /// visible fade-in macOS shows whenever a capture session starts cold -
-    /// finishes before "Start Recording", instead of showing up live and at
-    /// the start of the recorded footage.
     @discardableResult
     func startPreview(deviceID: String, displayID: CGDirectDisplayID?) async -> Bool {
         guard !isWriting else { return true }
@@ -103,9 +83,6 @@ final class CameraRecordingManager {
         return true
     }
 
-    /// Tears down a warm preview that never turned into a recording - the
-    /// camera was toggled off, or the pre-record picker was dismissed
-    /// without starting. No-op while an actual recording is using the camera.
     func stopPreview() async {
         guard isRunning, !isWriting else { return }
         isRunning = false
@@ -114,13 +91,6 @@ final class CameraRecordingManager {
         await engine.stopSessionOnly()
     }
 
-    /// Starts writing camera frames to `outputURL`. Reuses an already-warm
-    /// preview session for the same device when one is running - so
-    /// recording never re-triggers the startup ramp - otherwise it starts a
-    /// fresh session (e.g. a recording started without the picker bar).
-    /// Returns false (without throwing) when the camera can't start -
-    /// a missing device or denied permission should never abort the
-    /// screen recording itself.
     func start(outputURL: URL, deviceID: String, displayID: CGDirectDisplayID?) async -> Bool {
         guard !isWriting else { return true }
 
@@ -174,9 +144,7 @@ final class CameraRecordingManager {
     }
 
     private func showPreview(displayID: CGDirectDisplayID?) {
-        // Already showing in the right place: the session (and its exposure)
-        // is untouched, so recreating the panel here would only cost a
-        // pointless layer swap.
+
         if previewPanel != nil, activePreviewDisplayID == displayID {
             return
         }
@@ -207,24 +175,35 @@ final class CameraRecordingManager {
         panel.isMovableByWindowBackground = true
         PreviewWindowCaptureExclusion.shared.register(window: panel)
 
-        let container = NSView(frame: CGRect(origin: .zero, size: CGSize(width: diameter, height: diameter)))
-        container.wantsLayer = true
-        container.layer?.cornerRadius = diameter / 2
-        container.layer?.masksToBounds = true
-        container.layer?.backgroundColor = NSColor.black.cgColor
-        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
-        container.layer?.borderWidth = 1
-
         let previewLayer = engine.makePreviewLayer()
-        previewLayer.frame = container.bounds
-        previewLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         previewLayer.videoGravity = .resizeAspectFill
-        container.layer?.addSublayer(previewLayer)
+        let container = Self.previewContent(size: CGSize(width: diameter, height: diameter), layer: previewLayer)
 
         panel.contentView = container
         panel.orderFrontRegardless()
         previewPanel = panel
         activePreviewDisplayID = displayID
+    }
+
+    static func renderPreview(player: AVPlayer) -> NSView {
+        precondition(UpshotStorage.isRenderingStates)
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspectFill
+        return previewContent(size: CGSize(width: 160, height: 160), layer: layer)
+    }
+
+    private static func previewContent(size: CGSize, layer: CALayer) -> NSView {
+        let container = NSView(frame: CGRect(origin: .zero, size: size))
+        container.wantsLayer = true
+        container.layer?.cornerRadius = size.width / 2
+        container.layer?.masksToBounds = true
+        container.layer?.backgroundColor = NSColor.black.cgColor
+        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        container.layer?.borderWidth = 1
+        layer.frame = container.bounds
+        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        container.layer?.addSublayer(layer)
+        return container
     }
 
     private func hidePreview() {
@@ -233,8 +212,6 @@ final class CameraRecordingManager {
         activePreviewDisplayID = nil
     }
 }
-
-// MARK: - Capture engine
 
 nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let session = AVCaptureSession()
@@ -245,10 +222,6 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
     private var output: AVCaptureVideoDataOutput?
     private var activeDevice: AVCaptureDevice?
 
-    /// Starts the capture session only - no movie is written yet. Frames
-    /// reach `captureOutput` immediately (for the live preview layer), but
-    /// `CameraMovieWriter.writeVideoSample` silently no-ops until
-    /// `beginWriting` has run, since it has no asset writer to append to.
     func startSession(device: AVCaptureDevice) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [self] in
@@ -265,8 +238,6 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
         }
     }
 
-    /// Sets up the movie writer for the already-running session so its
-    /// frames start landing on disk.
     func beginWriting(outputURL: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [self] in
@@ -307,8 +278,6 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
         await writer.cancel()
     }
 
-    /// Tears the session down without ever having written a movie - the
-    /// warm preview was toggled off or dismissed before recording began.
     func stopSessionOnly() async {
         await stopSession()
     }
@@ -351,8 +320,6 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
         session.addOutput(output)
         self.output = output
 
-        // Mirror the recorded video so it matches the on-screen preview -
-        // the FaceTime convention users expect from a talking-head bubble.
         if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = true
@@ -394,8 +361,6 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
     }
 }
 
-// MARK: - Camera movie writer
-
 nonisolated private final class CameraMovieWriter: @unchecked Sendable {
     private let writingQueue = DispatchQueue(label: "com.upshot.camera.writer", qos: .userInitiated)
     private var assetWriter: AVAssetWriter?
@@ -415,7 +380,7 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
         try? FileManager.default.removeItem(at: outputURL)
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
-        // Fragmented movie: a crash mid-recording still leaves a playable file.
+
         writer.movieFragmentInterval = CMTime(seconds: 2, preferredTimescale: 600)
 
         let videoSettings: [String: Any] = [
@@ -469,9 +434,7 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
 
     func writeVideoSample(_ sampleBuffer: CMSampleBuffer) {
         let sendable = SendableCameraSampleBuffer(sampleBuffer)
-        // Bound retained camera buffers for the same reason as the screen
-        // writer: capture should shed frames under encoder pressure instead
-        // of growing an unbounded queue until the process is killed.
+
         writingQueue.sync { [weak self] in
             autoreleasepool {
                 guard let self,

@@ -1,11 +1,10 @@
-
 import AppKit
 import SwiftUI
 
 struct CaptureHotkeySettingsSection: View {
     let actions: [CaptureHotkeyAction]
     @State private var searchText = ""
-    @State private var showsAllActions = false
+    @State private var showsAllActions = UpshotStorage.isRenderingStates && StateRenderer.scenario == "settings-shortcuts-expanded"
 
     @State private var shortcuts = CaptureHotkeyPreferences.shortcuts()
     @State private var recorder = HotkeyShortcutRecorder()

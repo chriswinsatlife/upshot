@@ -1,4 +1,3 @@
-
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -21,6 +20,11 @@ struct AnnotationEditorWindow: View {
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
 
+    init(url: Binding<URL?>, renderModel: AnnotationEditorModel? = nil) {
+        _url = url
+        _model = State(initialValue: renderModel ?? AnnotationEditorModel())
+    }
+
     private var isBusy: Bool { isSaving || isFinishing || isUploading || model.isCommitting || model.isProcessingImage }
 
     var body: some View {
@@ -40,6 +44,7 @@ struct AnnotationEditorWindow: View {
                 }
             }
             .task(id: url) {
+                guard !UpshotStorage.isRenderingStates else { return }
                 clearInspectorFocus()
                 model.load(url: url, dismiss: dismissWindow)
             }
@@ -131,7 +136,6 @@ struct AnnotationEditorWindow: View {
                 }
             }
     }
-
 
     @ViewBuilder
     private var toolbarActions: some View {

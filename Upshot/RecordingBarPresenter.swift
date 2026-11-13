@@ -234,7 +234,7 @@ private final class RecordingBarHostingView<Content: View>: NSHostingView<Conten
     }
 }
 
-private struct RecordingBarView: View {
+struct RecordingBarView: View {
     @State private var presenter = RecordingBarPresenter.shared
     @State private var area = RecordingAreaSelectionPresenter.shared
     @State private var tooltip = BarTooltipModel()
@@ -249,6 +249,7 @@ private struct RecordingBarView: View {
             .coordinateSpace(.named(BarCoordinateSpace.panel))
             .environment(tooltip)
             .onChange(of: includeAppWindowsInCaptures) { _, _ in
+                guard !UpshotStorage.isRenderingStates else { return }
                 PreviewWindowCaptureExclusion.shared.refreshRegisteredWindows()
                 Task { await RecordingSourceCatalog.shared.refresh() }
             }
@@ -387,5 +388,13 @@ private struct RecordingBarView: View {
             cornerRadius: showsTeleprompter ? BarMetrics.expandedCornerRadius : BarMetrics.cornerRadius,
             style: .continuous
         )
+    }
+}
+
+extension RecordingBarPresenter {
+    func installRenderMode(recording: Bool, teleprompter: Bool = false) {
+        precondition(UpshotStorage.isRenderingStates)
+        mode = recording ? .recording : .picker
+        isTeleprompterOpen = teleprompter
     }
 }

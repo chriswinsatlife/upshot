@@ -2,9 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Library's scene keeps its window, and the view tree inside it, after
-/// the window closes. Swapping the content out on close frees the grid's
-/// cells, layers and decoded thumbnails until the window opens again.
 struct CaptureLibraryWindow: View {
     @State private var isOpen = true
     @State private var window: NSWindow?
@@ -43,7 +40,6 @@ struct CaptureLibraryView: View {
 
     private var scope: CaptureLibraryScope { model.scope ?? .kind(.all) }
 
-    /// The one-time offer to sort older captures with the model.
     private var showsSortOffer: Bool {
         analyzeCaptures && !sortExisting && !sortOfferDismissed && index.unsortedExistingCount > 0
     }
@@ -94,8 +90,7 @@ struct CaptureLibraryView: View {
                     }
                 }
                 .listStyle(.sidebar)
-                // A long list fades out above Settings rather than ending at a
-                // hard edge; the margin lets the last row scroll clear of it.
+
                 .contentMargins(.bottom, Self.sidebarFade, for: .scrollContent)
                 .mask {
                     VStack(spacing: 0) {
@@ -127,8 +122,7 @@ struct CaptureLibraryView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .inspector(isPresented: $inspectorVisible) {
-            // Keep the inspector's ideal size out of the split view's
-            // constraint pass; its width belongs to the split view.
+
             GeometryReader { _ in
                 CaptureLibraryInspector(model: model)
             }
@@ -137,6 +131,7 @@ struct CaptureLibraryView: View {
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
+            guard !UpshotStorage.isRenderingStates else { return }
             AppActivationPolicy.enter()
             CaptureLibraryIndex.shared.start()
             model.windowDidOpen()
@@ -294,8 +289,7 @@ struct CaptureLibraryView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        // Not `.searchable`: macOS always puts the system field at the far
-        // right, where the inspector toggle belongs.
+
         ToolbarItem(placement: .primaryAction) {
             LibrarySearchField(text: $model.searchText)
         }
@@ -348,8 +342,7 @@ private struct LibrarySidebarRow<Icon: View>: View {
     @ViewBuilder let icon: () -> Icon
 
     var body: some View {
-        // Not a Label: the sidebar tints Label icons with the accent. These
-        // stay a quiet, filled grey with room between glyph and title.
+
         HStack(spacing: 12) {
             icon()
                 .symbolVariant(.fill)
@@ -369,8 +362,6 @@ private struct LibrarySidebarRow<Icon: View>: View {
     }
 }
 
-/// The toolbar's search field, on the toolbar's own glass. ⌘F focuses it and
-/// Escape clears it.
 private struct LibrarySearchField: View {
     @Binding var text: String
     @FocusState private var isFocused: Bool
@@ -407,7 +398,6 @@ private struct LibrarySearchField: View {
     }
 }
 
-/// App icons for the sidebar, resolved once per app.
 @MainActor
 enum LibraryAppIcons {
     private static var cache: [String: NSImage] = [:]
@@ -424,15 +414,11 @@ enum LibraryAppIcons {
     }
 }
 
-/// Offers, once, to sort captures made before sorting existed. It can take
-/// an hour or more, so it waits for a yes; Settings has the same switch.
-/// Never let its text size the bar (no `fixedSize`): see `frame(height:)`.
 private struct LibrarySortOffer: View {
     let count: Int
     let onAccept: () -> Void
     let onDismiss: () -> Void
 
-    /// The model takes about 1.3s a capture on Apple silicon.
     private var estimate: String {
         let minutes = max(5, (Double(count) * 1.3 / 60 / 5).rounded() * 5)
         let formatter = DateComponentsFormatter()
@@ -460,13 +446,11 @@ private struct LibrarySortOffer: View {
             GlassCapsuleButton(title: "Sort Captures", isProminent: true, action: onAccept)
         }
         .padding(.horizontal, Space.xl)
-        // A fixed height: a bar whose height follows its wrapped text sends
-        // the split view's constraint passes into a loop and AppKit aborts.
+
         .frame(height: 64)
     }
 }
 
-/// Settings, plus a blue download button while a newer release is waiting.
 private struct LibrarySidebarFooter: View {
     @ObservedObject private var updater = UpdaterManager.shared
     @State private var isHovering = false

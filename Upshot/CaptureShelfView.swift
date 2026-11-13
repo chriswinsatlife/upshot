@@ -2,9 +2,9 @@ import SwiftUI
 
 struct CaptureShelfView: View {
     @State private var shelf = CaptureShelf.shared
-    @State private var isShelfHovered = false
+    @State private var isShelfHovered = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("hover")
     @State private var hoverEndTask: Task<Void, Never>?
-    @State private var hasEntered = false
+    @State private var hasEntered = UpshotStorage.isRenderingStates
     @AppStorage(UpshotPreferences.previewPositionKey) private var positionRaw = PreviewOverlayPosition.right.rawValue
     @AppStorage(UpshotPreferences.shelfHandlePositionKey) private var handlePosition = 0.5
     @AppStorage(UpshotPreferences.previewOverlaySizeKey) private var overlaySize = QuickAccessOverlaySize.small
@@ -39,6 +39,7 @@ struct CaptureShelfView: View {
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: Alignment(horizontal: edge, vertical: .bottom))
             .onAppear { shelf.capacity = CaptureShelfMetrics.capacity(forHeight: proxy.size.height) }
             .task {
+                guard !UpshotStorage.isRenderingStates else { return }
                 await Task.yield()
                 shelf.noteMotion()
                 withAnimation(CaptureShelf.slideIfAllowed) { hasEntered = true }

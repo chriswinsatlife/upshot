@@ -1,14 +1,3 @@
-//
-//  RecordingSourceTargetPresenter.swift
-//  Upshot
-//
-//  Pick the recording source by pointing at it. Choosing Display or Window
-//  in the recording bar lays a transparent, click-catching sheet over every
-//  screen; the screen or window under the pointer lights up with its name,
-//  its size and a Start Recording pill, and a click there starts recording
-//  it. The bar floats above the sheet, so switching source or backing out
-//  never needs the sheet to go first.
-//
 
 import AppKit
 import ScreenCaptureKit
@@ -31,7 +20,6 @@ final class RecordingSourceTargetPresenter {
         }
 
         let source: Source
-        /// Global AppKit coordinates (bottom-left origin).
         let frame: CGRect
         let title: String
         let detail: String
@@ -42,18 +30,12 @@ final class RecordingSourceTargetPresenter {
     private(set) var target: Target?
 
     @ObservationIgnored private var panels: [NSPanel] = []
-    /// On-screen, layer-0 windows front to back, snapshotted when the sheet
-    /// goes up. Nothing behind the sheet can be moved or raised while it's
-    /// up, so the snapshot stays true for as long as it's needed.
     @ObservationIgnored private var windowStack: [(id: CGWindowID, frame: CGRect)] = []
     @ObservationIgnored private var keyMonitors: [Any] = []
 
     private init() {}
 
     var isActive: Bool { mode != nil }
-
-    /// Pressing the button for the mode that's already up puts the sheet
-    /// away; pressing the other one switches it in place.
     func toggle(_ mode: Mode) {
         if self.mode == mode {
             cancel()
@@ -72,8 +54,6 @@ final class RecordingSourceTargetPresenter {
         installKeyMonitors()
         updateTarget(at: NSEvent.mouseLocation)
         Task {
-            // The bar refreshes the catalog when it appears, but a window
-            // opened since then would otherwise be unpickable.
             await RecordingSourceCatalog.shared.refresh()
             guard self.mode == mode else { return }
             if mode == .window {
@@ -93,8 +73,6 @@ final class RecordingSourceTargetPresenter {
         }
         panels = []
     }
-
-    // MARK: Pointer
 
     fileprivate func updateTarget(at point: CGPoint) {
         let next: Target? = switch mode {
@@ -147,9 +125,6 @@ final class RecordingSourceTargetPresenter {
     }
 
     private func windowTarget(at point: CGPoint) -> Target? {
-        // Frontmost window under the pointer wins. If that window isn't one
-        // the catalog can record, nothing lights up rather than the window
-        // hidden behind it.
         guard let hit = windowStack.first(where: { $0.frame.contains(point) }),
               let window = RecordingSourceCatalog.shared.windows.first(where: { $0.windowID == hit.id }) else {
             return nil
@@ -177,8 +152,6 @@ final class RecordingSourceTargetPresenter {
         let recordable = Set(RecordingSourceCatalog.shared.windows.map(\.windowID))
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        // CoreGraphics reports top-left-origin frames measured from the
-        // primary display; AppKit's are bottom-left.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let ownPID = ProcessInfo.processInfo.processIdentifier
 
@@ -190,21 +163,12 @@ final class RecordingSourceTargetPresenter {
                 return nil
             }
             let id = CGWindowID(number.uint32Value)
-            // Our own windows (Library, editors) never occlude a pick unless
-            // they're recordable themselves - the sheet is what's on top.
             let pid = (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
             if pid == ownPID && !recordable.contains(id) { return nil }
             if (entry[kCGWindowAlpha as String] as? NSNumber)?.doubleValue == 0 { return nil }
             return (id, CGRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width, height: bounds.height))
         }
     }
-
-    // MARK: Escape
-
-    /// Esc backs out of the sheet without closing the bar. The bar's own
-    /// panel handles it while Upshot is active; the global monitor covers
-    /// the usual case of picking from inside another app, and is a no-op
-    /// without Accessibility access.
     private func installKeyMonitors() {
         guard keyMonitors.isEmpty else { return }
         let isEscape: (NSEvent) -> Bool = { $0.keyCode == 53 }
@@ -230,8 +194,6 @@ final class RecordingSourceTargetPresenter {
         keyMonitors = []
     }
 
-    // MARK: Panels
-
     private func showPanels() {
         guard panels.isEmpty else { return }
         panels = NSScreen.screens.map(makePanel(for:))
@@ -252,14 +214,9 @@ final class RecordingSourceTargetPresenter {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        // Over every app window, under the recording bar (`.floating`), so
-        // the bar stays usable while the sheet is up.
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.acceptsMouseMovedEvents = true
-        // The sheet is clear, and the window server passes clicks on clear
-        // pixels to whatever is behind. Setting this explicitly makes the
-        // whole panel catch them, whatever the overlay happens to draw.
         panel.ignoresMouseEvents = false
         panel.setFrame(screen.frame, display: false)
 
@@ -268,8 +225,6 @@ final class RecordingSourceTargetPresenter {
 
         let hostingView = NSHostingView(rootView: RecordingSourceTargetOverlay(screenFrame: screen.frame))
         hostingView.frame = sheet.bounds
-        // Sized by the panel, never the other way round - see
-        // RecordingBarPresenter.makePanel.
         hostingView.sizingOptions = []
         hostingView.autoresizingMask = [.width, .height]
         sheet.addSubview(hostingView)
@@ -283,10 +238,6 @@ private final class RecordingSourceTargetPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
-
-/// Catches every pointer event on its screen. The SwiftUI overlay inside it
-/// only draws; the hit-testing is by target frame, which is simpler than
-/// keeping a SwiftUI button and a whole-window click in agreement.
 private final class RecordingSourceTargetSheetView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         frame.contains(point) ? self : nil
@@ -328,8 +279,6 @@ private final class RecordingSourceTargetSheetView: NSView {
     }
 }
 
-// MARK: - Overlay
-
 private struct RecordingSourceTargetOverlay: View {
     let screenFrame: CGRect
 
@@ -349,10 +298,6 @@ private struct RecordingSourceTargetOverlay: View {
                     }
                     .frame(width: local.width, height: local.height)
                     .position(x: local.midX, y: local.midY)
-
-                // The card is drawn once, on the screen holding the middle of
-                // what's visible, so a window straddling two displays doesn't
-                // get two of them.
                 if ownsCard(for: target) {
                     RecordingSourceTargetCard(target: target)
                         .position(x: visible.midX, y: visible.midY)
@@ -363,16 +308,10 @@ private struct RecordingSourceTargetOverlay: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
-
-    /// Displays are lit edge to edge; windows follow the system's window
-    /// corners so the highlight sits on the window rather than around it.
     private func highlightRadius(for target: RecordingSourceTargetPresenter.Target) -> CGFloat {
         if case .display = target.source { return 0 }
         return 16
     }
-
-    /// The target's frame in this screen's SwiftUI space (top-left origin),
-    /// or nil when it doesn't touch this screen.
     private func localRect(for frame: CGRect) -> CGRect? {
         guard frame.intersects(screenFrame) else { return nil }
         return CGRect(
@@ -384,6 +323,7 @@ private struct RecordingSourceTargetOverlay: View {
     }
 
     private func ownsCard(for target: RecordingSourceTargetPresenter.Target) -> Bool {
+        if UpshotStorage.isRenderingStates { return true }
         let screens = NSScreen.screens.map(\.frame)
         let owner = screens.max { lhs, rhs in
             area(lhs.intersection(target.frame)) < area(rhs.intersection(target.frame))
@@ -433,8 +373,6 @@ private struct RecordingSourceTargetCard: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
             .frame(height: 32)
-            // Solid rather than glass: glass in this never-key panel renders
-            // untinted, and the pill has to read over any content.
             .background(Palette.record, in: Capsule())
             .overlay {
                 Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
@@ -444,5 +382,18 @@ private struct RecordingSourceTargetCard: View {
         }
         .frame(maxWidth: 420)
         .padding(20)
+    }
+}
+
+extension RecordingSourceTargetPresenter {
+    static func renderOverlay(window: Bool) -> some View {
+        precondition(UpshotStorage.isRenderingStates)
+        let frame = CGRect(x: 0, y: 0, width: 1000, height: 625)
+        shared.mode = window ? .window : .display
+        shared.target = Target(source: window ? .window(0) : .display(0),
+                               frame: window ? CGRect(x: 100, y: 100, width: 800, height: 450) : frame,
+                               title: window ? "Release Overview" : "Display 1",
+                               detail: window ? "1600 × 900" : "2000 × 1250", icon: nil)
+        return RecordingSourceTargetOverlay(screenFrame: frame)
     }
 }

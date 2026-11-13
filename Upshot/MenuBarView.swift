@@ -1,4 +1,3 @@
-
 import AppKit
 import AVFoundation
 import ScreenCaptureKit
@@ -16,13 +15,13 @@ struct MenuBarView: View {
             } label: {
                 Label("Capture Fullscreen", systemImage: "macwindow")
             }
-            
+
             Button {
                 CaptureCoordinator.shared.captureWindow()
             } label: {
                 Label("Capture Window", systemImage: "macwindow.on.rectangle")
             }
-            
+
             Button {
                 CaptureCoordinator.shared.captureArea()
             } label: {
@@ -81,7 +80,7 @@ struct MenuBarView: View {
             } label: {
                 Label("Open Screenshots Folder", systemImage: "folder")
             }
-            
+
             Button {
                 openSettings(tab: .general)
             } label: {
@@ -95,9 +94,9 @@ struct MenuBarView: View {
                 Label("Check for Updates…", systemImage: "arrow.down.circle")
             }
             .disabled(!updaterManager.canCheckForUpdates)
-            
+
             Divider()
-            
+
             Button("Quit Upshot") {
                 NSApplication.shared.terminate(nil)
             }
@@ -221,4 +220,9 @@ struct MenuBarView: View {
         guard name.count > limit else { return name }
         return "\(name.prefix(limit - 1))…"
     }
+}
+
+extension MenuBarView {
+    var renderProjectsMenu: some View { projectsMenuContent }
+    var renderHistoryMenu: some View { historyMenuContent }
 }

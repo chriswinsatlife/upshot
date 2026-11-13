@@ -1,4 +1,3 @@
-
 import AppKit
 import SwiftUI
 
@@ -133,7 +132,7 @@ final class CaptureCountdownPresenter {
 
 @MainActor
 @Observable
-private final class CaptureCountdownModel {
+final class CaptureCountdownModel {
     var remaining: Int
     let total: Int
 
@@ -143,7 +142,7 @@ private final class CaptureCountdownModel {
     }
 }
 
-private struct CaptureCountdownView: View {
+struct CaptureCountdownView: View {
     static let size: CGFloat = 140
     static let shadowSlack: CGFloat = 32
 
@@ -192,6 +191,7 @@ private struct CaptureCountdownView: View {
     }
 
     private func drain(from value: Int) {
+        if UpshotStorage.isRenderingStates { ring = Double(value) / Double(model.total); return }
         let start = Double(value) / Double(model.total)
         let end = Double(value - 1) / Double(model.total)
         ring = start

@@ -147,7 +147,7 @@ final class CaptureTextFeedbackPresenter {
     }
 }
 
-private struct CaptureTextFeedbackView: View {
+struct CaptureTextFeedbackView: View {
     let symbol: String
     let title: String
     let detail: String

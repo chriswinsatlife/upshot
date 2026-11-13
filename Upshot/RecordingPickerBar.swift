@@ -1,28 +1,9 @@
-//
-//  RecordingPickerBar.swift
-//  Upshot
-//
-//  The pre-record mode of the floating bar. "Record" anywhere in the app
-//  brings the bar up at the bottom of the active screen; it picks the source
-//  (display / window by pointing at it - RecordingSourceTargetPresenter - or
-//  area by dragging - RecordingAreaSelectionPresenter) and toggles the capture inputs (camera,
-//  microphone, system audio) for the next recording, then hands off to
-//  CaptureCoordinator - at which point the same bar morphs into the in-session
-//  controls (RecordingControlPresenter). Clicks and keystrokes are always
-//  logged to the session sidecar; whether they appear is decided later in
-//  Studio.
-//
-//  The panel, the chrome and the morph live in RecordingBarPresenter.
-//
-
 import AppKit
 import AVFoundation
 import Combine
 import ScreenCaptureKit
 import SwiftUI
 
-/// Retained as the entry point callers already use; the bar itself is owned
-/// by RecordingBarPresenter.
 @MainActor
 enum RecordingPickerPresenter {
     static var shared: RecordingBarPresenter { RecordingBarPresenter.shared }
@@ -38,13 +19,11 @@ extension RecordingBarPresenter {
     }
 }
 
-// MARK: - Controls
-
 struct RecordingPickerControls: View {
     @State private var sources = RecordingSourceCatalog.shared
     @State private var target = RecordingSourceTargetPresenter.shared
     @State private var area = RecordingAreaSelectionPresenter.shared
-    @State private var cameras = RecordingDeviceCatalog.cameras()
+    @State private var cameras = UpshotStorage.isRenderingStates ? [] : RecordingDeviceCatalog.cameras()
     @AppStorage(UpshotPreferences.recordingCameraDeviceIDKey) private var cameraID = ""
     @AppStorage(UpshotPreferences.recordingMicrophoneDeviceIDKey) private var microphoneID = ""
     @AppStorage(UpshotPreferences.recordingSystemAudioKey) private var systemAudio = false
@@ -112,6 +91,7 @@ struct RecordingPickerControls: View {
             }
         }
         .task {
+            guard !UpshotStorage.isRenderingStates else { return }
             cameras = RecordingDeviceCatalog.cameras()
             await sources.refresh()
         }
@@ -129,8 +109,6 @@ struct RecordingPickerControls: View {
         !sources.isLoading && !sources.displays.isEmpty && !CaptureCountdownPresenter.shared.isRunning
     }
 
-    // MARK: Sources
-
     @ViewBuilder
     private var displaySource: some View {
         if sources.isLoading {
@@ -139,7 +117,7 @@ struct RecordingPickerControls: View {
                 .frame(width: BarMetrics.controlSize, height: BarMetrics.controlSize)
                 .help("Finding screens and windows…")
                 .accessibilityLabel("Finding screens and windows")
-        } else if sources.errorMessage != nil || sources.displays.isEmpty {
+        } else if !UpshotStorage.isRenderingStates && (sources.errorMessage != nil || sources.displays.isEmpty) {
             Menu {
                 Text(sources.errorMessage ?? "No screens are available.")
                 Button("Retry") { Task { await sources.refresh() } }
@@ -171,8 +149,6 @@ struct RecordingPickerControls: View {
         }
     }
 
-    /// The window list stays one right-click away, for anyone who'd rather
-    /// pick by name than by pointing.
     private var windowSource: some View {
         BarActionButton(
             id: .window,
@@ -200,23 +176,15 @@ struct RecordingPickerControls: View {
         }
     }
 
-    /// Leaves the bar on screen: it stays as the picker through any start
-    /// delay, then morphs into the session controls the moment capture
-    /// actually begins. The warm camera preview (if any) is left running so it
-    /// flows straight into the recording instead of restarting and refading.
     private func startRecording(_ start: () -> Void) {
         RecordingBarPresenter.shared.closeTeleprompter()
         start()
     }
 
-    /// Backs out of the picker without recording: stop any warm camera
-    /// preview so it doesn't keep running in the background.
     private func dismissPicker() {
         RecordingBarPresenter.shared.hide()
         Task { await CameraRecordingManager.shared.stopPreview() }
     }
-
-    // MARK: Input toggles
 
     private var cameraTooltip: String {
         guard !cameraID.isEmpty else { return "Camera off" }
@@ -234,9 +202,6 @@ struct RecordingPickerControls: View {
         return "Camera on - \(camera.localizedName), click to switch"
     }
 
-    /// The pill only has room for the state, so an attached-but-missing
-    /// device is worth calling out there - it's the one case where the icon
-    /// alone is misleading.
     private var microphoneTooltip: String {
         guard !microphoneID.isEmpty else { return "Microphone off" }
         guard RecordingDeviceCatalog.microphone(withID: microphoneID) != nil else {
@@ -325,9 +290,6 @@ struct RecordingPickerControls: View {
         .accessibilityLabel(microphoneAccessibilityLabel)
     }
 
-    /// Replaces the old gear button that opened Settings: a self-contained
-    /// menu for options that only matter for the next recording, starting
-    /// with a start-delay timer.
     private var timerMenu: some View {
         Menu {
             ForEach(Self.timerOptions, id: \.self) { seconds in
@@ -385,10 +347,6 @@ struct RecordingPickerControls: View {
         }
     }
 
-    /// Starts the camera session (and its floating preview) ahead of "Start
-    /// Recording", so its exposure/white-balance ramp - the fade-in macOS
-    /// shows whenever a capture session starts cold - finishes before
-    /// anything is actually being recorded.
     private func warmCameraPreview() async {
         guard !cameraID.isEmpty else { return }
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: false)
@@ -402,10 +360,6 @@ struct RecordingPickerControls: View {
         }
     }
 
-    // MARK: Pieces
-
-    /// An input toggle is the same control as a source button - the "off"
-    /// state is carried by dimming the tint, not by shrinking the target.
     private func inputToggle(
         id: BarTooltipID,
         title: String,

@@ -1,19 +1,7 @@
-//
-//  RecordingStudioLook.swift
-//  Upshot
-//
-//  Studio's Styles strip, whose tiles are drawn from the recording’s own
-//  frame.
-//
-
 import AppKit
 import AVFoundation
 import SwiftUI
 
-// MARK: - Styles
-
-/// Saved looks as thumbnails of this recording wearing them. Clicking one
-/// applies it; the last tile saves the current look.
 struct RecordingStudioStyleStrip: View {
     @Bindable var model: RecordingStudioModel
     @Bindable var presetStore: RecordingStudioStylePresetStore
@@ -167,8 +155,6 @@ struct RecordingStudioStyleStrip: View {
         .frame(width: Self.tileWidth)
     }
 
-    // MARK: Saving
-
     private var duplicateNamePreset: RecordingStudioStylePreset? {
         presetStore.preset(named: draftName)
     }
@@ -237,7 +223,6 @@ struct RecordingStudioStyleStrip: View {
         isNameEditorPresented = false
     }
 
-    /// One small frame from early in the recording, for the thumbnails.
     nonisolated private static func poster(for url: URL) async -> CGImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
@@ -249,9 +234,6 @@ struct RecordingStudioStyleStrip: View {
     }
 }
 
-/// A style drawn the way the canvas lays it out: the background, the
-/// recording inset by the style's padding with its corners and shadow, and
-/// the camera bubble where it sits.
 struct StudioStylePreview: View {
     let style: RecordingStudioStyle
     let poster: CGImage?
@@ -262,7 +244,7 @@ struct StudioStylePreview: View {
         GeometryReader { proxy in
             let size = proxy.size
             let short = min(size.width, size.height)
-            // The canvas pads the video whether or not there is a fill.
+
             let base = RecordingStudioLayout.make(
                 canvasSize: size,
                 style: style,
@@ -323,4 +305,8 @@ struct StudioStylePreview: View {
             .frame(width: size.width, height: size.height)
         }
     }
+}
+
+extension RecordingStudioStyleStrip {
+    var renderNameEditor: some View { nameEditor }
 }

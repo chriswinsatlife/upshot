@@ -1,4 +1,3 @@
-
 import AppKit
 import Observation
 import SwiftUI
@@ -67,7 +66,6 @@ final class AnnotationEditorModel {
         }
     }
 
-
     var shapes: [AnnoShape] { engine.shapes }
     var bindings: [ArrowBinding] { engine.document.bindings }
     var hasAnnotations: Bool { !engine.shapes.isEmpty }
@@ -106,7 +104,6 @@ final class AnnotationEditorModel {
         }
         return selected.contains { supportsStyle($0.tool) }
     }
-
 
     func load(url: URL?, dismiss: DismissAction) {
         cancelSmartRedaction()
@@ -245,7 +242,6 @@ final class AnnotationEditorModel {
         return resultURL
     }
 
-
     private struct EditSnapshot: Equatable {
         var baseImageURL: URL?
         var shapes: [AnnoShape]
@@ -273,7 +269,6 @@ final class AnnotationEditorModel {
     func markSaved() {
         savedSnapshot = currentSnapshot()
     }
-
 
     func updateViewport(imageFrame: CGRect) {
         engine.viewport = AnnoViewport(imageFrame: imageFrame, imageSize: imageSize)
@@ -353,7 +348,6 @@ final class AnnotationEditorModel {
         UpshotPreferences.annotationAutomaticallyExpandCanvas || boundaryFrame.contains(location)
     }
 
-
     func selectTool(_ tool: AnnotationTool) {
         selectedTool = tool
         engine.tool = tool
@@ -430,7 +424,6 @@ final class AnnotationEditorModel {
         }
     }
 
-
     func deleteSelectedAnnotation() {
         engine.deleteSelected()
     }
@@ -469,7 +462,6 @@ final class AnnotationEditorModel {
         }
         redoCrop()
     }
-
 
     func smartRedact(using tool: AnnotationTool) {
         guard tool.isRedactionTool,
@@ -548,7 +540,6 @@ final class AnnotationEditorModel {
         smartRedactionMessage = "Added \(renderable.count) redaction\(renderable.count == 1 ? "" : "s")."
     }
 
-
     func annotationBounds(for imageFrame: CGRect, boundaryFrame: CGRect) -> CGRect {
         guard imageFrame.width > 0, imageFrame.height > 0 else {
             return CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -561,9 +552,8 @@ final class AnnotationEditorModel {
         )
     }
 
-
     private static func startingTool(lastUsed: AnnotationTool) -> AnnotationTool {
-        let choice = UserDefaults.standard.string(forKey: UpshotPreferences.annotationStartingToolKey)
+        let choice = UpshotStorage.defaults.string(forKey: UpshotPreferences.annotationStartingToolKey)
             ?? AnnotationTool.select.rawValue
         if choice == UpshotPreferences.startingToolLastUsed { return lastUsed }
         return AnnotationTool(rawValue: choice) ?? .select
@@ -617,7 +607,6 @@ final class AnnotationEditorModel {
         appliedBackgroundPresetID = preset.id
     }
 }
-
 
 extension AnnotationEditorModel {
     var isCropped: Bool { !cropUndoStack.isEmpty }
@@ -804,7 +793,6 @@ extension AnnotationEditorModel {
 
 }
 
-
 extension AnnotationEditorModel {
     func previewBackground(_ background: AnnotationBackgroundStyle, isHovering: Bool) {
         if isHovering {
@@ -819,5 +807,28 @@ extension AnnotationEditorModel {
               backgroundSettings.style != .none
         else { return backgroundSettings.style }
         return previewBackground
+    }
+}
+
+extension AnnotationEditorModel {
+    func installRenderAnnotations() {
+        precondition(UpshotStorage.isRenderingStates)
+        var box = GeoProps()
+        box.w = 330
+        box.h = 210
+        box.strokeWidth = 6
+        var arrow = ArrowProps()
+        arrow.end = Vec(180, -120)
+        arrow.strokeWidth = 7
+        var text = TextProps()
+        text.text = "Review this section"
+        text.fontSize = 32
+        text.w = 340
+        engine.replaceDocument(shapes: [
+            AnnoShape(x: 125, y: 325, kind: .geo(box)),
+            AnnoShape(x: 530, y: 390, kind: .arrow(arrow)),
+            AnnoShape(x: 600, y: 225, kind: .text(text)),
+            AnnoShape(x: 1010, y: 365, kind: .numbered(NumberedProps()))
+        ], bindings: [])
     }
 }

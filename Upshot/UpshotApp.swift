@@ -1,4 +1,3 @@
-
 import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
@@ -7,6 +6,7 @@ import Carbon
 @main
 enum UpshotMain {
     static func main() {
+        if StateRenderer.isRequested { StateRenderer.run() }
         if AutomationCommandLine.isRequested { AutomationCommandLine.run() }
         if AgentRelay.isRequested {
             AgentRelay.run()
@@ -45,7 +45,7 @@ struct UpshotApp: App {
                     .keyboardShortcut(",", modifiers: .command)
             }
         }
-        
+
         WindowGroup("Upshot Annotate", id: "ANNOTATION_EDITOR", for: URL.self) { value in
             AnnotationEditorWindow(url: value)
         }
@@ -112,7 +112,6 @@ struct UpshotApp: App {
         }
     }
 }
-
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterManager = UpdaterManager.shared

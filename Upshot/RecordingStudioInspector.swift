@@ -1,4 +1,3 @@
-
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -40,9 +39,9 @@ struct StudioInspector: View {
     @Bindable var model: RecordingStudioModel
     @State private var wallpaperStore = AnnotationWallpaperStore.shared
     @State private var stylePresetStore = RecordingStudioStylePresetStore.shared
-    @State private var transcriptTab: StudioTranscriptTab = .captions
+    @State private var transcriptTab: StudioTranscriptTab = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("transcript") ? .edit : .captions
     @State private var isAudioExportOptionsPresented = false
-    @State private var page: StudioInspectorPage?
+    @State private var page: StudioInspectorPage? = UpshotStorage.isRenderingStates && (StateRenderer.scenario.contains("captions") || StateRenderer.scenario.contains("transcript")) ? .captions : nil
     @AppStorage("StudioInspectorFoldedSections") private var foldedSectionNames = ""
     @Environment(\.colorScheme) private var colorScheme
 
@@ -134,7 +133,6 @@ struct StudioInspector: View {
     private func open(_ page: StudioInspectorPage) {
         self.page = page
     }
-
 
     @ViewBuilder
     private var lookPage: some View {
@@ -325,7 +323,6 @@ struct StudioInspector: View {
         return $model.showsSubtitles
     }
 
-
     private var foldedSections: Set<String> {
         Set(foldedSectionNames.split(separator: ",").map(String.init))
     }
@@ -393,7 +390,6 @@ struct StudioInspector: View {
         }
         return "\(index + 1) of \(segments.count) · \(speed)"
     }
-
 
     private func pageHeader<Accessory: View>(
         _ title: String,
@@ -518,7 +514,6 @@ struct StudioInspector: View {
         }
     }
 
-
     private var canvasControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
             RecordingExportShotPicker(model: model)
@@ -633,7 +628,6 @@ struct StudioInspector: View {
         }
     }
 
-
     private func selectedLayoutPage(for selected: RecordingCameraLayoutCue) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             pageHeader(
@@ -668,7 +662,6 @@ struct StudioInspector: View {
             }
         }
     }
-
 
     private func selectedTextPage(for text: RecordingTextOverlay) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -746,7 +739,6 @@ struct StudioInspector: View {
         }
     }
 
-
     private var zoomControls: some View {
         let pressCount = model.recordedPressTimes.count
         return VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
@@ -795,7 +787,6 @@ struct StudioInspector: View {
             }
         }
     }
-
 
     @ViewBuilder
     private func selectedZoomPage(for selected: ZoomCue) -> some View {
@@ -978,7 +969,6 @@ struct StudioInspector: View {
             }
         }
     }
-
 
     private var keystrokeControls: some View {
         RecordingKeystrokeAppearanceControls(model: model)
@@ -1199,7 +1189,6 @@ struct StudioInspector: View {
         }
     }
 
-
     private var audioControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
             if model.hasAudio {
@@ -1364,7 +1353,6 @@ struct StudioInspector: View {
         return value < 60 ? String(format: "%.1fs", value) : clockText(value)
     }
 
-
     private var usesDefaultLayout: Bool {
         abs(model.style.padding - 0.06) < 0.0001
             && abs(model.style.cornerRadius - 0.02) < 0.0001
@@ -1386,8 +1374,6 @@ private extension RecordingStudioExportState {
         }
     }
 }
-
-
 
 private struct StudioSubtitleRow: View {
     @Bindable var model: RecordingStudioModel
@@ -1622,8 +1608,7 @@ private struct TranscriptFlowLayout: Layout {
     }
 }
 
-
-private struct StudioAudioExportOptions: View {
+struct StudioAudioExportOptions: View {
     @Binding var format: RecordingAudioFormat
     let onExport: () -> Void
 

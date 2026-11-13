@@ -1,4 +1,3 @@
-
 import AppKit
 import SwiftUI
 
@@ -210,7 +209,7 @@ struct InspectorBackgroundRow: View {
     }
 }
 
-private struct BackgroundPickerPopover: View {
+struct BackgroundPickerPopover: View {
     @Binding var style: AnnotationBackgroundStyle
     let rememberedWallpaper: AnnotationCustomWallpaper?
     @Bindable var wallpaperStore: AnnotationWallpaperStore
@@ -478,7 +477,6 @@ struct AnnotationWatermarkInspector: View {
     @Binding var settings: AnnotationWatermarkSettings
     let focusedField: FocusState<AnnotationEditorFocusedField?>.Binding
     let onFocusCleared: () -> Void
-
 
     private var watermarkSwatch: AnnotationSwatch {
         let color = settings.color

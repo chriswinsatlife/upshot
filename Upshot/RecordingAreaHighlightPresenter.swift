@@ -110,7 +110,7 @@ extension ScreenRecordingSource {
     }
 }
 
-private final class RecordingAreaHighlightView: NSView {
+final class RecordingAreaHighlightView: NSView {
     var highlightRect: CGRect = .zero
 
     override func draw(_ dirtyRect: NSRect) {

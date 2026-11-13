@@ -355,7 +355,7 @@ private final class AreaCaptureSelectionPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private final class AreaCaptureSelectionView: NSView {
+final class AreaCaptureSelectionView: NSView {
     let snapshot: AreaCaptureSnapshot
     let frozen: Bool
     unowned let selector: AreaCaptureSelection
@@ -442,5 +442,20 @@ private final class AreaCaptureSelectionView: NSView {
         NSColor.black.withAlphaComponent(0.85).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).fill()
         (text as NSString).draw(at: CGPoint(x: rect.minX + 16, y: rect.minY + 10), withAttributes: attributes)
+    }
+}
+
+extension AreaCaptureSelection {
+    static func renderView(image: CGImage, mode: AllInOneCaptureMode, allInOne: Bool, crosshair: Bool) -> NSView {
+        precondition(UpshotStorage.isRenderingStates)
+        let selector = AreaCaptureSelection.shared
+        let snapshot = AreaCaptureSnapshot(displayID: 0, frame: CGRect(x: 0, y: 0, width: 1000, height: 625), image: image)
+        selector.snapshots = [snapshot]
+        selector.frozen = true
+        selector.mode = mode
+        selector.isAllInOne = allInOne
+        selector.pointer = CGPoint(x: 650, y: 370)
+        selector.highlightedRect = crosshair ? nil : CGRect(x: 120, y: 175, width: 620, height: 330)
+        return AreaCaptureSelectionView(snapshot: snapshot, frozen: true, selector: selector)
     }
 }
