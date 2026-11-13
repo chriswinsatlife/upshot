@@ -155,7 +155,7 @@ final class CaptureCoordinator {
         )
         let source = ScreenshotManager.shared.lastAreaCaptureSource
         guard let url = captured else { return nil }
-        let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
+        let displayID = ScreenshotManager.shared.lastAreaCaptureDisplayID
         return await processAndFinishCapture(url: url, displayID: displayID, source: source)
     }
 

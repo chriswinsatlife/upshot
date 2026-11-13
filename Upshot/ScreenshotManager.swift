@@ -61,7 +61,16 @@ final class ScreenshotManager {
         args.append(contentsOf: delayArguments(delaySeconds))
         let url = await runScreencapture(args: args)
         lastAreaCaptureSource = probe.finish(.window)
-        lastAreaCaptureDisplayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
+        let windowFrame = probe.selectedWindowBounds.map(ActiveDisplayResolver.appKitRect(fromQuartz:))
+        let targetScreen = windowFrame.flatMap { frame in
+            NSScreen.screens.filter { $0.frame.intersects(frame) }.max {
+                let left = $0.frame.intersection(frame)
+                let right = $1.frame.intersection(frame)
+                return left.width * left.height < right.width * right.height
+            }
+        }
+        lastAreaCaptureDisplayID = targetScreen.flatMap(ActiveDisplayResolver.displayID(for:))
+            ?? ActiveDisplayResolver.activeDisplayID(preferPointer: true)
         lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .window,
             skipBackgroundPreset: delaySeconds > 0 ? NSEvent.modifierFlags.contains(.shift) : probe.selectionModifiers.contains(.shift))
         return url

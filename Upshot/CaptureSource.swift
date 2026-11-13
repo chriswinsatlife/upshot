@@ -31,6 +31,7 @@ final class CaptureSourceProbe {
     private var releasedAt: CGPoint?
     private var monitor: Any?
     private(set) var selectionModifiers: NSEvent.ModifierFlags = []
+    private(set) var selectedWindowBounds: CGRect?
 
     init(tracksPointer: Bool) {
         windows = Self.onScreenWindows()
@@ -73,6 +74,7 @@ final class CaptureSourceProbe {
             }
         }
         guard let window else { return nil }
+        selectedWindowBounds = window.bounds
         let app = NSRunningApplication(processIdentifier: window.pid)
         return CaptureSource(
             bundleIdentifier: app?.bundleIdentifier,
