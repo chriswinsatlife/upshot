@@ -12,6 +12,7 @@ final class HotkeyManager {
 
     private var eventHandlerRef: EventHandlerRef?
     private var hotKeyRefs: [CaptureHotkeyAction: EventHotKeyRef] = [:]
+    private(set) var isRecordingShortcut = false
     private(set) var registrationErrors: [CaptureHotkeyAction: String] = [:]
     
     private init() {}
@@ -30,6 +31,7 @@ final class HotkeyManager {
     }
 
     func reloadHotkeys() {
+        guard !isRecordingShortcut else { return }
         unregisterHotkeys()
         registrationErrors.removeAll()
 
@@ -47,6 +49,47 @@ final class HotkeyManager {
                 registrationErrors[action] = error.localizedDescription
             }
         }
+    }
+
+    func replaceShortcuts(_ shortcuts: [CaptureHotkeyAction: HotkeyShortcut]) throws {
+        guard !isRecordingShortcut else { throw AutomationError.message("Finish recording the keyboard shortcut before loading configuration.") }
+        var bindings: Set<HotkeyShortcut> = []
+        for (action, shortcut) in shortcuts {
+            guard shortcut.isValid, bindings.insert(shortcut).inserted else {
+                throw AutomationError.message("Invalid or conflicting shortcut for \(action.title).")
+            }
+        }
+        let previous = CaptureHotkeyPreferences.shortcuts()
+        guard previous != shortcuts else { return }
+        installEventHandlerIfNeeded()
+        unregisterHotkeys()
+        do {
+            for action in CaptureHotkeyAction.allCases {
+                if let shortcut = shortcuts[action] {
+                    hotKeyRefs[action] = try registerHotKey(action: action, shortcut: shortcut)
+                }
+            }
+        } catch {
+            unregisterHotkeys()
+            reloadHotkeys()
+            throw error
+        }
+        for action in CaptureHotkeyAction.allCases {
+            CaptureHotkeyPreferences.saveShortcut(shortcuts[action], for: action)
+        }
+        registrationErrors.removeAll()
+        NSLog("Shortcut catalog loaded bindings=%ld", shortcuts.count)
+    }
+
+    func suspendForShortcutRecording() {
+        isRecordingShortcut = true
+        unregisterHotkeys()
+    }
+
+    func resumeAfterShortcutRecording() {
+        guard isRecordingShortcut else { return }
+        isRecordingShortcut = false
+        reloadHotkeys()
     }
 
     private func installEventHandlerIfNeeded() {
@@ -120,6 +163,7 @@ final class HotkeyManager {
     }
     
     func handleHotKey(id: UInt32) {
+        guard !isRecordingShortcut else { return }
         CaptureHotkeyAction(hotKeyID: id)?.perform()
     }
 }

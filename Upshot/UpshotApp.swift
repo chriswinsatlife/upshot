@@ -136,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if RecordingExportBenchmark.runIfRequested() { return }
         #endif
         HotkeyManager.shared.registerHotkeys()
+        AutomationConfiguration.shared.start()
         updaterManager.start()
         AgentServer.shared.updateForPreference()
         RecordingRecoveryCoordinator.recoverInterruptedRecordings()
@@ -172,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AutomationConfiguration.shared.stop()
         AgentServer.shared.stop()
     }
 
