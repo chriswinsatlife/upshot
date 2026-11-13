@@ -151,9 +151,6 @@ enum StateRenderSource {
             ("private final class PinnedPanel: NSPanel {", 123),
             ("struct PinnedScreenshotView: View {", 128),
         ],
-        "Upshot/QuickAccessSettingsSection.swift": [
-            ("struct QuickAccessSettingsSection: View {", 4),
-        ],
         "Upshot/QuickLookPreviewPresenter.swift": [
             ("final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {", 12),
         ],
@@ -330,6 +327,9 @@ enum StateRenderSource {
         "Upshot/SettingsTextRecognitionPane.swift": [
             ("struct SettingsTextRecognitionPane: View {", 3),
             ("private struct TextRecognitionLibrarySection: View {", 12),
+        ],
+        "Upshot/SettingsQuickAccessPane.swift": [
+            ("struct SettingsQuickAccessPane: View {", 4),
         ],
         "Upshot/SettingsView.swift": [
             ("enum SettingsTab: String, CaseIterable, Identifiable {", 9),

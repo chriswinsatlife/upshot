@@ -16,7 +16,7 @@ enum StateRenderCatalog {
             states.append(StateRenderDefinition(name, source: source, marker: marker,
                                                  size: CGSize(width: width, height: height), scroll: scroll, makeView: view))
         }
-        for tab in SettingsTab.allCases {
+        for tab in SettingsTab.allCases where tab != .overlay {
             add("settings-\(tab.rawValue)", "SettingsView", "struct SettingsView", 1000, 820) {
                 SettingsNavigation.shared.selectedTab = tab
                 return AnyView(SettingsView())
@@ -42,6 +42,16 @@ enum StateRenderCatalog {
                     UpshotStorage.defaults.set(false, forKey: UpshotPreferences.lowResolutionEditorPreviewKey)
                 }
                 return AnyView(NavigationStack { SettingsAnnotatePane().navigationTitle("Annotate") })
+        }
+        for variant in ["", "-expanded", "-shortcuts-access-required"] {
+            add("settings-quick-access\(variant)", "SettingsQuickAccessPane", "struct SettingsQuickAccessPane", 800, variant == "-expanded" ? 1340 : 820) {
+                if variant == "-expanded" {
+                    UpshotStorage.defaults.set(10, forKey: UpshotPreferences.previewAutoCloseSecondsKey)
+                    UpshotStorage.defaults.set(QuickAccessAutoCloseAction.saveAndClose.rawValue, forKey: UpshotPreferences.previewAutoCloseActionKey)
+                    UpshotStorage.defaults.set(true, forKey: UpshotPreferences.previewMoveToActiveScreenKey)
+                }
+                let pane = variant == "-shortcuts-access-required" ? SettingsQuickAccessPane(accessibilityGranted: false) : SettingsQuickAccessPane()
+                return AnyView(NavigationStack { pane.navigationTitle("Quick Access") })
             }
         }
         add("settings-shortcuts-expanded", "CaptureHotkeySettingsSection", "struct CaptureHotkeySettingsSection", 860, 4200) {
@@ -69,7 +79,6 @@ enum StateRenderCatalog {
             ("capture-history", "CaptureHistorySettingsSection", { AnyView(InterfaceFormPage { CaptureHistorySettingsSection() }) }),
             ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
             ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
-            ("quick-access", "QuickAccessSettingsSection", { AnyView(InterfaceFormPage { QuickAccessSettingsSection() }) }),
             ("after-screenshot", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
             ("after-recording", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) }),
             ("configuration", "AutomationSettingsSection", { AnyView(InterfaceFormPage { AutomationSettingsSection() }) })
