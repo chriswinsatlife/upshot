@@ -116,10 +116,10 @@ private struct CaptureShelfHeader: View {
     }
 
     var body: some View {
-        InterfacePanel(.pill, padding: Space.xxs) {
-            HStack(spacing: Space.xxs) {
-                if isLeft { tuckButton }
+        HStack(spacing: Space.s) {
+            if isLeft { tuckButton }
 
+            InterfacePanel(.pill, padding: Space.xxs) {
                 Button(action: onClearAll) {
                     Text("Clear All")
                         .font(.dsSegment)
@@ -130,9 +130,9 @@ private struct CaptureShelfHeader: View {
                 }
                 .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
                 .help("Dismiss \(title.lowercased())")
-
-                if !isLeft { tuckButton }
             }
+
+            if !isLeft { tuckButton }
         }
         .fixedSize()
         .accessibilityElement(children: .contain)
@@ -140,15 +140,17 @@ private struct CaptureShelfHeader: View {
     }
 
     private var tuckButton: some View {
-        Button(action: onTuck) {
-            Image(systemName: isLeft ? "chevron.left" : "chevron.right")
-                .font(.system(size: IconSize.segment, weight: .semibold))
-                .foregroundStyle(Palette.label)
-                .frame(width: Self.segmentHeight, height: Self.segmentHeight)
+        InterfacePanel(.pill, padding: Space.xxs) {
+            Button(action: onTuck) {
+                Image(systemName: isLeft ? "chevron.left" : "chevron.right")
+                    .font(.system(size: IconSize.segment, weight: .semibold))
+                    .foregroundStyle(Palette.label)
+                    .frame(width: Self.segmentHeight, height: Self.segmentHeight)
+            }
+            .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
+            .help("Tuck into the edge")
+            .accessibilityLabel("Tuck into the edge")
         }
-        .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
-        .help("Tuck into the edge")
-        .accessibilityLabel("Tuck into the edge")
     }
 
     private var title: String {
@@ -171,6 +173,7 @@ private struct CaptureShelfHandle: View {
     private static var height: CGFloat { InterfaceMetrics.toolbarButtonHeight }
     private static var width: CGFloat { InterfaceMetrics.modeSwitchHeight }
     private static var margin: CGFloat { Space.xxxl }
+    private static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.panel, style: .continuous) }
 
     private var travel: CGFloat {
         max(0, trackHeight - Self.height - Self.margin * 2)
@@ -198,13 +201,14 @@ private struct CaptureShelfHandle: View {
         }
         .foregroundStyle(Palette.label)
         .frame(width: Self.width, height: Self.height)
-        .background(isEngaged ? Palette.floatingHoverFill : .clear, in: Capsule())
-        .interfacePanelSurface(.pill)
-        .contentShape(Capsule())
+        .padding(isLeft ? .leading : .trailing, Radius.panel)
+        .background(isEngaged ? Palette.floatingHoverFill : .clear, in: Self.shape)
+        .interfacePanelSurface(cornerRadius: Radius.panel)
+        .contentShape(Self.shape)
         .gesture(pressAndDrag)
         .pointerStyle(dragTop == nil ? .grabIdle : .grabActive)
-        .padding(isLeft ? .leading : .trailing, Space.xs)
         .onHover { isHovered = $0 }
+        .offset(x: isLeft ? -Radius.panel : Radius.panel)
         .motion(.morphQuick, value: isEngaged)
         .motion(.morphQuick, value: count)
         .help(count == 1 ? "Show 1 capture · drag to move" : "Show \(count) captures · drag to move")
