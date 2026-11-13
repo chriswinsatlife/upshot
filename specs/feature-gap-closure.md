@@ -50,7 +50,7 @@ Build success proves nothing. Each feature needs one of these as evidence:
 
 - Window captures with `screencapture -l` of the Upshot Settings, Library, editor, and Studio windows, which do not take over the display.
 - Exported files, such as a GIF from a Studio project exported through the MCP tools, inspected frame by frame.
-- Log lines from the running Upshot app. The Upshot Dev build is never opened, used, or offered to the human user.
+- Log lines from the running Upshot app. The human user is never asked to use the Upshot Dev build.
 - For features that cover the whole screen, such as the area selector, the history strip, and dim screen, a test session run by the user, with the agent reading the logs afterwards.
 
 Each workstream's final diff and evidence go to an independent review by `gpt-6-luna` before integration. The integrating agent rejects findings that expand scope.

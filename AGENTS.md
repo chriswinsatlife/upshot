@@ -1,4 +1,5 @@
 # AGENTS.md
 
 - Read `docs/development.md` before changing code and `docs/release.md` before publishing a release.
-- Build, run, and test only the regular `Upshot` app (`co.chrisyork.upshot`). Never open or use the `Upshot Dev` build, and never ask the human user to use it.
+- The human user runs only the regular `Upshot` app (`co.chrisyork.upshot`). Never ask the human user to use the `Upshot Dev` build.
+- Agents may open `Upshot Dev` (`co.chrisyork.upshot.dev`) to test their own changes, and quit it when the test ends.
