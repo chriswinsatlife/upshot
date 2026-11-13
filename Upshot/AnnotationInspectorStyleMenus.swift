@@ -1,16 +1,7 @@
-//
-//  AnnotationInspectorStyleMenus.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
 
-/// An inline row of color swatches with the shared tile selection treatment
-/// (hairline border at rest, accent ring when selected) and a trailing
-/// "custom" well that opens the system color panel. Replaces the old
-/// dropdown-plus-popover color menu so the Style section reads like the rest
-/// of the inspector.
 struct AnnotationSwatchStrip: View {
     let selectedSwatch: AnnotationSwatch
     let onSelect: (AnnotationSwatch) -> Void
@@ -27,7 +18,12 @@ struct AnnotationSwatchStrip: View {
     }
 
     var body: some View {
-        ScrollViewReader { scrollProxy in
+        VStack(alignment: .leading, spacing: 4) {
+            Text(selectedSwatch.title)
+                .font(.inspectorLabel)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Selected color: \(selectedSwatch.title)")
+            ScrollViewReader { scrollProxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 3) {
                     ForEach(AnnotationSwatch.allCases) { swatch in
@@ -59,11 +55,10 @@ struct AnnotationSwatchStrip: View {
                 )
             }
         }
+            }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Fades the strip out at whichever edge still has content beyond it, so
-    /// overflow reads as "more colors this way" instead of a hard clip.
     private var edgeFadeMask: some View {
         HStack(spacing: 0) {
             LinearGradient(
@@ -97,11 +92,18 @@ struct AnnotationSwatchStrip: View {
     private func swatchButton(for swatch: AnnotationSwatch) -> some View {
         Button {
             onSelect(swatch)
+            NSLog("Annotation color selected name=%@", swatch.title)
         } label: {
-            swatchCircle(
-                fill: AnyShapeStyle(swatch.color),
-                isSelected: selectedSwatch == swatch
-            )
+            VStack(spacing: 3) {
+                swatchCircle(
+                    fill: AnyShapeStyle(swatch.color),
+                    isSelected: selectedSwatch == swatch
+                )
+                Text(swatch.title)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(minWidth: 42)
         }
         .buttonStyle(.plain)
         .help(swatch.title)
@@ -114,10 +116,13 @@ struct AnnotationSwatchStrip: View {
             AnnotationColorPanelBridge.shared.present(
                 current: selectedSwatch.nsColor
             ) { color in
-                onSelect(.custom(from: color))
+                let swatch = AnnotationSwatch.custom(from: color)
+                onSelect(swatch)
+                NSLog("Annotation color selected name=%@", swatch.title)
             }
         } label: {
-            swatchCircle(
+            VStack(spacing: 3) {
+                swatchCircle(
                 fill: isCustomSelected
                     ? AnyShapeStyle(selectedSwatch.color)
                     : AnyShapeStyle(AngularGradient(
@@ -125,7 +130,12 @@ struct AnnotationSwatchStrip: View {
                         center: .center
                       )),
                 isSelected: isCustomSelected
-            )
+                )
+                Text("Custom")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(minWidth: 42)
         }
         .buttonStyle(.plain)
         .help("Custom color")
@@ -152,8 +162,6 @@ struct AnnotationSwatchStrip: View {
     }
 }
 
-/// Stroke width as a segmented dot scale, using the same segmented control as
-/// every other choice picker in the inspector.
 struct AnnotationStrokePicker: View {
     let strokeWidth: CGFloat
     let onSelect: (CGFloat) -> Void
@@ -180,9 +188,6 @@ struct AnnotationStrokePicker: View {
     }
 }
 
-/// Routes the shared `NSColorPanel` to whichever swatch strip opened it last.
-/// The panel sends continuous `changeColor` actions while the user scrubs, so
-/// annotations update live just like the old popover's embedded picker.
 @MainActor
 final class AnnotationColorPanelBridge: NSObject {
     static let shared = AnnotationColorPanelBridge()
