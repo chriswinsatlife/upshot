@@ -45,7 +45,7 @@ final class CaptureHistoryPresenter: NSObject, NSWindowDelegate {
     private func makePanel() {
         let model = CaptureHistoryModel()
         let panel = CaptureHistoryPanel(
-            contentRect: CGRect(x: 0, y: 0, width: 1000, height: 280),
+            contentRect: CGRect(x: 0, y: 0, width: 1000, height: CaptureHistoryStrip.preferredHeight),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -83,7 +83,7 @@ final class CaptureHistoryPresenter: NSObject, NSWindowDelegate {
         guard let panel,
               let screen = ActiveDisplayResolver.screen(for: targetDisplayID) ?? ActiveDisplayResolver.activeScreen() else { return }
         let visible = screen.visibleFrame
-        let height = min(280, visible.height)
+        let height = min(CaptureHistoryStrip.preferredHeight, visible.height)
         panel.setFrame(CGRect(x: screen.frame.minX, y: visible.maxY - height, width: screen.frame.width, height: height), display: panel.isVisible)
     }
 

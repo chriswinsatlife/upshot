@@ -6,87 +6,117 @@ struct CaptureHistoryView: View {
     @State private var projects = RecordingProjectStore.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            if let error = model.errorMessage {
-                Text(error)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-            }
-            captures
-            HStack {
-                Text("← → Select · Tab Filter · Return Restore · Esc Close")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(model.visibleItems.count) captures")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.caption)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
+        CaptureHistoryStrip(
+            filter: $model.filter,
+            selectedID: $model.selectedID,
+            items: model.visibleItems,
+            isLoading: model.isLoading,
+            errorMessage: model.errorMessage,
+            restore: { model.restoreSelection() },
+            close: { CaptureHistoryPresenter.shared.dismiss() }
+        )
         .onChange(of: history.items) { _, _ in model.refresh() }
         .onChange(of: projects.projects) { _, _ in model.refresh() }
+    }
+}
+
+struct CaptureHistoryStrip: View {
+    @Binding var filter: CaptureHistoryFilter
+    @Binding var selectedID: String?
+    let items: [CaptureLibraryItem]
+    let isLoading: Bool
+    let errorMessage: String?
+    let restore: () -> Void
+    let close: () -> Void
+
+    static let thumbnailSize = CGSize(width: 192, height: 120)
+    static let screenMargin = Space.m
+    static let headerHeight: CGFloat = 40
+    static let capturesHeight = thumbnailSize.height + InterfaceMetrics.controlHeight + Space.m + Space.s * 2
+    static let preferredHeight = screenMargin * 2 + InterfaceMetrics.floatingPanelPadding * 2 + headerHeight + Space.s + capturesHeight + Space.s
+
+    private static let filterOptions = CaptureHistoryFilter.allCases.map {
+        InterfaceModeSwitchOption(value: $0, title: $0.title)
+    }
+
+    var body: some View {
+        VStack(spacing: Space.s) {
+            header
+            captures
+        }
+        .padding(InterfaceMetrics.floatingPanelPadding)
+        .frame(maxWidth: .infinity)
+        .interfacePanelSurface(.panel)
+        .padding(Self.screenMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Capture History")
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
-            Text("Capture History")
-                .font(.headline)
-            Picker("Capture Type", selection: $model.filter) {
-                ForEach(CaptureHistoryFilter.allCases) { filter in
-                    Text(filter.title).tag(filter)
+        ZStack {
+            InterfaceModeSwitch("Capture Type", selection: $filter, options: Self.filterOptions, surface: .floating)
+            HStack(spacing: 0) {
+                if errorMessage != nil {
+                    InterfaceToast(
+                        "Restore Failed",
+                        detail: "The file may have moved or become unreadable.",
+                        systemImage: "exclamationmark.triangle.fill",
+                        tone: .failure
+                    )
+                    .help(errorMessage ?? "")
                 }
+                Spacer(minLength: 0)
+                InterfaceToolbarButton("Close", systemImage: "xmark", labelPlacement: .hidden, action: close)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 540)
-            Spacer(minLength: 0)
-            Button("Restore", systemImage: "arrow.uturn.backward") {
-                model.restoreSelection()
-            }
-            .disabled(model.selectedItem == nil)
-            Button {
-                CaptureHistoryPresenter.shared.dismiss()
-            } label: {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close Capture History")
-            .help("Close Capture History (Escape)")
         }
+        .frame(height: Self.headerHeight)
     }
 
     private var captures: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                LazyHStack(spacing: 12) {
-                    ForEach(model.visibleItems) { item in
-                        CaptureHistoryCard(item: item, isSelected: model.selectedID == item.id) {
-                            model.selectedID = item.id
-                        }
+                LazyHStack(alignment: .top, spacing: Space.xxl) {
+                    ForEach(items) { item in
+                        CaptureHistoryCard(
+                            item: item,
+                            isSelected: selectedID == item.id,
+                            select: { selectedID = item.id },
+                            restore: restore
+                        )
                         .id(item.id)
                     }
                 }
-                .padding(3)
+                .padding(.horizontal, Space.xl)
+                .padding(.vertical, Space.s)
             }
+            .frame(height: Self.capturesHeight)
             .overlay {
-                if model.visibleItems.isEmpty {
-                    if model.isLoading {
-                        ProgressView("Loading Captures…")
-                    } else {
-                        ContentUnavailableView("No Captures", systemImage: "clock.arrow.circlepath", description: Text("Captures appear here after a screenshot or recording."))
-                    }
+                if items.isEmpty {
+                    placeholder
                 }
             }
-            .onChange(of: model.selectedID) { _, id in
+            .onChange(of: selectedID) { _, id in
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }
         }
-        .frame(maxHeight: .infinity)
+        .padding(.bottom, Space.s)
+    }
+
+    @ViewBuilder
+    private var placeholder: some View {
+        if isLoading {
+            ProgressView()
+                .accessibilityLabel("Loading Captures")
+        } else {
+            VStack(spacing: Space.m) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: IconSize.toolbar, weight: .regular))
+                Text(filter == .all ? "No Captures" : "No \(filter.title)")
+                    .font(.dsBodyEmphasis)
+            }
+            .foregroundStyle(Palette.secondaryLabel)
+        }
     }
 }
 
@@ -94,38 +124,49 @@ private struct CaptureHistoryCard: View {
     let item: CaptureLibraryItem
     let isSelected: Bool
     let select: () -> Void
+    let restore: () -> Void
 
     var body: some View {
-        Button(action: select) {
-            VStack(alignment: .leading, spacing: 6) {
-                CaptureLibraryThumbnail(item: item)
-                    .frame(height: 108)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                Text(item.name)
-                    .font(.callout.weight(.medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                HStack(spacing: 4) {
-                    Text(CaptureHistoryFilter.kindTitle(for: item))
-                    Spacer(minLength: 0)
-                    Text(item.createdAt, style: .date)
+        VStack(spacing: Space.m) {
+            Button(action: select) {
+                InterfaceCard(isSelected: isSelected, padding: 0) {
+                    CaptureLibraryThumbnail(item: item)
+                        .frame(width: CaptureHistoryStrip.thumbnailSize.width, height: CaptureHistoryStrip.thumbnailSize.height)
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
-            .padding(8)
-            .frame(width: 188)
-            .background(isSelected ? Color.accentColor.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: isSelected ? 2 : 1)
+            .buttonStyle(.plain)
+            .help(item.name)
+            .accessibilityLabel("\(item.name), \(CaptureHistoryFilter.kindTitle(for: item)), \(relativeTime)")
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            Group {
+                if isSelected {
+                    Button("Restore", systemImage: "arrow.uturn.backward", action: restore)
+                        .buttonStyle(.interfaceAction)
+                        .help("Restore to Quick Access (Return)")
+                } else {
+                    HStack(spacing: Space.xs) {
+                        Image(systemName: kindSymbol)
+                            .font(.system(size: IconSize.segment, weight: .regular))
+                        Text(relativeTime)
+                            .font(.dsBody)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(Palette.secondaryLabel)
+                    .accessibilityHidden(true)
+                }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .frame(height: InterfaceMetrics.controlHeight)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(item.name), \(CaptureHistoryFilter.kindTitle(for: item))")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .help("Select \(item.name), then choose Restore")
+        .frame(width: CaptureHistoryStrip.thumbnailSize.width)
+    }
+
+    private var relativeTime: String {
+        item.createdAt.formatted(.relative(presentation: .named, unitsStyle: .wide))
+    }
+
+    private var kindSymbol: String {
+        if item.session != nil { return "film" }
+        if item.fileURL.pathExtension.lowercased() == "gif" { return "photo.stack" }
+        return item.isVideo ? "video.fill" : "photo"
     }
 }
