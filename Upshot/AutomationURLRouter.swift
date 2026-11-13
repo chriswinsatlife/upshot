@@ -16,7 +16,7 @@ nonisolated struct AutomationRequest {
         var values: [String: String] = [:]
         for item in components.queryItems ?? [] {
             guard let value = item.value, values[item.name] == nil,
-                  ["path", "output", "delay"].contains(item.name) else {
+                  ["path", "output", "delay", "value"].contains(item.name) else {
                 throw AutomationError.message("Unknown or duplicate URL parameter: \(item.name)")
             }
             values[item.name] = value
@@ -67,9 +67,17 @@ enum AutomationURLRouter {
         guard let action = CaptureHotkeyAction.allCases.first(where: { $0.route == route }) else {
             throw AutomationError.message("Unknown Upshot route: \(route)")
         }
-        let allowed: Set<String> = action == .selfTimer ? ["delay", "output"]
-            : action.route.hasPrefix("capture/") ? ["output"]
-            : action == .editorOpen || action == .recordingEditorOpen || action.route.hasPrefix("editor/recording-") ? ["path"] : []
+        let allowed: Set<String>
+        switch action {
+        case .selfTimer: allowed = ["delay", "output"]
+        case .editorCombineSideBySide, .editorCombineStacked: allowed = ["path"]
+        case .editorWatermark: allowed = ["path", "value"]
+        case .editorRedactionStyle, .editorColorAdjustments, .editorDrawingSmoothing,
+             .editorObjectShadows, .editorExpandCanvas, .editorAlwaysOnTop: allowed = ["value"]
+        default:
+            allowed = action.route.hasPrefix("capture/") ? ["output"]
+                : action == .editorOpen || action == .recordingEditorOpen || action.route.hasPrefix("editor/recording-") ? ["path"] : []
+        }
         guard Set(parameters.keys).isSubset(of: allowed) else { throw AutomationError.message("This action does not accept the supplied parameters.") }
         if let output = parameters["output"] {
             guard output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output),

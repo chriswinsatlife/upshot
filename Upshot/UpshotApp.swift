@@ -23,8 +23,10 @@ struct UpshotApp: App {
     var body: some Scene {
         let _ = configurePreviewPresentation()
 
-        MenuBarExtra("Upshot", image: "MenuBarIcon", isInserted: $showMenuBarIcon) {
+        MenuBarExtra(isInserted: $showMenuBarIcon) {
             MenuBarView()
+        } label: {
+            RecordingMenuBarLabel()
         }
 
         Window("Upshot Library", id: "CAPTURE_LIBRARY") {

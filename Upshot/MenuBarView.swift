@@ -135,6 +135,9 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var historyMenuContent: some View {
+        Button(CaptureHotkeyAction.captureHistory.title) { CaptureHotkeyAction.captureHistory.perform() }
+        Button(CaptureHotkeyAction.restoreLastCapture.title) { CaptureHotkeyAction.restoreLastCapture.perform() }
+        Divider()
         if historyStore.recentItems.isEmpty {
             Text("No captures")
         } else {

@@ -20,7 +20,7 @@ nonisolated struct AutomationCommand {
             switch argument {
             case "--dev": socketURL = AgentSocket.url.deletingLastPathComponent().appendingPathComponent("agent-dev.sock")
             case "--json": printsJSON = true
-            case "--output", "--path", "--delay", "--timeout", "--socket":
+            case "--output", "--path", "--delay", "--value", "--timeout", "--socket":
                 guard !values.isEmpty else { throw AutomationError.message("Missing value for \(argument).") }
                 let value = values.removeFirst()
                 switch argument {
@@ -62,15 +62,19 @@ nonisolated enum AutomationCommandLine {
     Usage: upshot <command> <action> [options]
            upshot actions [--json]
 
-    Capture:   capture fullscreen|window|area|text|area-copy|area-save|area-upload|self-timer|previous-area
-    Recording: recording picker|start|stop|toggle|pause|resume|restart|discard
-    Editor:    editor open|recording [--path FILE]
-    Library:   library open|screenshots|recordings|restore-last|folder
+    Capture:   capture fullscreen|window|area|text|area-copy|area-save|area-upload|self-timer|previous-area|all-in-one|smart-element
+    Recording: recording picker|start|stop|toggle|pause|resume|restart|discard|toggle-pen|clear-pen
+    Editor:    editor <action> [--path FILE] [--value VALUE]
+    Selection: selection toggle-crosshair|toggle-magnifier
+    Desktop:   desktop toggle-icons
+    Library:   library open|screenshots|recordings|restore-last|folder|history|copy-text|detect-codes
     Settings:  settings general|screenshots|video|overlay|mcp|cloud|about
 
     --output FILE    Write a capture to a new PNG file; text captures write UTF-8.
     --delay SECONDS  Set the self-timer delay, default 5.
-    --path FILE      Open an image, recording project, or video in an editor.
+    --path FILE      Select an editor file, image to combine, or watermark image.
+    --value VALUE    Set an editor style, numeric value, Boolean, or JSON settings.
+    Run actions to list every editor command, including recording-export-gif.
     --dev            Connect to Upshot Dev.
     --socket FILE    Connect to a specific Unix socket.
     --timeout SEC    Response timeout, default 300 seconds.

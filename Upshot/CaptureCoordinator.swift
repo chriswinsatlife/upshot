@@ -20,6 +20,7 @@ final class CaptureCoordinator {
     var onShowPreview: ((URL, CGDirectDisplayID?, CaptureSource?) -> URL)?
 
     var onScrollingCaptureRequested: ((CGRect) -> Void)?
+    private(set) var lastAllInOneDispatchedWithoutScreenshot = false
 
     private init() {}
 
@@ -44,14 +45,17 @@ final class CaptureCoordinator {
 
     @discardableResult
     func captureAllInOneAwaiting() async -> URL? {
+        lastAllInOneDispatchedWithoutScreenshot = false
         do {
             guard let selection = try await AreaCaptureSelection.shared.select(allInOne: true) else { return nil }
             switch selection.kind {
             case .recording:
+                lastAllInOneDispatchedWithoutScreenshot = true
                 NSLog("All-In-One recording controls requested")
                 RecordingBarPresenter.shared.showPicker()
                 return nil
             case .scrolling:
+                lastAllInOneDispatchedWithoutScreenshot = true
                 if let onScrollingCaptureRequested {
                     NSLog("All-In-One scrolling capture dispatched")
                     onScrollingCaptureRequested(selection.rect)

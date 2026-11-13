@@ -156,6 +156,36 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
     case recordingEditorSave, recordingEditorUndo, recordingEditorRedo, recordingEditorPlay, recordingEditorPause
     case recordingEditorExport, recordingEditorExportAudio, recordingEditorCancelExport
 
+    case allInOne
+    case smartElement
+    case toggleCrosshair
+    case toggleMagnifier
+    case toggleDesktopIcons
+    case captureHistory
+    case recordingTogglePen
+    case recordingClearPen
+    case editorHighlighter
+    case editorMeasure
+    case editorTextPlain
+    case editorTextLabel
+    case editorTextCallout
+    case editorRedactionStyle
+    case editorWatermark
+    case editorColorAdjustments
+    case editorRotateClockwise
+    case editorRotateCounterclockwise
+    case editorFlipHorizontal
+    case editorFlipVertical
+    case editorCombineSideBySide
+    case editorCombineStacked
+    case editorDrawingSmoothing
+    case editorObjectShadows
+    case editorExpandCanvas
+    case editorAlwaysOnTop
+    case recordingEditorExportGIF
+    case libraryCopyText
+    case libraryDetectCodes
+
     var id: Self { self }
 
     var hotKeyID: UInt32 {
@@ -164,6 +194,35 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
 
     var route: String {
         switch self {
+        case .allInOne: "capture/all-in-one"
+        case .smartElement: "capture/smart-element"
+        case .toggleCrosshair: "selection/toggle-crosshair"
+        case .toggleMagnifier: "selection/toggle-magnifier"
+        case .toggleDesktopIcons: "desktop/toggle-icons"
+        case .captureHistory: "library/history"
+        case .recordingTogglePen: "recording/toggle-pen"
+        case .recordingClearPen: "recording/clear-pen"
+        case .editorHighlighter: "editor/highlighter"
+        case .editorMeasure: "editor/measure"
+        case .editorTextPlain: "editor/text-plain"
+        case .editorTextLabel: "editor/text-label"
+        case .editorTextCallout: "editor/text-callout"
+        case .editorRedactionStyle: "editor/redaction-style"
+        case .editorWatermark: "editor/watermark"
+        case .editorColorAdjustments: "editor/color-adjustments"
+        case .editorRotateClockwise: "editor/rotate-clockwise"
+        case .editorRotateCounterclockwise: "editor/rotate-counterclockwise"
+        case .editorFlipHorizontal: "editor/flip-horizontal"
+        case .editorFlipVertical: "editor/flip-vertical"
+        case .editorCombineSideBySide: "editor/combine-side-by-side"
+        case .editorCombineStacked: "editor/combine-stacked"
+        case .editorDrawingSmoothing: "editor/drawing-smoothing"
+        case .editorObjectShadows: "editor/object-shadows"
+        case .editorExpandCanvas: "editor/expand-canvas"
+        case .editorAlwaysOnTop: "editor/always-on-top"
+        case .recordingEditorExportGIF: "editor/recording-export-gif"
+        case .libraryCopyText: "library/copy-text"
+        case .libraryDetectCodes: "library/detect-codes"
         case .fullscreen: "capture/fullscreen"
         case .window: "capture/window"
         case .area: "capture/area"
@@ -222,6 +281,35 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .allInOne: "Capture All-In-One"
+        case .smartElement: "Capture Smart Element"
+        case .toggleCrosshair: "Toggle Selection Crosshair"
+        case .toggleMagnifier: "Toggle Selection Magnifier"
+        case .toggleDesktopIcons: "Toggle Desktop Icons"
+        case .captureHistory: "Open Capture History"
+        case .recordingTogglePen: "Toggle Recording Live Pen"
+        case .recordingClearPen: "Clear Recording Live Pen"
+        case .editorHighlighter: "Select Text Highlighter"
+        case .editorMeasure: "Select Measure Tool"
+        case .editorTextPlain: "Select Plain Text"
+        case .editorTextLabel: "Select Label Text"
+        case .editorTextCallout: "Select Callout Text"
+        case .editorRedactionStyle: "Change Redaction Style"
+        case .editorWatermark: "Set Screenshot Watermark"
+        case .editorColorAdjustments: "Set Screenshot Color Adjustments"
+        case .editorRotateClockwise: "Rotate Screenshot Clockwise"
+        case .editorRotateCounterclockwise: "Rotate Screenshot Counterclockwise"
+        case .editorFlipHorizontal: "Flip Screenshot Horizontally"
+        case .editorFlipVertical: "Flip Screenshot Vertically"
+        case .editorCombineSideBySide: "Combine Images Side by Side"
+        case .editorCombineStacked: "Combine Images Stacked"
+        case .editorDrawingSmoothing: "Set Freehand Smoothing"
+        case .editorObjectShadows: "Toggle Annotation Shadows"
+        case .editorExpandCanvas: "Toggle Automatic Canvas Expansion"
+        case .editorAlwaysOnTop: "Toggle Editor Always on Top"
+        case .recordingEditorExportGIF: "Export Recording as GIF"
+        case .libraryCopyText: "Copy Text from Selected Capture"
+        case .libraryDetectCodes: "Detect Codes in Selected Capture"
         case .fullscreen: "Capture Fullscreen"
         case .window: "Capture Window"
         case .area: "Capture Area"

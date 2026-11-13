@@ -12,7 +12,6 @@ nonisolated enum AutomationError: LocalizedError {
 }
 
 enum AutomationActions {
-    static var capturePreviousArea: (() async throws -> URL)?
     private static var captureInProgress = false
 
     static func perform(_ action: CaptureHotkeyAction, parameters: [String: String] = [:]) async throws -> JSONValue {
@@ -34,8 +33,29 @@ enum AutomationActions {
             defer { captureInProgress = false }
             return try await capture(action, parameters: parameters)
         }
+        if AutomationAnnotationActions.actions.contains(action) {
+            try await AutomationAnnotationActions.perform(action, parameters: parameters)
+            return ["action": .string(action.route), "status": "accepted"]
+        }
         let manager = ScreenRecordingManager.shared
         switch action {
+        case .toggleCrosshair: AreaSelectionActions.toggleCrosshair()
+        case .toggleMagnifier: AreaSelectionActions.toggleMagnifier()
+        case .toggleDesktopIcons: try DesktopIconVisibilityService.toggleDesktopIcons()
+        case .captureHistory: CaptureHistoryActions.openCaptureHistory()
+        case .recordingTogglePen:
+            try requireRecordingState([.recording])
+            RecordingPenPresenter.toggleLivePen()
+        case .recordingClearPen:
+            try requireRecordingState([.recording])
+            RecordingPenPresenter.clearLivePen()
+        case .libraryCopyText, .libraryDetectCodes:
+            let library = CaptureLibraryModel.shared
+            guard !library.isBusy, library.selectedItems.count == 1, let item = library.selectedItems.first, !item.isVideo else {
+                throw AutomationError.message("Select one screenshot in an idle Library before using this action.")
+            }
+            if action == .libraryCopyText { await CaptureTextActions.copyText(at: item.fileURL) }
+            else { await CaptureCodeActions.detectCodes(at: item.fileURL) }
         case .screenRecording:
             RecordingPickerPresenter.shared.show()
         case .recordingStart where !manager.isActive, .recordingToggle where !manager.isActive:
@@ -108,7 +128,7 @@ enum AutomationActions {
         case .editorSave, .editorSaveCopy, .editorDone, .editorShare, .editorUndo, .editorRedo:
             try AutomationEditorActions.perform(action)
         case .recordingEditorSave, .recordingEditorUndo, .recordingEditorRedo, .recordingEditorPlay, .recordingEditorPause,
-             .recordingEditorExport, .recordingEditorExportAudio, .recordingEditorCancelExport:
+             .recordingEditorExport, .recordingEditorExportAudio, .recordingEditorCancelExport, .recordingEditorExportGIF:
             let url = try editorURL(parameters["path"], video: true)
             guard let model = StudioProjectRegistry.shared.editorModel(for: url), model.isLoaded else {
                 throw AutomationError.message("Open the recording project in its editor before using this action.")
@@ -124,16 +144,15 @@ enum AutomationActions {
             case .recordingEditorPlay: model.play()
             case .recordingEditorPause: model.pause()
             case .recordingEditorExport: model.export()
+            case .recordingEditorExportGIF:
+                model.exportDeliveryOptions.format = .gif
+                model.export()
             case .recordingEditorExportAudio:
                 guard model.hasAudio else { throw AutomationError.message("The recording has no audio to export.") }
                 model.exportAudio()
             default: model.cancelExport()
             }
-        case .restoreLastCapture:
-            ScreenshotHistoryStore.shared.reload()
-            guard let item = ScreenshotHistoryStore.shared.recentItems.first else { throw AutomationError.message("Capture history is empty.") }
-            CaptureShelf.shared.show(existing: item.url, kind: item.isVideo ? .video : .image)
-            CaptureShelfPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: false))
+        case .restoreLastCapture: CaptureHistoryActions.restoreLastCapture()
         case .settings, .settingsScreenshots, .settingsVideo, .settingsOverlay, .settingsMCP, .settingsCloud, .settingsAbout:
             guard let tab = SettingsTab(rawValue: String(action.route.split(separator: "/").last!)) else {
                 throw AutomationError.message("Unknown settings tab.")
@@ -189,9 +208,15 @@ enum AutomationActions {
         case .fullscreen: captured = await CaptureCoordinator.shared.captureFullscreenAwaiting()
         case .window: captured = await CaptureCoordinator.shared.captureWindowAwaiting()
         case .area: captured = await CaptureCoordinator.shared.captureAreaAwaiting()
+        case .allInOne:
+            captured = await CaptureCoordinator.shared.captureAllInOneAwaiting()
+            if captured == nil, CaptureCoordinator.shared.lastAllInOneDispatchedWithoutScreenshot {
+                guard parameters["output"] == nil else { throw AutomationError.message("All-In-One produced no screenshot for the output destination.") }
+                return ["action": .string(action.route), "status": "accepted"]
+            }
+        case .smartElement: captured = await CaptureCoordinator.shared.captureSmartElementAwaiting()
         case .previousArea:
-            guard let capturePreviousArea else { throw AutomationError.message("Capture Previous Area requires the area-selection integration.") }
-            captured = try await capturePreviousArea()
+            captured = await CaptureCoordinator.shared.capturePreviousAreaAwaiting()
         case .areaCopy, .areaSave, .areaUpload, .selfTimer:
             if action == .areaUpload, !CloudUploader.shared.isConfigured { throw CloudUploadError.notConfigured }
             let seconds: Int

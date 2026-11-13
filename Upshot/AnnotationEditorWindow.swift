@@ -57,6 +57,24 @@ struct AnnotationEditorWindow: View {
                     closeGuard.detach()
                     return
                 }
+                AutomationEditorActions.register(
+                    window: window,
+                    model: model,
+                    isEnabled: { !isBusy && !model.isCropping },
+                    handlers: [
+                        .editorSave: saveEdits,
+                        .editorSaveCopy: saveAs,
+                        .editorDone: finishEditing,
+                        .editorShare: {
+                            uploadAnnotation(options: CloudUploadOptions(
+                                title: model.sourceURL?.deletingPathExtension().lastPathComponent ?? "",
+                                socialEnabled: CloudUploadPreferences.lastSocialEnabled
+                            ))
+                        },
+                        .editorUndo: model.undo,
+                        .editorRedo: model.redo
+                    ]
+                )
                 configureCloseGuard()
                 closeGuard.attach(to: window)
                 closeGuard.refreshDocumentEdited()
