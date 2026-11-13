@@ -60,7 +60,7 @@ struct CaptureHotkeySettingsSection: View {
                     .foregroundStyle(Palette.record)
             }
 
-            ForEach(actions) { action in
+            ForEach(visibleActions) { action in
                 if let failure = HotkeyManager.shared.registrationErrors[action] {
                     Text("\(action.title): \(failure)")
                         .font(.caption)
@@ -79,6 +79,13 @@ struct CaptureHotkeySettingsSection: View {
             configureRecorder()
         }
         .onDisappear {
+            recorder.stop()
+            recordingAction = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            reloadShortcuts()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             recorder.stop()
             recordingAction = nil
         }

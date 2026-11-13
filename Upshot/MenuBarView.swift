@@ -1,9 +1,3 @@
-//
-//  MenuBarView.swift
-//  Upshot
-//
-//  Created by Fayaz Ahmed Aralikatti on 26/04/26.
-//
 
 import AppKit
 import AVFoundation
@@ -45,6 +39,18 @@ struct MenuBarView: View {
                 RecordingPickerPresenter.shared.show()
             } label: {
                 Label("Record Screen", systemImage: "record.circle")
+            }
+
+            Menu("Capture Actions") {
+                ForEach(CaptureHotkeyAction.allCases.filter { $0.route.hasPrefix("capture/") }) { action in
+                    Button(action.title) { action.perform() }
+                }
+            }
+
+            Menu("Recording Controls") {
+                ForEach(CaptureHotkeyAction.allCases.filter { $0.route.hasPrefix("recording/") && $0 != .screenRecording }) { action in
+                    Button(action.title) { action.perform() }
+                }
             }
 
             Divider()
@@ -101,8 +107,6 @@ struct MenuBarView: View {
         }
     }
 
-    /// Reopening a recording is the common case after the first edit, so the
-    /// recents land here rather than behind Settings.
     @ViewBuilder
     private var projectsMenuContent: some View {
         if projectStore.projects.isEmpty {
@@ -207,8 +211,6 @@ struct MenuBarView: View {
         return "\(baseName.prefix(allowedBaseLength))…\(suffix)"
     }
 
-    /// Menus get unusably wide with full session names, which carry a
-    /// timestamp and a uniquing suffix.
     private func truncatedMenuTitle(_ name: String) -> String {
         let limit = 34
         guard name.count > limit else { return name }

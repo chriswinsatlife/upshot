@@ -20,6 +20,7 @@ final class HotkeyShortcutRecorder {
 
     func start() {
         stop()
+        HotkeyManager.shared.suspendForShortcutRecording()
         isRecording = true
 
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
@@ -35,6 +36,7 @@ final class HotkeyShortcutRecorder {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
+        HotkeyManager.shared.resumeAfterShortcutRecording()
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
@@ -56,8 +58,8 @@ final class HotkeyShortcutRecorder {
     }
 
     private func finish(with shortcut: HotkeyShortcut) {
-        onShortcutRecorded?(shortcut)
         stop()
+        onShortcutRecorded?(shortcut)
     }
 
     private func cancel() {
