@@ -6,6 +6,10 @@ import UniformTypeIdentifiers
 struct StateRenderFixtures {
     let screenshots: [URL]
     let image: NSImage
+    var pixelSize: CGSize {
+        guard let image = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image.size }
+        return CGSize(width: image.width, height: image.height)
+    }
     let project: RecordingSession
     let items: [CaptureLibraryItem]
 

@@ -166,23 +166,19 @@ struct MenuBarMenuRenderView: View {
     private let separatorHeight: CGFloat = 11
     private let menuPadding: CGFloat = 5
 
+    static let shadowRoom: CGFloat = 24
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            MenuBarStripView()
-            HStack(alignment: .top, spacing: -2) {
-                menuPanel(items, highlightedTitle: openSubmenuTitle)
-                    .padding(.leading, 16)
-                if let openSubmenuTitle, let index = items.firstIndex(where: { $0.title == openSubmenuTitle }),
-                   let submenu = items[index].submenu {
-                    menuPanel(submenu, highlightedTitle: nil)
-                        .padding(.top, offset(before: index) - menuPadding)
-                }
+        HStack(alignment: .top, spacing: -2) {
+            menuPanel(items, highlightedTitle: openSubmenuTitle)
+            if let openSubmenuTitle, let index = items.firstIndex(where: { $0.title == openSubmenuTitle }),
+               let submenu = items[index].submenu {
+                menuPanel(submenu, highlightedTitle: nil)
+                    .padding(.top, offset(before: index) - menuPadding)
             }
-            .padding(.top, 2)
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .fixedSize()
+        .padding(Self.shadowRoom)
     }
 
     private func offset(before index: Int) -> CGFloat {
@@ -207,7 +203,7 @@ struct MenuBarMenuRenderView: View {
         }
         .padding(menuPadding)
         .fixedSize()
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(StateRenderMenuMaterial().clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
     }
@@ -259,21 +255,15 @@ private struct MenuBarMenuRenderRow: View {
     }
 }
 
-private struct MenuBarStripView: View {
-    var body: some View {
-        HStack(spacing: 0) {
-            RecordingMenuBarLabel()
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(Color.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .padding(.leading, 12)
-            Spacer(minLength: 0)
-        }
-        .frame(height: 30)
-        .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.85))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 0.5)
-        }
+
+private struct StateRenderMenuMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
     }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

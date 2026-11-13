@@ -31,14 +31,15 @@ enum StateRenderSupplementalCatalog {
         }
         add("settings-section-after-recording-upload-paused", "AfterCaptureSettingsSection", "struct AfterCaptureActionsSection", 860, 520) {
             UpshotStorage.defaults.set(true, forKey: AfterCaptureAction.upload.storageKey(for: .recording))
-            return AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") })
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .screenRecording, detail: AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }))
+            return AnyView(SettingsView())
         }
         add("settings-mcp-failed", "SettingsMCPPane", "struct MCPSettingsPane", 1000, 820) {
-            SettingsNavigation.shared.selectedTab = .mcp
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .mcp)
             return AnyView(SettingsView())
         }
         add("settings-mcp-copied", "SettingsMCPPane", "struct MCPSettingsPane", 1000, 820) {
-            SettingsNavigation.shared.selectedTab = .mcp
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .mcp)
             return AnyView(SettingsView())
         }
         add("design-gallery", "InterfaceStyleGallery", "struct InterfaceStyleGallery", 1380, 2900) {
@@ -81,7 +82,6 @@ enum StateRenderSupplementalCatalog {
                 return AnyView(
                     PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {})
                         .frame(width: variant.size.width, height: variant.size.height)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 )
             }
         }
@@ -92,7 +92,7 @@ enum StateRenderSupplementalCatalog {
         }
         for variant in ["display", "window"] {
             add("recording-source-\(variant)", "RecordingSourceTargetPresenter", "private struct RecordingSourceTargetOverlay", 1000, 625) {
-                AnyView(Image(nsImage: fixtures.image).resizable().overlay { RecordingSourceTargetPresenter.renderOverlay(window: variant == "window") })
+                AnyView(try StateRenderDesktop.view().overlay { RecordingSourceTargetPresenter.renderOverlay(window: variant == "window") })
             }
         }
         add("recording-camera-preview", "CameraRecordingManager", "static func renderPreview", 220, 220) {
@@ -107,7 +107,7 @@ enum StateRenderSupplementalCatalog {
             add("teleprompter-\(variant)", "TeleprompterOverlayPresenter", "struct TeleprompterOverlayView", 620, 230) {
                 let model = TeleprompterOverlayModel()
                 model.isExpanded = true
-                model.mode = variant.hasPrefix("notch") ? .notch(width: 180, height: 32) : .pill
+                model.mode = variant.hasPrefix("notch") ? .notch(width: StateRenderDisplay.notchWidth ?? 180, height: StateRenderDisplay.menuBarHeight - 1) : .pill
                 let script = variant == "notch-scrolled"
                     ? "Capture a clear view of the work. Annotate the important details. Share a result that the team can review. Record the walkthrough once, then trim the pauses. Export the final cut for the release notes."
                     : "Capture a clear view of the work. Annotate the important details. Share a result that the team can review."
@@ -119,16 +119,14 @@ enum StateRenderSupplementalCatalog {
         for variant in ["selected", "dragging"] {
             add("recording-area-\(variant)", "RecordingAreaSelectionSheet", "final class RecordingAreaSelectionSheet", 1000, 625) {
                 RecordingAreaSelectionPresenter.shared.installRenderSelection(active: true, selected: true, interacting: variant == "dragging")
-                return AnyView(Image(nsImage: fixtures.image).resizable().overlay {
-                    StateRenderAppKitView { RecordingAreaSelectionSheet(displayID: 0, screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 625), scale: 2) }
-                })
+                return try StateRenderDesktop.recordingAreaBackdrop()
             }
         }
         add("recording-area-dimming", "RecordingAreaHighlightPresenter", "final class RecordingAreaHighlightView", 1000, 625) {
-            AnyView(Image(nsImage: fixtures.image).resizable().overlay {
+            AnyView(try StateRenderDesktop.view().overlay {
                 StateRenderAppKitView {
                     let view = RecordingAreaHighlightView()
-                    view.highlightRect = CGRect(x: 180, y: 140, width: 640, height: 360)
+                    view.highlightRect = StateRenderDesktop.recordingRect
                     return view
                 }
             })
@@ -138,7 +136,7 @@ enum StateRenderSupplementalCatalog {
             RecordingPenStrokeStore.shared.begin(at: CGPoint(x: 0.2, y: 0.3), lineWidth: 0.008)
             for point in [CGPoint(x: 0.4, y: 0.25), CGPoint(x: 0.6, y: 0.4), CGPoint(x: 0.8, y: 0.3)] { RecordingPenStrokeStore.shared.append(point) }
             RecordingPenStrokeStore.shared.end()
-            return AnyView(Image(nsImage: fixtures.image).resizable().overlay { StateRenderAppKitView { RecordingPenView() } })
+            return AnyView(try StateRenderDesktop.view().overlay { StateRenderAppKitView { RecordingPenView() } })
         }
         states.append(contentsOf: StateRenderAlertCatalog.states())
         return states

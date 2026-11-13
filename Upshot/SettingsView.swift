@@ -80,13 +80,15 @@ final class SettingsNavigation {
 
     var selectedTab: SettingsTab = .general
     var searchText = ""
+    private(set) var renderDetail: AnyView?
 
     private init() {}
 
-    func prepareRenderState(selectedTab: SettingsTab, searchText: String = "") {
+    func prepareRenderState(selectedTab: SettingsTab, searchText: String = "", detail: AnyView? = nil) {
         assert(UpshotStorage.isRenderingStates)
         self.selectedTab = selectedTab
         self.searchText = searchText
+        renderDetail = detail
     }
 }
 
@@ -108,7 +110,7 @@ struct SettingsView: View {
                 )
                 .toolbar(removing: .sidebarToggle)
         } detail: {
-            SettingsDetailView(tab: navigation.selectedTab)
+            SettingsDetailView(tab: navigation.selectedTab, renderDetail: navigation.renderDetail)
                 .environment(permissions)
         }
         .navigationTitle("Settings")
@@ -390,8 +392,22 @@ struct SettingsSearchEntry: Identifiable, Equatable {
 
 private struct SettingsDetailView: View {
     let tab: SettingsTab
+    let renderDetail: AnyView?
 
     var body: some View {
+        Group {
+            if let renderDetail {
+                renderDetail
+            } else {
+                pane
+            }
+        }
+        .navigationTitle(tab.title)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var pane: some View {
         Group {
             switch tab {
             case .general:
@@ -418,8 +434,6 @@ private struct SettingsDetailView: View {
                 SettingsAboutPane()
             }
         }
-        .navigationTitle(tab.title)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

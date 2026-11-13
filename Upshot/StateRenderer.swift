@@ -11,16 +11,19 @@ struct StateRenderDefinition {
     let sourceFile: String
     let line: Int
     let size: CGSize
-    var scrollFraction: CGFloat? = nil
+    let placement: StateRenderPlacement
+    let scroll: StateRenderScroll
+    var makeAlert: (() -> NSAlert)? = nil
     let makeView: () async throws -> AnyView
 
     init(_ name: String, source: String, marker: String, size: CGSize, scroll: CGFloat? = nil,
-         makeView: @escaping () async throws -> AnyView) {
+         makeAlert: (() -> NSAlert)? = nil, makeView: @escaping () async throws -> AnyView) {
         self.name = name
         sourceFile = "Upshot/\(source).swift"
         line = StateRenderSource.line(in: sourceFile, containing: marker)
         self.size = size
-        scrollFraction = scroll
+        (placement, self.scroll) = StateRenderPlacement.resolve(name: name, scrollFraction: scroll)
+        self.makeAlert = makeAlert
         self.makeView = makeView
     }
 }
@@ -34,6 +37,7 @@ struct StateRenderEntry: Codable {
     let name: String
     let state: String
     let appearance: String
+    let scrollFrame: Int?
     let sourceFile: String
     let line: Int
     let pixelWidth: Int
@@ -42,6 +46,7 @@ struct StateRenderEntry: Codable {
     let captureMethod: String
     let windowLevel: Int
     let desktopWindowLevel: Int
+    let wallpaper: String
     let filename: String
 }
 
@@ -50,6 +55,7 @@ struct StateRenderManifest: Codable {
     let isolationVerified: Bool
     let defaultsSuite: String
     let statesPerAppearance: Int
+    let displaySize: [Int]
     let contactSheet: String
 }
 
@@ -59,6 +65,31 @@ enum StateRenderer {
     static var fixtureVideoURL: URL?
     static let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow))
     static var renderLevel: NSWindow.Level { NSWindow.Level(rawValue: desktopLevel - 1) }
+    static let captureMethod = "screenCaptureKitDisplayFrame"
+    private static var definitionsByName: [String: StateRenderDefinition] = [:]
+
+    private struct Selection {
+        let state: String
+        let appearance: String?
+        let scrollFrame: Int?
+
+        init(_ requested: String) {
+            var name = requested
+            var appearance: String?
+            for candidate in ["light", "dark"] where name.hasSuffix("-" + candidate) {
+                appearance = candidate
+                name.removeLast(candidate.count + 1)
+            }
+            var scrollFrame: Int?
+            if let range = name.range(of: "-scroll-", options: .backwards), let number = Int(name[range.upperBound...]) {
+                scrollFrame = number
+                name = String(name[..<range.lowerBound])
+            }
+            state = name
+            self.appearance = appearance
+            self.scrollFrame = scrollFrame
+        }
+    }
 
     static func run() -> Never {
         let arguments = Array(CommandLine.arguments.dropFirst(2))
@@ -94,38 +125,45 @@ enum StateRenderer {
             UpshotStorage.defaults.removePersistentDomain(forName: UpshotStorage.fixtureIdentifier)
             if let root = UpshotStorage.fixtureRoot { try? FileManager.default.removeItem(at: root) }
         }
+        _ = try StateRenderDisplay.frame
         let fixtures = try await StateRenderFixtures.make()
         fixtureVideoURL = fixtures.project.screenURL
+        try StateRenderDesktop.install(fixtureImage: fixtures.image)
         let definitions = StateRenderCatalog.states(fixtures: fixtures)
         let duplicateNames = Dictionary(grouping: definitions, by: \.name).filter { $0.value.count > 1 }.keys.sorted()
         guard duplicateNames.isEmpty else {
             throw StateRenderFailure(message: "Duplicate state names: \(duplicateNames.joined(separator: ", "))")
         }
-        let selected = definitions.filter { definition in
-            requested == nil || requested == definition.name || requested == definition.name + "-light" || requested == definition.name + "-dark"
-        }
+        definitionsByName = Dictionary(uniqueKeysWithValues: definitions.map { ($0.name, $0) })
+        let selection = requested.map(Selection.init)
+        let selected = definitions.filter { selection == nil || selection?.state == $0.name }
         guard !selected.isEmpty else { throw StateRenderFailure(message: "Unknown state: \(requested ?? "")") }
         let inventory = selected.map { ["state": $0.name, "sourceFile": $0.sourceFile, "line": String($0.line), "status": "pending"] }
         try JSONSerialization.data(withJSONObject: inventory, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("catalog.json"), options: .atomic)
         AppLog.event("rendering", "state_renderer_started", fields: ["activationPolicy": "prohibited", "statesPerAppearance": String(describing: selected.count)])
         var entries: [StateRenderEntry] = []
-        for appearance in ["light", "dark"] {
-            for definition in selected where requested == nil || requested == definition.name || requested == definition.name + "-" + appearance {
-                scenario = definition.name
-                StateRenderFixtures.resetPreferences()
-                let entry = try await capture(definition, appearance: appearance, output: output)
-                entries.append(entry)
+        for appearance in ["light", "dark"] where selection?.appearance == nil || selection?.appearance == appearance {
+            for definition in selected {
+                let started = Date()
+                let captured = try await capture(definition, appearance: appearance, onlyScrollFrame: selection?.scrollFrame, output: output)
+                entries += captured
+                FileHandle.standardError.write(Data("rendered state=\(definition.name) appearance=\(appearance) frames=\(captured.count) seconds=\(String(format: "%.2f", Date().timeIntervalSince(started)))\n".utf8))
             }
         }
-        let completedInventory = selected.map { ["state": $0.name, "sourceFile": $0.sourceFile, "line": String($0.line), "status": "rendered"] }
+        let completedInventory = selected.map { definition in
+            ["state": definition.name, "sourceFile": definition.sourceFile, "line": String(definition.line), "status": "rendered",
+             "frames": entries.filter { $0.state == definition.name && $0.appearance == "light" }.map(\.name).joined(separator: ",")]
+        }
         try JSONSerialization.data(withJSONObject: completedInventory, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("catalog.json"), options: .atomic)
         try contactSheet(entries: entries, output: output)
         try isolation.verify(to: output)
         let manifest = StateRenderManifest(states: entries, isolationVerified: true,
                                           defaultsSuite: UpshotStorage.fixtureIdentifier,
-                                          statesPerAppearance: selected.count, contactSheet: "contact_sheet.png")
+                                          statesPerAppearance: selected.count,
+                                          displaySize: [Int(StateRenderDisplay.size.width), Int(StateRenderDisplay.size.height)],
+                                          contactSheet: "contact_sheet.png")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
@@ -133,113 +171,133 @@ enum StateRenderer {
         print("Rendered \(entries.count) PNGs to \(output.path)")
     }
 
-    private static func capture(_ definition: StateRenderDefinition, appearance: String, output: URL) async throws -> StateRenderEntry {
+    private static func prepare(_ definition: StateRenderDefinition) async throws -> AnyView {
+        scenario = definition.name
+        StateRenderFixtures.resetPreferences()
+        SettingsNavigation.shared.prepareRenderState(selectedTab: .general)
+        return try await definition.makeView()
+    }
+
+    private static func context(named name: String, on stage: StateRenderStage) async throws -> NSWindow {
+        guard let definition = definitionsByName[name], case .window(let kind) = definition.placement else {
+            throw StateRenderFailure(message: "Unknown context window state \(name)")
+        }
+        let window = stage.addWindow(kind, view: try await prepare(definition))
+        window.contentView?.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(250))
+        window.contentView?.layoutSubtreeIfNeeded()
+        return window
+    }
+
+    private static func build(_ definition: StateRenderDefinition, on stage: StateRenderStage) async throws {
+        switch definition.placement {
+        case .window(let kind):
+            stage.addWindow(kind, view: try await prepare(definition))
+        case .panel(let panel):
+            try stage.addPanel(panel, view: try await prepare(definition))
+        case .display:
+            try stage.addDisplay(view: try await prepare(definition))
+        case .alert(let contextName):
+            var context: NSWindow?
+            if let contextName { context = try await self.context(named: contextName, on: stage) }
+            scenario = definition.name
+            guard let makeAlert = definition.makeAlert else { throw StateRenderFailure(message: "\(definition.name) has no alert") }
+            stage.addAlert(makeAlert(), over: context)
+        case .popover(let contextName, let anchor):
+            let context = try await context(named: contextName, on: stage)
+            try stage.addPopover(try await prepare(definition), over: context, anchor: anchor)
+        case .panelOverContext(let contextName, let panel):
+            let context = try await context(named: contextName, on: stage)
+            try stage.addPanel(panel(context.frame), view: try await prepare(definition))
+        case .panelOverDisplay(let backdrop, let panel):
+            let view = try await prepare(definition)
+            try stage.addDisplay(view: try backdrop())
+            try stage.addPanel(panel, view: view)
+        }
+    }
+
+    private static func settle(_ stage: StateRenderStage, milliseconds: Int) async throws {
+        for window in stage.windows { window.contentView?.layoutSubtreeIfNeeded() }
+        try await Task.sleep(for: .milliseconds(milliseconds))
+        for window in stage.windows {
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            if window.hasShadow { window.invalidateShadow() }
+        }
+    }
+
+    private static func scrollOffsets(_ scroll: NSScrollView?, mode: StateRenderScroll) -> [CGFloat?] {
+        guard let scroll else { return [nil] }
+        let range = StateRenderStage.scrollRange(scroll)
+        let visible = scroll.contentView.bounds.height - scroll.contentInsets.top - scroll.contentInsets.bottom
+        switch mode {
+        case .top: return [nil]
+        case .fraction(let fraction): return [range.lowerBound + (range.upperBound - range.lowerBound) * fraction]
+        case .frames:
+            guard range.upperBound - range.lowerBound > 2 else { return [nil] }
+            let step = max(120, visible - 64)
+            var offsets: [CGFloat] = [range.lowerBound]
+            while let last = offsets.last, last < range.upperBound { offsets.append(min(range.upperBound, last + step)) }
+            return offsets
+        }
+    }
+
+    private static func apply(offset: CGFloat, to scroll: NSScrollView) {
+        guard let document = scroll.documentView else { return }
+        let range = StateRenderStage.scrollRange(scroll)
+        let y = document.isFlipped ? offset : range.upperBound - (offset - range.lowerBound)
+        scroll.contentView.scroll(to: CGPoint(x: scroll.contentView.bounds.minX, y: y))
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
+
+    private static func capture(_ definition: StateRenderDefinition, appearance: String, onlyScrollFrame: Int?, output: URL) async throws -> [StateRenderEntry] {
         NSApp.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
-        let root = try await definition.makeView()
-        let usesWindowChrome = ["settings-", "library-", "annotation-", "studio-"].contains { definition.name.hasPrefix($0) }
-            && !definition.name.contains("-section-") && !definition.name.contains("options")
-            && !definition.name.contains("audio-export") && !definition.name.contains("new-style")
-            && !definition.name.contains("expanded") && !definition.name.contains("inspector-")
-            && definition.size.height <= 1000
-        let controller = NSHostingController(rootView: root
-            .defaultAppStorage(UpshotStorage.defaults)
-            .environment(\.colorScheme, appearance == "dark" ? .dark : .light)
-            .transaction { $0.disablesAnimations = true }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor)))
-        controller.sizingOptions = []
-        let host = controller.view
-        let window = StateRenderWindow(contentRect: CGRect(origin: .zero, size: definition.size),
-                                       styleMask: usesWindowChrome ? [.titled, .closable, .resizable, .fullSizeContentView] : [.borderless], backing: .buffered, defer: false)
-        window.level = renderLevel
-        window.isReleasedWhenClosed = false
-        window.ignoresMouseEvents = true
-        window.hasShadow = false
-        window.appearance = NSApp.appearance
-        window.contentViewController = controller
-        window.setFrame(CGRect(origin: .zero, size: definition.size), display: false)
-        defer {
-            window.orderOut(nil)
-            window.contentView = nil
-            window.close()
-        }
+        let stage = try StateRenderStage(appearance: appearance)
+        defer { stage.tearDown() }
         try verifyWindows()
-        window.orderBack(nil)
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(definition.name.hasPrefix("quick-look-") ? 1800 : 300))
-        host.layoutSubtreeIfNeeded()
-        if let fraction = definition.scrollFraction {
-            scroll(host, fraction: fraction)
-            try await Task.sleep(for: .milliseconds(80))
-            host.layoutSubtreeIfNeeded()
-        }
+        try await build(definition, on: stage)
         try verifyWindows()
-        guard let windowInfo = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]],
-              let actualLevel = windowInfo.first?[kCGWindowLayer as String] as? Int,
-              actualLevel < desktopLevel else {
-            throw StateRenderFailure(message: "Could not verify below-desktop level for \(definition.name)")
-        }
-        let width = Int(definition.size.width * 2)
-        let height = Int(definition.size.height * 2)
-        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
-                                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 32) else {
-            throw StateRenderFailure(message: "Could not allocate \(definition.name)")
-        }
-        bitmap.size = definition.size
-        window.appearance?.performAsCurrentDrawingAppearance {
-            host.cacheDisplay(in: host.bounds, to: bitmap)
-        }
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw StateRenderFailure(message: "PNG encoding failed") }
-        let name = definition.name + "-" + appearance
-        let destination = output.appendingPathComponent(name + ".png")
-        var captureMethod = "cacheDisplay"
-        if CGPreflightScreenCaptureAccess() {
-            window.sharingType = .readOnly
-            let number = window.windowNumber
-            let status = try await Task.detached {
-                let capture = Process()
-                capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-                capture.arguments = ["-l", String(number), "-o", "-x", destination.path]
-                capture.standardOutput = FileHandle.nullDevice
-                capture.standardError = FileHandle.nullDevice
-                try capture.run()
-                capture.waitUntilExit()
-                return capture.terminationStatus
-            }.value
-            guard status == 0, let captured = NSImage(contentsOf: destination),
-                  let representation = captured.representations.first,
-                  representation.pixelsWide == width, representation.pixelsHigh == height else {
-                throw StateRenderFailure(message: "Window capture failed to produce 2x pixels for \(name)")
+        try await settle(stage, milliseconds: definition.name.hasPrefix("quick-look-") ? 1800 : 450)
+        try await stage.addShadows()
+        try await settle(stage, milliseconds: 120)
+        let scrollView = stage.primaryScrollView()
+        let offsets = scrollOffsets(scrollView, mode: definition.scroll)
+        var entries: [StateRenderEntry] = []
+        for (index, offset) in offsets.enumerated() {
+            let frameNumber = offsets.count > 1 ? index + 1 : nil
+            if let onlyScrollFrame, frameNumber != onlyScrollFrame { continue }
+            if let offset, let scrollView {
+                apply(offset: offset, to: scrollView)
+                try await settle(stage, milliseconds: 160)
             }
-            captureMethod = "window"
-        } else {
+            try verifyWindows()
+            let (image, level) = try await stage.capture()
+            try verifyWindows()
+            let frameName = definition.name + (frameNumber.map { "-scroll-\($0)" } ?? "")
+            let name = frameName + "-" + appearance
+            let destination = output.appendingPathComponent(name + ".png")
+            let bitmap = NSBitmapImageRep(cgImage: image)
+            bitmap.size = StateRenderDisplay.size
+            guard let png = bitmap.representation(using: .png, properties: [:]) else { throw StateRenderFailure(message: "PNG encoding failed for \(name)") }
             try png.write(to: destination, options: .atomic)
+            AppLog.event("rendering", "state_renderer", fields: ["desktopLevel": String(describing: desktopLevel), "level": String(describing: level), "method": captureMethod, "outcome": "success", "width": String(describing: image.width), "state": name, "height": String(describing: image.height), "windows": String(describing: stage.windows.count)])
+            entries.append(StateRenderEntry(name: name, state: definition.name, appearance: appearance, scrollFrame: frameNumber,
+                                            sourceFile: definition.sourceFile, line: definition.line, pixelWidth: image.width,
+                                            pixelHeight: image.height, scale: Int(StateRenderDisplay.scale), captureMethod: captureMethod,
+                                            windowLevel: level, desktopWindowLevel: desktopLevel,
+                                            wallpaper: StateRenderWallpaper.url(appearance: appearance).path, filename: name + ".png"))
         }
-        AppLog.event("rendering", "state_renderer", fields: ["desktopLevel": String(describing: desktopLevel), "level": String(describing: actualLevel), "method": String(describing: captureMethod), "outcome": "success", "width": String(describing: width), "state": String(describing: name), "height": String(describing: height)])
-        return StateRenderEntry(name: name, state: definition.name, appearance: appearance,
-                                sourceFile: definition.sourceFile, line: definition.line, pixelWidth: width,
-                                pixelHeight: height, scale: 2, captureMethod: captureMethod, windowLevel: actualLevel,
-                                desktopWindowLevel: desktopLevel, filename: name + ".png")
+        return entries
     }
 
     private static func verifyWindows() throws {
-        guard NSApp.activationPolicy() == .prohibited,
+        guard NSApp.activationPolicy() == .prohibited, !NSApp.isActive,
               NSApp.windows.allSatisfy({ $0.level.rawValue < desktopLevel || !$0.isVisible }) else {
             let windows = NSApp.windows.filter(\.isVisible).map {
                 "\(type(of: $0)) number=\($0.windowNumber) level=\($0.level.rawValue) title=\($0.title)"
             }.joined(separator: "; ")
-            throw StateRenderFailure(message: "State renderer display safety invariant failed state=\(scenario) policy=\(NSApp.activationPolicy().rawValue) windows=\(windows)")
+            throw StateRenderFailure(message: "State renderer display safety invariant failed state=\(scenario) policy=\(NSApp.activationPolicy().rawValue) active=\(NSApp.isActive) windows=\(windows)")
         }
-    }
-
-    private static func scroll(_ view: NSView, fraction: CGFloat) {
-        if let scroll = view as? NSScrollView, let document = scroll.documentView {
-            let maximum = max(0, document.bounds.height - scroll.contentView.bounds.height)
-            scroll.contentView.scroll(to: CGPoint(x: 0, y: maximum * (document.isFlipped ? fraction : 1 - fraction)))
-            scroll.reflectScrolledClipView(scroll.contentView)
-        }
-        for child in view.subviews { scroll(child, fraction: fraction) }
     }
 
     private static func contactSheet(entries: [StateRenderEntry], output: URL) throws {

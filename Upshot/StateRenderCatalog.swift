@@ -41,7 +41,8 @@ enum StateRenderCatalog {
                     UpshotStorage.defaults.set(UpshotPreferences.startingToolLastUsed, forKey: UpshotPreferences.annotationStartingToolKey)
                     UpshotStorage.defaults.set(false, forKey: UpshotPreferences.lowResolutionEditorPreviewKey)
                 }
-                return AnyView(NavigationStack { SettingsAnnotatePane().navigationTitle("Annotate") })
+                SettingsNavigation.shared.prepareRenderState(selectedTab: .annotate)
+                return AnyView(SettingsView())
             }
         }
         for variant in ["", "-expanded", "-shortcuts-access-required"] {
@@ -51,18 +52,21 @@ enum StateRenderCatalog {
                     UpshotStorage.defaults.set(QuickAccessAutoCloseAction.saveAndClose.rawValue, forKey: UpshotPreferences.previewAutoCloseActionKey)
                     UpshotStorage.defaults.set(true, forKey: UpshotPreferences.previewMoveToActiveScreenKey)
                 }
-                let pane = variant == "-shortcuts-access-required" ? SettingsQuickAccessPane(accessibilityGranted: false) : SettingsQuickAccessPane()
-                return AnyView(NavigationStack { pane.navigationTitle("Quick Access") })
+                SettingsNavigation.shared.prepareRenderState(selectedTab: .quickAccess,
+                                                             detail: variant == "-shortcuts-access-required" ? AnyView(SettingsQuickAccessPane(accessibilityGranted: false)) : nil)
+                return AnyView(SettingsView())
             }
         }
         add("settings-section-screenshot-output-jpeg-transparent-expanded", "ScreenshotOutputSettingsSection", "struct ScreenshotOutputSettingsSection", 860, 820) {
             UpshotStorage.defaults.set(ScreenshotExportFormat.jpeg.rawValue, forKey: UpshotPreferences.exportFormatKey)
             UpshotStorage.defaults.set(true, forKey: UpshotPreferences.autoCompressKey)
             UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.transparent.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)
-            return AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() })
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .screenshots, detail: AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() }))
+            return AnyView(SettingsView())
         }
         add("settings-shortcuts-expanded", "SettingsShortcutsPane", "struct SettingsShortcutsPane", 860, 4260) {
-            AnyView(SettingsShortcutsPane(model: fixtures.shortcutSettingsModel(customizesAllInOne: true)))
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .shortcuts, detail: AnyView(SettingsShortcutsPane(model: fixtures.shortcutSettingsModel(customizesAllInOne: true))))
+            return AnyView(SettingsView())
         }
         for variant in ["search", "search-empty", "recording", "conflict", "registration-failure"] {
             add("settings-shortcuts-\(variant)", "SettingsShortcutsPane", "struct SettingsShortcutsPane", 800, 640) {
@@ -75,7 +79,8 @@ enum StateRenderCatalog {
                 if variant == "registration-failure" {
                     model.presentRejectionForRendering("⌃⌥Space could not be registered. It may be used by another app. Choose a different shortcut.", for: .window)
                 }
-                return AnyView(NavigationStack { SettingsShortcutsPane(model: model, searchText: searchText).navigationTitle("Shortcuts") })
+                SettingsNavigation.shared.prepareRenderState(selectedTab: .shortcuts, detail: AnyView(SettingsShortcutsPane(model: model, searchText: searchText)))
+                return AnyView(SettingsView())
             }
         }
         let textRecognitionVariants: [(String, String, Bool, Bool)] = [
@@ -91,23 +96,25 @@ enum StateRenderCatalog {
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recognitionDetectLinksKey)
                 UpshotStorage.defaults.set(analyzeCaptures, forKey: UpshotPreferences.libraryAnalyzeCapturesKey)
                 UpshotStorage.defaults.set(false, forKey: UpshotPreferences.librarySortExistingKey)
-                return AnyView(NavigationStack { SettingsTextRecognitionPane().navigationTitle("Text Recognition") })
+                SettingsNavigation.shared.prepareRenderState(selectedTab: .textRecognition)
+                return AnyView(SettingsView())
             }
         }
-        let sections: [(String, String, () -> AnyView)] = [
-            ("area-selection", "AreaSelectionSettingsSection", { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
-            ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() }) }),
-            ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
-            ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
-            ("after-screenshot", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
-            ("after-recording", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) })
+        let sections: [(String, String, SettingsTab, () -> AnyView)] = [
+            ("area-selection", "AreaSelectionSettingsSection", .screenshots, { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
+            ("screenshot-output", "ScreenshotOutputSettingsSection", .screenshots, { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() }) }),
+            ("live-recording", "LiveRecordingSettingsSection", .screenRecording, { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
+            ("recording-export", "RecordingExportSettingsSection", .screenRecording, { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
+            ("after-screenshot", "AfterCaptureSettingsSection", .screenshots, { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
+            ("after-recording", "AfterCaptureSettingsSection", .screenRecording, { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) })
         ]
-        for (name, source, view) in sections {
+        for (name, source, tab, view) in sections {
             add("settings-section-\(name)-expanded", source, "struct ", 860, name == "screenshot-output" ? 820 : 900) {
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.screenshotApplyBackgroundPresetKey)
                 UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.customWallpaper.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recordingDoNotDisturbKey)
-                return view()
+                SettingsNavigation.shared.prepareRenderState(selectedTab: tab, detail: view())
+                return AnyView(SettingsView())
             }
         }
         let advancedStates: [(String, Int, String?)] = [
@@ -123,7 +130,8 @@ enum StateRenderCatalog {
                     try Data(configurationText.utf8).write(to: UpshotStorage.configurationFileURL)
                     AutomationConfiguration.shared.synchronize()
                 }
-                return AnyView(SettingsAdvancedPane())
+                SettingsNavigation.shared.prepareRenderState(selectedTab: .advanced)
+                return AnyView(SettingsView())
             }
         }
         states += StateRenderLibraryCatalog.states(fixtures: fixtures)
@@ -221,15 +229,12 @@ enum StateRenderCatalog {
         }
         for hover in [false, true] {
             add("pinned-screenshot\(hover ? "-hover" : "")", "PinnedScreenshotPresenter", "struct PinnedScreenshotView", 640, 400) {
-                AnyView(PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {}))
+                let size = PinnedScreenshotPresenter.displaySize(forPixelSize: fixtures.pixelSize, scale: StateRenderDisplay.scale)
+                return AnyView(PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {}).frame(width: size.width, height: size.height))
             }
         }
         func historyOverDesktop(_ view: some View) -> AnyView {
-            AnyView(view.background {
-                Image(nsImage: fixtures.image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            })
+            AnyView(view)
         }
         for filter in CaptureHistoryFilter.allCases {
             add("history-\(filter.rawValue)", "CaptureHistoryView", "struct CaptureHistoryView", 1140, CaptureHistoryStrip.preferredHeight) {
@@ -268,16 +273,16 @@ enum StateRenderCatalog {
         }
         for mode in AllInOneCaptureMode.allCases {
             add("selector-all-in-one-\(mode.rawValue)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
-                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
-                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: true, crosshair: false) })
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: true, crosshair: false, size: StateRenderDisplay.size) })
             }
         }
         for variant in ["aspect", "narrow", "no-selection", "status"] {
-            let size = variant == "narrow" ? CGSize(width: 700, height: 625) : CGSize(width: 1000, height: 625)
+            let size = StateRenderDisplay.size
             add("selector-all-in-one-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", size.width, size.height) {
-                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
                 return AnyView(StateRenderAppKitView {
@@ -291,27 +296,29 @@ enum StateRenderCatalog {
             add("selector-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.areaSelectionCrosshairKey)
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.areaSelectionMagnifierKey)
-                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
-                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier") })
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier", size: StateRenderDisplay.size) })
             }
         }
         for variant in ["magnifier-above", "magnifier-below", "area-default"] {
             add("selector-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
                 UpshotStorage.defaults.set(variant != "area-default", forKey: UpshotPreferences.areaSelectionCrosshairKey)
                 UpshotStorage.defaults.set(variant != "area-default", forKey: UpshotPreferences.areaSelectionMagnifierKey)
-                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
-                let selection = variant == "magnifier-above" ? CGRect(x: 120, y: 60, width: 500, height: 230) : variant == "magnifier-below" ? CGRect(x: 120, y: 330, width: 500, height: 230) : nil
+                let scale = CGSize(width: StateRenderDisplay.size.width / 1000, height: StateRenderDisplay.size.height / 625)
+                let selection = (variant == "magnifier-above" ? CGRect(x: 120, y: 60, width: 500, height: 230) : variant == "magnifier-below" ? CGRect(x: 120, y: 330, width: 500, height: 230) : nil)
+                    .map { CGRect(x: $0.minX * scale.width, y: $0.minY * scale.height, width: $0.width * scale.width, height: $0.height * scale.height) }
                 let pointer = selection.map { CGPoint(x: $0.maxX, y: variant == "magnifier-above" ? $0.maxY : $0.minY) }
-                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: .area, allInOne: false, crosshair: false, pointer: pointer, selection: selection) })
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: .area, allInOne: false, crosshair: false, size: StateRenderDisplay.size, pointer: pointer, selection: selection) })
             }
         }
         for renderState in ScrollingCaptureControlPanel.RenderState.allCases {
             add("scrolling-capture-\(renderState.rawValue)", "ScrollingCaptureControlPanel", "final class ScrollingCaptureControlPanel", 640, 230) {
-                AnyView(Image(nsImage: fixtures.image).resizable().aspectRatio(contentMode: .fill).overlay { ScrollingCaptureControlPanel.renderView(renderState) }.clipped())
+                ScrollingCaptureControlPanel.renderView(renderState)
             }
         }
         for variant in ["picker", "picker-teleprompter", "recording", "paused", "starting", "finishing", "picker-visible-windows", "picker-area", "picker-area-empty", "picker-area-teleprompter", "flyout", "flyout-hover-gif"] {
@@ -327,8 +334,7 @@ enum StateRenderCatalog {
                 )
                 ScreenRecordingManager.shared.state = variant == "paused" ? .paused : variant == "starting" ? .starting : variant == "finishing" ? .finishing : .recording
                 ScreenRecordingManager.shared.elapsedTime = 83
-                guard variant.hasPrefix("flyout") else { return AnyView(RecordingBarView()) }
-                return AnyView(RecordingBarView().background { Image(nsImage: fixtures.image).resizable().scaledToFill() }.clipped())
+                return AnyView(RecordingBarView())
             }
         }
         for count in [3, 2, 1] {
@@ -338,12 +344,12 @@ enum StateRenderCatalog {
         }
         for (name, feedback) in CaptureFeedbackRenderStates.textFeedback {
             add("capture-text-\(name)", "CaptureTextFeedbackPresenter", "struct CaptureTextFeedbackView", 560, 150) {
-                AnyView(CaptureFeedbackRenderBackdrop(image: fixtures.image) { CaptureTextFeedbackView(feedback: feedback) })
+                AnyView(CaptureTextFeedbackView(feedback: feedback).padding(CaptureTextFeedbackPresenter.shadowSlack))
             }
         }
         for variant in CaptureFeedbackRenderStates.codeVariants {
             add("capture-code-\(variant)", "CaptureCodeFeedbackPresenter", "struct CaptureCodeFeedbackView", 520, variant == "many" ? 500 : 340) {
-                AnyView(CaptureFeedbackRenderBackdrop(image: fixtures.image) { CaptureFeedbackRenderStates.codeFeedbackView(variant: variant) })
+                AnyView(CaptureFeedbackRenderStates.codeFeedbackView(variant: variant))
             }
         }
         return states + StateRenderSupplementalCatalog.states(fixtures: fixtures)

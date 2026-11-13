@@ -1,34 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct StateRenderAlertView: NSViewRepresentable {
-    let alert: AppAlert
-    var fieldText: String? = nil
-
-    func makeNSView(context: Context) -> NSView {
-        let field = fieldText.map { ScreenshotCaptureNamePrompt.makeNameField(name: $0) }
-        let presented = alert.makeNSAlert(accessoryView: field)
-        presented.window.level = StateRenderer.renderLevel
-        presented.window.isReleasedWhenClosed = false
-        presented.layout()
-        let content = presented.window.contentView!
-        presented.window.contentView = nil
-        presented.window.close()
-        let container = NSView()
-        container.addSubview(content)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            content.widthAnchor.constraint(equalToConstant: content.frame.width),
-            content.heightAnchor.constraint(equalToConstant: content.frame.height)
-        ])
-        return container
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 enum StateRenderAlertCatalog {
     private struct FixtureError: LocalizedError {
         let errorDescription: String?
@@ -131,8 +103,10 @@ enum StateRenderAlertCatalog {
         ]
         return alerts.map { state in
             StateRenderDefinition("alert-\(state.name)", source: state.source, marker: state.marker,
-                                  size: CGSize(width: 620, height: 400)) {
-                AnyView(StateRenderAlertView(alert: state.alert, fieldText: state.fieldText))
+                                  size: StateRenderDisplay.size, makeAlert: {
+                                      state.alert.makeNSAlert(accessoryView: state.fieldText.map { ScreenshotCaptureNamePrompt.makeNameField(name: $0) })
+                                  }) {
+                AnyView(EmptyView())
             }
         }
     }

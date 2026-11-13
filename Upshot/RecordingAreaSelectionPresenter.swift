@@ -392,8 +392,8 @@ extension RecordingAreaSelectionPresenter {
     func installRenderSelection(active: Bool, selected: Bool, interacting: Bool) {
         precondition(UpshotStorage.isRenderingStates)
         isActive = active
-        let frame = CGRect(x: 0, y: 0, width: 1000, height: 625)
-        selection = selected ? Selection(displayID: 0, screenFrame: frame, scale: 2, rect: CGRect(x: 180, y: 140, width: 640, height: 360)) : nil
+        let frame = CGRect(origin: .zero, size: StateRenderDisplay.size)
+        selection = selected ? Selection(displayID: 0, screenFrame: frame, scale: StateRenderDisplay.scale, rect: StateRenderDesktop.recordingRect) : nil
         displayedRect = nil
         isInteracting = interacting
     }

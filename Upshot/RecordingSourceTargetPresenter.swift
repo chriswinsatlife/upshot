@@ -409,12 +409,12 @@ private extension RecordingSourceTargetPresenter.Target {
 extension RecordingSourceTargetPresenter {
     static func renderOverlay(window: Bool) -> some View {
         precondition(UpshotStorage.isRenderingStates)
-        let frame = CGRect(x: 0, y: 0, width: 1000, height: 625)
+        let frame = CGRect(origin: .zero, size: StateRenderDisplay.size)
         shared.mode = window ? .window : .display
         shared.target = Target(source: window ? .window(0) : .display(0),
-                               frame: window ? CGRect(x: 100, y: 100, width: 800, height: 450) : frame,
+                               frame: window ? CGRect(x: 144, y: 176, width: 1440, height: 812) : frame,
                                title: window ? "Release Overview" : "Display 1",
-                               detail: window ? "Upshot · 1600 × 900" : "2000 × 1250 · 60 FPS",
+                               detail: window ? "Upshot · 1600 × 900" : "3456 × 2234 · 120 FPS",
                                icon: window ? NSImage(named: NSImage.applicationIconName) : nil)
         return RecordingSourceTargetOverlay(screenFrame: frame)
     }
