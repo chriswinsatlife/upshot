@@ -18,6 +18,7 @@ struct ScreenshotOutputSettingsSection: View {
     @State private var desktopIconError: String?
     @AppStorage(UpshotPreferences.screenshotFilenameTemplateKey) private var filenameTemplate = ScreenshotFileNaming.defaultTemplate
     @AppStorage(UpshotPreferences.screenshotFilenameCounterKey) private var filenameCounter = 0
+    @AppStorage(UpshotPreferences.screenshotAskForNameKey) private var askForName = false
 
     var body: some View {
         Section("Screenshot Output") {
@@ -91,6 +92,8 @@ struct ScreenshotOutputSettingsSection: View {
         }
 
         Section("Screenshot Filename") {
+            Toggle("Ask for a name after every capture", isOn: $askForName)
+                .toggleStyle(.ink)
             TextField("Template", text: $filenameTemplate)
             HStack {
                 Text("Insert token")
