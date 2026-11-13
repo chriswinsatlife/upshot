@@ -114,21 +114,17 @@ struct SettingsPermissionRow: View {
 
     var body: some View {
         let granted = permissions.isGranted(kind)
-        HStack(spacing: 12) {
-            Image(systemName: kind.systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(granted ? Palette.label : (kind.isRequired ? Palette.warning : Palette.secondaryLabel))
-                .frame(width: 22)
-
-            InterfaceRowLabel(kind.title, detail: kind.detail)
-
-            Spacer(minLength: 8)
-
+        InterfaceRow(
+            kind.title,
+            detail: granted || !kind.isRequired ? nil : kind.detail,
+            systemImage: kind.systemImage,
+            detailIsCritical: true
+        ) {
             ZStack(alignment: .trailing) {
                 if granted {
-                    Label("Allowed", systemImage: "checkmark")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Text("Allowed")
+                        .font(.dsBody)
+                        .foregroundStyle(Palette.secondaryLabel)
                         .transition(.blurPop)
                 } else {
                     InterfaceActionButton("Allow") {
@@ -140,39 +136,4 @@ struct SettingsPermissionRow: View {
         }
         .motion(value: granted)
     }
-}
-
-struct SettingsStatusFooter: View {
-    let permissions: SettingsPermissions
-
-    var body: some View {
-        let missing = permissions.missingRequired
-        HStack(alignment: .center, spacing: 9) {
-            StatusDot(color: missing == nil ? Palette.success : Palette.warning)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(missing == nil ? "Ready to capture" : "Needs attention")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Palette.label)
-                Text(missing.map { "Allow \($0.title)" } ?? SettingsStatusFooter.versionString)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondaryLabel)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if let missing { permissions.request(missing) }
-        }
-        .motion(value: missing)
-    }
-
-    static let versionString: String = {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-        return "Version \(version) (\(build))"
-    }()
 }

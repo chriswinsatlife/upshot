@@ -49,19 +49,23 @@ enum StateRenderSupplementalCatalog {
             states.append(StateRenderDefinition(name, source: source, marker: marker,
                                                  size: CGSize(width: width, height: height), makeView: view))
         }
-        add("settings-general-permissions-denied", "SettingsGeneralPane", "struct GeneralSettingsPane", 1000, 820) {
-            SettingsNavigation.shared.selectedTab = .general
+        add("settings-general-permissions-denied", "SettingsGeneralPane", "struct SettingsGeneralPane", 1000, 820) {
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .general)
+            return AnyView(SettingsView())
+        }
+        add("settings-sidebar-search", "SettingsView", "struct SettingsSearchEntry", 1000, 820) {
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .general, searchText: "record")
             return AnyView(SettingsView())
         }
         for variant in ["configured", "connected", "failed"] {
             add("settings-cloud-\(variant)", "SettingsCloudPane", "struct CloudSettingsPane", 1000, 1000) {
-                SettingsNavigation.shared.selectedTab = .cloud
+                SettingsNavigation.shared.prepareRenderState(selectedTab: .cloud)
                 return AnyView(SettingsView())
             }
         }
         add("settings-mcp-disabled", "SettingsMCPPane", "struct MCPSettingsPane", 1000, 820) {
             UpshotStorage.defaults.set(false, forKey: UpshotPreferences.agentServerEnabledKey)
-            SettingsNavigation.shared.selectedTab = .mcp
+            SettingsNavigation.shared.prepareRenderState(selectedTab: .mcp)
             return AnyView(SettingsView())
         }
         add("settings-section-after-recording-upload-paused", "AfterCaptureSettingsSection", "struct AfterCaptureActionsSection", 860, 520) {

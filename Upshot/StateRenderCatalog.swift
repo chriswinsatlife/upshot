@@ -18,12 +18,12 @@ enum StateRenderCatalog {
         }
         for tab in SettingsTab.allCases where tab != .overlay {
             add("settings-\(tab.rawValue)", "SettingsView", "struct SettingsView", 1000, 820) {
-                SettingsNavigation.shared.selectedTab = tab
+                SettingsNavigation.shared.prepareRenderState(selectedTab: tab)
                 return AnyView(SettingsView())
             }
-            if tab != .about {
-                add("settings-\(tab.rawValue)-expanded", "SettingsView", "struct SettingsView", 1000, tab == .screenshots ? 2000 : tab == .general ? 2300 : 1800) {
-                    SettingsNavigation.shared.selectedTab = tab
+            if tab != .about, tab != .shortcuts {
+                add("settings-\(tab.rawValue)-expanded", "SettingsView", "struct SettingsView", 1000, tab == .screenshots ? 2000 : tab == .general ? 820 : 1800) {
+                    SettingsNavigation.shared.prepareRenderState(selectedTab: tab)
                     UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recordingDoNotDisturbKey)
                     UpshotStorage.defaults.set(true, forKey: UpshotPreferences.screenshotApplyBackgroundPresetKey)
                     UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.customWallpaper.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)

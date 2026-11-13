@@ -1,20 +1,16 @@
-
 import AppKit
 import ServiceManagement
 import SwiftUI
 
-struct GeneralSettingsPane: View {
+struct SettingsGeneralPane: View {
     @AppStorage(UpshotPreferences.exportDirectoryPathKey) private var exportDirectoryPath = ""
-    @AppStorage(UpshotPreferences.saveButtonUsesFolderKey) private var saveButtonUsesFolder = false
     @AppStorage(UpshotPreferences.playSoundsKey) private var playSounds = true
     @AppStorage(UpshotPreferences.showMenuBarIconKey) private var showMenuBarIcon = true
     @AppStorage(UpshotPreferences.hideDockIconKey) private var hideDockIcon = false
-    @AppStorage(UpshotPreferences.includeAppWindowsInCapturesKey)
-    private var includeAppWindowsInCaptures = false
-    @AppStorage(UpshotPreferences.libraryAnalyzeCapturesKey) private var analyzeCaptures = true
-    @AppStorage(UpshotPreferences.librarySortExistingKey) private var sortExistingCaptures = false
     @State private var launchAtLoginStatus = LaunchAtLoginController.status
     @State private var launchAtLoginError: String?
+
+    @Environment(SettingsPermissions.self) private var permissions
 
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(
@@ -23,159 +19,56 @@ struct GeneralSettingsPane: View {
         )
     }
 
-    private var saveButtonUsesFolderBinding: Binding<Bool> {
+    private var showDockIconBinding: Binding<Bool> {
         Binding(
-            get: { _ = saveButtonUsesFolder; return UpshotPreferences.saveButtonUsesConfiguredFolder },
-            set: { saveButtonUsesFolder = $0 }
+            get: { !hideDockIcon },
+            set: { hideDockIcon = !$0 }
         )
     }
 
-    @Environment(SettingsPermissions.self) private var permissions
+    private var launchAtLoginDetail: String? {
+        if let launchAtLoginError { return launchAtLoginError }
+        if launchAtLoginStatus.requiresApproval { return "Approve Upshot in System Settings › General › Login Items." }
+        return nil
+    }
 
     var body: some View {
         InterfaceFormPage {
-            CaptureHistorySettingsSection()
+            InterfaceSection("App") {
+                Toggle(isOn: launchAtLoginBinding) {
+                    InterfaceRowLabel("Launch at login", detail: launchAtLoginDetail, detailIsCritical: launchAtLoginError != nil)
+                }
+                .frame(minHeight: InterfaceMetrics.rowMinimumHeight)
 
-            AutomationSettingsSection()
+                InterfaceToggleRow("Show menu bar icon", isOn: $showMenuBarIcon)
+                InterfaceToggleRow("Show Dock icon", isOn: showDockIconBinding)
+                InterfaceToggleRow("Play sounds", isOn: $playSounds)
+            }
 
-            Section("Permissions") {
+            InterfaceSection("Export") {
+                InterfaceFolderRow(
+                    "Export folder",
+                    folderURL: UpshotPreferences.exportDirectory,
+                    onReset: exportDirectoryPath.isEmpty ? nil : { exportDirectoryPath = "" },
+                    onChoose: chooseExportDirectory
+                )
+            }
+
+            InterfaceSection("Permissions") {
                 ForEach(SettingsPermissions.Kind.allCases) { kind in
                     SettingsPermissionRow(kind: kind, permissions: permissions)
                 }
             }
-
-            Section("Save Location") {
-                HStack(spacing: 10) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Palette.secondaryLabel)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Export folder")
-                        Text(UpshotPreferences.exportDirectory.abbreviatedPath)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(UpshotPreferences.exportDirectory.path)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    if !exportDirectoryPath.isEmpty {
-                        InspectorResetButton(help: "Use the default folder") {
-                            exportDirectoryPath = ""
-                        }
-                        .transition(.blurPop)
-                    }
-
-                    InterfaceActionButton("Change…") {
-                        chooseExportDirectory()
-                    }
-                }
-                .motion(value: exportDirectoryPath.isEmpty)
-
-                Toggle(isOn: saveButtonUsesFolderBinding) {
-                    InterfaceRowLabel(
-                        "Save without choosing a location",
-                        detail: "When you click Save, write straight to the export folder instead of asking where to put it."
-                    )
-                }
-                .toggleStyle(.ink)
-            }
-
-            Section("Library") {
-                Toggle(isOn: $analyzeCaptures) {
-                    InterfaceRowLabel(
-                        "Analyze captures",
-                        detail: "Read the text in screenshots and recordings so search can find it, and sort new captures into categories. Everything runs on this Mac."
-                    )
-                }
-                .toggleStyle(.ink)
-
-                if analyzeCaptures, CaptureLibraryAnalyzer.isModelAvailable {
-                    Toggle(isOn: $sortExistingCaptures) {
-                        InterfaceRowLabel(
-                            "Sort existing captures",
-                            detail: "Use Apple Intelligence on captures taken before sorting was turned on. It works in the background and can take an hour or more for a large Library."
-                        )
-                    }
-                    .toggleStyle(.ink)
-                    .transition(.blurPop)
-                }
-            }
-            .motion(value: analyzeCaptures)
-            .onChange(of: analyzeCaptures) { _, _ in CaptureLibraryIndex.shared.settingsDidChange() }
-            .onChange(of: sortExistingCaptures) { _, _ in CaptureLibraryIndex.shared.settingsDidChange() }
-
-            Section("System") {
-                Toggle(isOn: launchAtLoginBinding) {
-                    InterfaceRowLabel(
-                        "Launch at login",
-                        detail: "Start Upshot automatically when you sign in."
-                    )
-                }
-                .toggleStyle(.ink)
-
-                if let launchAtLoginError {
-                    Text(launchAtLoginError)
-                        .font(.caption)
-                        .foregroundStyle(Palette.record)
-                } else if launchAtLoginStatus.requiresApproval {
-                    Text("Approve Upshot in System Settings → General → Login Items.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Toggle(isOn: $playSounds) {
-                    InterfaceRowLabel(
-                        "Play sounds",
-                        detail: "Play the camera shutter sound when a screenshot is taken."
-                    )
-                }
-                .toggleStyle(.ink)
-
-                Toggle(isOn: $showMenuBarIcon) {
-                    InterfaceRowLabel(
-                        "Show menu bar icon",
-                        detail: "When hidden, reopen Upshot to get back to Settings."
-                    )
-                }
-                .toggleStyle(.ink)
-
-                Toggle(isOn: $hideDockIcon) {
-                    InterfaceRowLabel(
-                        "Hide Dock icon",
-                        detail: "Keep Upshot out of the Dock and Cmd-Tab, even while its windows are open. The menu bar won't show Upshot's menus."
-                    )
-                }
-                .toggleStyle(.ink)
-            }
-
-            Section("Capture Visibility") {
-                Toggle(isOn: $includeAppWindowsInCaptures) {
-                    InterfaceRowLabel(
-                        "Include Upshot windows in captures",
-                        detail: "Show preview cards, recording controls, Settings, and other Upshot windows in screenshots and screen recordings."
-                    )
-                }
-                .toggleStyle(.ink)
-            }
         }
-        .onAppear {
-            refreshLaunchAtLoginStatus()
-        }
+        .onAppear(perform: refreshLaunchAtLoginStatus)
         .onChange(of: hideDockIcon) { _, _ in
             AppActivationPolicy.dockIconPreferenceDidChange()
-        }
-        .onChange(of: includeAppWindowsInCaptures) { _, _ in
-            PreviewWindowCaptureExclusion.shared.refreshRegisteredWindows()
         }
     }
 
     private func chooseExportDirectory() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Save Location"
+        panel.title = "Choose Export Folder"
         panel.prompt = "Choose"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -183,12 +76,9 @@ struct GeneralSettingsPane: View {
         panel.canCreateDirectories = true
         panel.directoryURL = UpshotPreferences.exportDirectory
 
-        guard panel.runModal() == .OK,
-              let url = panel.url else {
-            return
-        }
-
+        guard panel.runModal() == .OK, let url = panel.url else { return }
         exportDirectoryPath = url.path
+        AppLog.event("settings", "export_folder_changed", fields: ["path": url.abbreviatedPath])
     }
 
     private func refreshLaunchAtLoginStatus() {
@@ -199,8 +89,10 @@ struct GeneralSettingsPane: View {
         do {
             launchAtLoginError = nil
             try LaunchAtLoginController.setEnabled(isEnabled)
+            AppLog.event("settings", "launch_at_login_changed", fields: ["enabled": String(isEnabled), "outcome": "success"])
         } catch {
             launchAtLoginError = "Could not update Launch at Login: \(error.localizedDescription)"
+            AppLog.event("settings", "launch_at_login_changed", fields: ["enabled": String(isEnabled), "outcome": "failed", "error": AppLog.error(error)])
         }
 
         refreshLaunchAtLoginStatus()
@@ -224,15 +116,18 @@ private enum LaunchAtLoginStatus {
 @MainActor
 private enum LaunchAtLoginController {
     static var status: LaunchAtLoginStatus {
+        if UpshotStorage.isRenderingStates {
+            return StateRenderer.scenario.hasSuffix("-expanded") ? .requiresApproval : .disabled
+        }
         switch SMAppService.mainApp.status {
         case .enabled:
-            .enabled
+            return .enabled
         case .requiresApproval:
-            .requiresApproval
+            return .requiresApproval
         case .notRegistered, .notFound:
-            .disabled
+            return .disabled
         @unknown default:
-            .disabled
+            return .disabled
         }
     }
 

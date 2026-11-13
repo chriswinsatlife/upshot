@@ -328,9 +328,9 @@ enum StateRenderSource {
             ("private struct SetupVideoPlayer: NSViewRepresentable {", 493),
         ],
         "Upshot/SettingsGeneralPane.swift": [
-            ("struct GeneralSettingsPane: View {", 6),
-            ("private enum LaunchAtLoginStatus {", 210),
-            ("private enum LaunchAtLoginController {", 225),
+            ("struct SettingsGeneralPane: View {", 5),
+            ("private enum LaunchAtLoginStatus {", 102),
+            ("private enum LaunchAtLoginController {", 117),
         ],
         "Upshot/SettingsMCPPane.swift": [
             ("struct MCPSettingsPane: View {", 4),
@@ -344,12 +344,12 @@ enum StateRenderSource {
             ("struct SettingsQuickAccessPane: View {", 4),
         ],
         "Upshot/SettingsView.swift": [
-            ("enum SettingsTab: String, CaseIterable, Identifiable {", 9),
-            ("final class SettingsNavigation {", 47),
-            ("struct SettingsView: View {", 57),
-            ("private struct SettingsSidebarView: View {", 160),
-            ("private struct SettingsSidebarRow: View {", 176),
-            ("private struct SettingsDetailView: View {", 194),
+            ("enum SettingsTab: String, CaseIterable, Identifiable {", 4),
+            ("final class SettingsNavigation {", 78),
+            ("struct SettingsView: View {", 93),
+            ("private struct SettingsSidebar: View {", 185),
+            ("struct SettingsSearchEntry: Identifiable, Equatable {", 308),
+            ("private struct SettingsDetailView: View {", 391),
         ],
         "Upshot/TeleprompterOverlayPresenter.swift": [
             ("struct TeleprompterNotchShape: Shape {", 6),
