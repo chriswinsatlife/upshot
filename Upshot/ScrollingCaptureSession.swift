@@ -1,0 +1,253 @@
+import AppKit
+
+enum ScrollingCaptureActions {
+    static func start() {
+        Task { await CaptureCoordinator.shared.captureScrollingAwaiting() }
+    }
+}
+
+@MainActor
+final class ScrollingCaptureSession {
+    struct Result {
+        let url: URL
+        let displayID: CGDirectDisplayID?
+        let source: CaptureSource?
+    }
+
+    static let shared = ScrollingCaptureSession()
+
+    private var active = false
+    private var identifier = UUID()
+    private var panel: ScrollingCaptureControlPanel?
+    private var continuation: CheckedContinuation<Result?, Never>?
+    private var task: Task<Void, Never>?
+    private var processor = ScrollingCaptureProcessor()
+    private var frameSource: ScrollingCaptureFrameSource?
+    private var geometry: [ScrollingCaptureFrameSource.Geometry] = []
+    private var rect = CGRect.zero
+    private var source: CaptureSource?
+    private var height = 0
+    private var stopRequested = false
+    private var finishing = false
+
+    func capture(selection: AreaCaptureSelectionResult? = nil) async -> Result? {
+        guard !active, !Task.isCancelled else { return nil }
+        active = true
+        let identifier = UUID()
+        self.identifier = identifier
+        defer {
+            task?.cancel()
+            task = nil
+            panel?.close()
+            panel = nil
+            frameSource = nil
+            geometry.removeAll()
+            source = nil
+            processor = ScrollingCaptureProcessor()
+            active = false
+        }
+        do {
+            let selected: AreaCaptureSelectionResult
+            if let selection { selected = selection }
+            else {
+                guard let selection = try await AreaCaptureSelection.shared.select(scrolling: true) else { return nil }
+                selected = selection
+            }
+            rect = selected.rect
+            source = selected.source
+            geometry = selected.snapshots.map { .init(displayID: $0.displayID, frame: $0.frame, scale: $0.scale) }
+            guard rect.height * (geometry.filter { $0.frame.intersects(rect) }.map(\.scale).max() ?? 1) >= 8 else {
+                throw ScrollingCaptureError.invalidImage
+            }
+            height = 0
+            stopRequested = false
+            finishing = false
+            return await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    self.continuation = continuation
+                    if Task.isCancelled { complete(nil); return }
+                    let panel = ScrollingCaptureControlPanel(rect: rect)
+                    panel.onStart = { [weak self] mode in self?.start(mode: mode) }
+                    panel.onStop = { [weak self] in self?.stop() }
+                    panel.onCancel = { [weak self] in self?.cancel() }
+                    self.panel = panel
+                    panel.show()
+                    NSLog("Scrolling capture controls opened: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
+                }
+            } onCancel: {
+                Task { @MainActor in
+                    if self.identifier == identifier { self.cancel() }
+                }
+            }
+        } catch {
+            NSLog("Scrolling capture failed: %@", error.localizedDescription)
+            CaptureTextFeedbackPresenter.shared.showFailure(title: error.localizedDescription,
+                                                          displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
+        }
+    }
+
+    private func start(mode: ScrollingCaptureControlPanel.Mode) {
+        guard continuation != nil, task == nil, !finishing else { return }
+        if mode == .automatic, !CGPreflightPostEventAccess(), !CGRequestPostEventAccess() {
+            update(status: "Enable Accessibility for Auto-Scroll, or choose Manual.", running: false)
+            NSLog("Scrolling capture auto-scroll unavailable: event posting permission denied")
+            return
+        }
+        stopRequested = false
+        update(status: mode == .manual ? "Scroll down slowly inside the selected area. Stop saves the image." : "Auto-Scroll is running. Stop saves the image.", running: true)
+        NSLog("Scrolling capture started: mode=%@", mode == .manual ? "manual" : "automatic")
+        let identifier = identifier
+        task = Task { [weak self] in
+            guard let self else { return }
+            await run(mode: mode)
+            if self.identifier == identifier { task = nil }
+        }
+    }
+
+    private func run(mode: ScrollingCaptureControlPanel.Mode) async {
+        do {
+            guard let panel else { return }
+            if frameSource == nil {
+                let prepared = try await ScrollingCaptureFrameSource(rect: rect, geometry: geometry, panelID: panel.windowID)
+                try Task.checkCancellation()
+                frameSource = prepared
+            }
+            guard let frameSource else { return }
+            if height == 0 {
+                _ = try await captureFrame()
+                update(status: "Capture started. Stop saves the image.", running: true)
+            }
+            var unchangedFrames = 0
+            var failedFrames = 0
+            while !Task.isCancelled && !stopRequested {
+                if mode == .automatic {
+                    try postScroll(in: frameSource.rect)
+                    try await Task.sleep(for: .milliseconds(400))
+                } else {
+                    try await Task.sleep(for: .milliseconds(180))
+                }
+                try Task.checkCancellation()
+                do {
+                    let update = try await captureFrame()
+                    if stopRequested { break }
+                    failedFrames = 0
+                    unchangedFrames = update.kind == .unchanged ? unchangedFrames + 1 : 0
+                    if update.kind == .reversed {
+                        if mode == .automatic { throw ScrollingCaptureError.unverifiedOverlap }
+                        self.update(status: "Scroll down past the captured content to continue.", running: true)
+                    } else {
+                        self.update(status: mode == .manual ? "Scroll down slowly. Stop saves the image." : "Auto-Scroll is running. Stop saves the image.", running: true)
+                    }
+                    if mode == .automatic && unchangedFrames >= 4 {
+                        NSLog("Scrolling capture auto-scroll reached end: height=%ld", height)
+                        stopRequested = true
+                    }
+                } catch ScrollingCaptureError.unverifiedOverlap {
+                    failedFrames += 1
+                    update(status: "Waiting for matching content. Scroll slowly.", running: true)
+                    if mode == .automatic || failedFrames >= 3 { throw ScrollingCaptureError.unverifiedOverlap }
+                }
+            }
+            try Task.checkCancellation()
+            if stopRequested { await save() }
+        } catch is CancellationError {
+        } catch {
+            guard !Task.isCancelled, continuation != nil else { return }
+            if stopRequested && height > 0 {
+                NSLog("Scrolling capture final frame skipped: %@", error.localizedDescription)
+                await save()
+            } else {
+                NSLog("Scrolling capture paused: height=%ld error=%@", height, error.localizedDescription)
+                update(status: error.localizedDescription, running: false)
+            }
+        }
+    }
+
+    private func captureFrame() async throws -> ScrollingCaptureStitcher.Update {
+        guard let frameSource else { throw ScrollingCaptureError.invalidImage }
+        let image = try await frameSource.captureFrame()
+        try Task.checkCancellation()
+        let result = try await processor.append(image)
+        try Task.checkCancellation()
+        height = result.height
+        if result.kind == .firstFrame || result.kind == .appended {
+            NSLog("Scrolling capture frame verified: kind=%@ addedRows=%ld overlapRows=%ld meanError=%.6f height=%ld",
+                  result.kind.rawValue, result.addedRows, result.overlapRows, result.meanError, height)
+        }
+        return result
+    }
+
+    private func postScroll(in rect: CGRect) throws {
+        guard CGPreflightPostEventAccess(), let panel else { throw ScrollingCaptureError.unverifiedOverlap }
+        let points = [CGPoint(x: rect.midX, y: rect.midY), CGPoint(x: rect.midX, y: rect.maxY - rect.height / 5),
+                      CGPoint(x: rect.minX + rect.width / 5, y: rect.midY), CGPoint(x: rect.maxX - rect.width / 5, y: rect.midY)]
+        guard let point = points.first(where: { !panel.frame.insetBy(dx: -4, dy: -4).contains($0) }),
+              let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                                  wheel1: -Int32(max(1, min(200, rect.height / 4))), wheel2: 0, wheel3: 0) else {
+            throw ScrollingCaptureError.unverifiedOverlap
+        }
+        event.location = ActiveDisplayResolver.quartzPoint(fromAppKit: point)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func stop() {
+        guard continuation != nil, !finishing else { return }
+        stopRequested = true
+        update(status: "Finishing scrolling capture…", running: true, finishing: true)
+        NSLog("Scrolling capture stop requested: height=%ld", height)
+        if task == nil {
+            let identifier = identifier
+            task = Task { [weak self] in
+                guard let self else { return }
+                await save()
+                if self.identifier == identifier { task = nil }
+            }
+        }
+    }
+
+    private func save() async {
+        guard continuation != nil, !finishing else { return }
+        finishing = true
+        update(status: "Saving scrolling capture…", running: true, finishing: true)
+        do {
+            let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            let name = ScreenshotFileNaming.fileName()
+            let url = ScreenshotFileNaming.uniqueURL(fileName: name, in: directory)
+            let scale = frameSource?.scale ?? 1
+            let saved = try await processor.writePNG(to: url, scale: scale)
+            if Task.isCancelled {
+                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                throw CancellationError()
+            }
+            guard continuation != nil else { return }
+            AreaSelectionMemory.rememberScreenshot(rect: rect)
+            NSLog("Scrolling capture saved: pixels=%ldx%ld frames=%ld scale=%.2f file=%@", saved.width, saved.height, saved.frameCount, scale, url.lastPathComponent)
+            complete(Result(url: url, displayID: frameSource?.displayID, source: source))
+        } catch is CancellationError {
+        } catch {
+            guard !Task.isCancelled, continuation != nil else { return }
+            finishing = false
+            NSLog("Scrolling capture save failed: %@", error.localizedDescription)
+            update(status: "Save failed. Press Stop to retry, or Cancel.", running: false)
+        }
+    }
+
+    private func cancel() {
+        guard continuation != nil else { return }
+        NSLog("Scrolling capture cancelled: discardedHeight=%ld", height)
+        task?.cancel()
+        complete(nil)
+    }
+
+    private func complete(_ result: Result?) {
+        guard let continuation else { return }
+        self.continuation = nil
+        panel?.close()
+        continuation.resume(returning: result)
+    }
+
+    private func update(status: String, running: Bool, finishing: Bool = false) {
+        panel?.update(height: height, status: status, running: running, hasFrames: height > 0, finishing: finishing)
+    }
+}

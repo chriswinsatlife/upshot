@@ -19,7 +19,6 @@ final class CaptureCoordinator {
 
     var onShowPreview: ((URL, CGDirectDisplayID?, CaptureSource?) -> URL)?
 
-    var onScrollingCaptureRequested: ((CGRect) -> Void)?
     private(set) var lastAllInOneDispatchedWithoutScreenshot = false
 
     private init() {}
@@ -55,15 +54,7 @@ final class CaptureCoordinator {
                 RecordingBarPresenter.shared.showPicker()
                 return nil
             case .scrolling:
-                lastAllInOneDispatchedWithoutScreenshot = true
-                if let onScrollingCaptureRequested {
-                    NSLog("All-In-One scrolling capture dispatched")
-                    onScrollingCaptureRequested(selection.rect)
-                } else {
-                    NSLog("All-In-One scrolling capture placeholder selected")
-                    CaptureTextFeedbackPresenter.shared.showFailure(title: "Scrolling capture is not available yet", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
-                }
-                return nil
+                return await captureScrollingAwaiting(selection: selection)
             case .area, .element, .window, .fullscreen:
                 guard let url = try await ScreenshotManager.shared.capture(selection, includeShadow: UpshotPreferences.captureWindowShadow,
                                                                            delaySeconds: UpshotPreferences.captureDelaySeconds) else { return nil }
@@ -74,6 +65,12 @@ final class CaptureCoordinator {
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
+    }
+
+    @discardableResult
+    func captureScrollingAwaiting(selection: AreaCaptureSelectionResult? = nil) async -> URL? {
+        guard let result = await ScrollingCaptureSession.shared.capture(selection: selection) else { return nil }
+        return finishCapture(url: result.url, displayID: result.displayID, source: result.source)
     }
 
     func captureSmartElement() {

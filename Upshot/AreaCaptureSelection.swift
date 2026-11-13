@@ -44,6 +44,7 @@ final class AreaCaptureSelection {
     private var cursor: ScreenshotCursorSnapshot?
     private var frozen = true
     private(set) var isAllInOne = false
+    private var isScrollingOnly = false
     private(set) var mode: AllInOneCaptureMode = .area
     private(set) var start: CGPoint?
     private(set) var pointer = CGPoint.zero
@@ -64,14 +65,15 @@ final class AreaCaptureSelection {
         }
     }
 
-    func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area) async throws -> AreaCaptureSelectionResult? {
+    func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area, scrolling: Bool = false) async throws -> AreaCaptureSelectionResult? {
         guard !active, !CaptureCountdownPresenter.shared.isRunning, !Task.isCancelled else { return nil }
         cursor = ScreenshotCursorService.snapshot()
         active = true
         defer { active = false; snapshots.removeAll(); windows.removeAll() }
         frozen = UpshotPreferences.areaSelectionFreezeScreen
         isAllInOne = allInOne
-        mode = smartElement ? .element : allInOne ? UpshotPreferences.allInOneLastMode : initialMode
+        isScrollingOnly = scrolling
+        mode = scrolling ? .scrolling : smartElement ? .element : allInOne ? UpshotPreferences.allInOneLastMode : initialMode
         status = nil
         start = nil
         highlightedRect = allInOne ? AreaSelectionMemory.lastSelectionRect : nil
@@ -161,6 +163,7 @@ final class AreaCaptureSelection {
     }
 
     func chooseMode(_ selected: AllInOneCaptureMode) {
+        guard !isScrollingOnly else { return }
         guard isAllInOne || [.area, .window, .element].contains(selected) else { return }
         if selected == .element && !AreaSelectionAccessibility.hasPermission {
             finish(nil)
