@@ -1,14 +1,3 @@
-//
-//  CaptureShelfPresenter.swift
-//  Upshot
-//
-//  The capture shelf's window: a borderless panel the height of the screen
-//  and only as wide as a card, standing against the edge the shelf is docked
-//  to. It is transparent everywhere except the cards, the header and the
-//  handle, and the window server passes clicks on clear pixels to whatever
-//  is beneath, so the panel never blocks the windows it floats over.
-//
-
 import AppKit
 import CoreGraphics
 import SwiftUI
@@ -28,8 +17,6 @@ final class CaptureShelfPresenter {
 
     private init() {}
 
-    /// Remembers the display a capture is happening on, so its card shows
-    /// on that screen.
     func setTargetDisplay(_ displayID: CGDirectDisplayID?) {
         targetDisplayID = displayID ?? ActiveDisplayResolver.activeDisplayID()
         applyPlacement()
@@ -39,8 +26,6 @@ final class CaptureShelfPresenter {
         let panel = panel ?? makePanel()
         setTargetDisplay(displayID)
         panel.orderFrontRegardless()
-        // Ordering front while a Space switch or a full-screen transition
-        // is settling can be dropped; assert it once more after it lands.
         Task { @MainActor [weak panel] in
             try? await Task.sleep(for: .milliseconds(150))
             panel?.orderFrontRegardless()
@@ -56,7 +41,6 @@ final class CaptureShelfPresenter {
         removeMonitors()
     }
 
-    /// Moves the panel to the docked edge of the target screen.
     func applyPlacement() {
         guard let panel, let screen = targetScreen() else { return }
         let visible = screen.visibleFrame.integral
@@ -86,8 +70,6 @@ final class CaptureShelfPresenter {
         panel.isFloatingPanel = true
         panel.isReleasedWhenClosed = false
         panel.level = .screenSaver
-        // The cards bring their own entrance; AppKit's window fade on top of
-        // it reads as a second, different transition.
         panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         PreviewWindowCaptureExclusion.shared.register(window: panel)
@@ -100,11 +82,7 @@ final class CaptureShelfPresenter {
         return panel
     }
 
-    // MARK: Input
 
-    /// Space previews the hovered card in Quick Look, and Escape closes Quick
-    /// Look. The global monitor covers the usual case of another app being
-    /// active while the pointer rests on a card.
     private func installMonitors() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             Self.handleKey(event) ? nil : event
@@ -151,20 +129,19 @@ final class CaptureShelfPresenter {
 }
 
 enum CaptureShelfMetrics {
-    static let cardSize = CGSize(width: 168, height: 118)
+    static var cardSize: CGSize {
+        let scale = UpshotPreferences.previewOverlaySize.scale
+        return CGSize(width: 168 * scale, height: 118 * scale)
+    }
     static let cardRadius: CGFloat = 14
     static let cardSpacing: CGFloat = 12
-    /// Gap between the cards and the screen edge.
     static let edgeInset: CGFloat = 20
     static let bottomInset: CGFloat = 24
-    /// Room above the top card for the header that appears on hover.
     static let headerHeight: CGFloat = 26
     static let headerSpacing: CGFloat = 10
-    /// Clear room on the inner side for the cards' shadows.
     static let shadowRoom: CGFloat = 28
     static var panelWidth: CGFloat { edgeInset + cardSize.width + shadowRoom }
 
-    /// Cards that fit a panel of this height under the header.
     static func capacity(forHeight height: CGFloat) -> Int {
         let usable = height - bottomInset - headerHeight - headerSpacing - edgeInset
         let stride = cardSize.height + cardSpacing
@@ -177,17 +154,12 @@ private final class CaptureShelfPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Hosts the shelf at the panel's size, and turns two-finger swipes into
-/// tucking and untucking: toward the edge tucks the shelf away, away from it
-/// brings the shelf back from its handle.
 private final class CaptureShelfHostingView<Content: View>: NSHostingView<Content> {
     private var swipeDistance: CGFloat = 0
     private var didSwipe = false
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
-        // The panel sets this view's size; letting SwiftUI size the window
-        // while it animates feeds a layout loop.
         sizingOptions = []
         autoresizingMask = [.width, .height]
     }
@@ -197,10 +169,6 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// The panel is non-activating and usually not key. Without this the
-    /// first click on it only makes it key, and SwiftUI never sees the
-    /// press: the handle needed a second click, and when the panel could
-    /// not become key it never opened at all.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func scrollWheel(with event: NSEvent) {
@@ -211,7 +179,6 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
         }
         guard !didSwipe, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
 
-        // Positive is toward the docked edge on either side.
         let towardEdge: CGFloat = UpshotPreferences.previewPosition == .left ? -1 : 1
         swipeDistance += event.scrollingDeltaX * towardEdge
         let shelf = CaptureShelf.shared

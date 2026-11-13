@@ -1,19 +1,3 @@
-//
-//  CaptureShelfCard.swift
-//  Upshot
-//
-//  One capture on the shelf. At rest it is just the picture. On hover it
-//  frosts and shows the actions placed on it in Settings → Overlay: a round
-//  button in each corner and up to three equal-width labelled ones in the
-//  middle. While it is busy (compressing, preparing a recording, uploading)
-//  or has just finished something, that state takes the actions' place.
-//  Every action is also in its context menu, and it drags out as a file.
-//
-//  The controls are solid light chips rather than the app's glass: they sit
-//  on arbitrary screenshot content, where a fixed light-on-frost contrast
-//  reads best, and the shelf's never-key panel would draw glass flat.
-//
-
 import AppKit
 import SwiftUI
 
@@ -24,6 +8,11 @@ struct CaptureShelfCard: View {
     @State private var isHovered = false
     @State private var layoutStore = OverlayCardLayoutStore.shared
     @State private var uploader = CloudUploader.shared
+    @AppStorage(UpshotPreferences.previewOverlaySizeKey) private var overlaySize = QuickAccessOverlaySize.small
+
+    private var cardSize: CGSize {
+        CGSize(width: 168 * overlaySize.scale, height: 118 * overlaySize.scale)
+    }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: CaptureShelfMetrics.cardRadius, style: .continuous)
@@ -33,14 +22,11 @@ struct CaptureShelfCard: View {
         Image(nsImage: item.thumbnail)
             .resizable()
             .aspectRatio(contentMode: .fill)
-            .frame(width: CaptureShelfMetrics.cardSize.width, height: CaptureShelfMetrics.cardSize.height)
-            // Frosted under the controls, so they read on any screenshot.
+            .frame(width: cardSize.width, height: cardSize.height)
             .blur(radius: isFrosted ? 6 : 0, opaque: true)
             .overlay { overlay }
             .clipShape(shape)
             .overlay { shape.strokeBorder(Palette.strongHairline, lineWidth: 1) }
-            // Flatten before the shadow, so the rounded clip and the stroke
-            // move as one layer while the card slides.
             .compositingGroup()
             .shadow(color: .black.opacity(0.2), radius: 14, y: 6)
             .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
@@ -58,7 +44,7 @@ struct CaptureShelfCard: View {
                 Image(nsImage: item.thumbnail)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: CaptureShelfMetrics.cardSize.width)
+                    .frame(width: cardSize.width)
                     .clipShape(shape)
             }
             .onDragSessionUpdated { session in
@@ -77,14 +63,11 @@ struct CaptureShelfCard: View {
     private var isDragging: Bool { shelf.draggingID == item.id }
     private var isUploading: Bool { uploader.uploadingItems.contains(item.id) }
     private var uploadedLink: String? { uploader.uploadedURLs[item.id] }
-    /// Held back while the shelf moves, then shown if the pointer is still
-    /// over the card when it settles.
     private var showsActions: Bool { isHovered && !isDragging && !shelf.isMoving }
     private var isFrosted: Bool {
         showsActions || item.activity != nil || isUploading || item.flash != nil
     }
 
-    // MARK: Overlay
 
     @ViewBuilder
     private var overlay: some View {
@@ -165,14 +148,10 @@ struct CaptureShelfCard: View {
         .transition(.opacity)
     }
 
-    /// Darkens the frosted picture a little: lightly under the controls,
-    /// more under status text. The same in light and dark mode, because it
-    /// sits on the screenshot, not on the window.
     private func scrim(_ opacity: Double) -> some View {
         Rectangle().fill(.black.opacity(opacity))
     }
 
-    // MARK: Actions
 
     private var actions: some View {
         let layout = layoutStore.layout
@@ -218,8 +197,6 @@ struct CaptureShelfCard: View {
         }
     }
 
-    /// Every middle button is this wide whatever its label, so a column of
-    /// them lines up however the layout is customised.
     private static let centerButtonWidth: CGFloat = 80
 
     private func isAvailable(_ action: OverlayCardAction) -> Bool {
@@ -243,7 +220,6 @@ struct CaptureShelfCard: View {
         isBlocked(action) ? Self.deleteBlockedHelp : action.help(for: item.kind)
     }
 
-    /// Delete waits while the capture is open in an editor.
     private func isBlocked(_ action: OverlayCardAction) -> Bool {
         action == .delete && shelf.isOpenInEditor(id: item.id)
     }
@@ -269,7 +245,6 @@ struct CaptureShelfCard: View {
         }
     }
 
-    // MARK: Context menu
 
     @ViewBuilder
     private var contextMenu: some View {
@@ -309,10 +284,6 @@ struct CaptureShelfCard: View {
     }
 }
 
-/// A solid light control over the frosted card: a circle when its width
-/// matches its height, a capsule otherwise. Solid rather than glass: the
-/// shelf's panel is never key, and glass in a non-key window draws flat.
-/// Light on any screenshot, so it stays the same in dark mode.
 private struct ShelfChipButton<Label: View>: View {
     let help: String
     let width: CGFloat
