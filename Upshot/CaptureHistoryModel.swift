@@ -44,7 +44,7 @@ final class CaptureHistoryModel {
         didSet {
             guard filter != oldValue else { return }
             updateVisibleItems()
-            NSLog("Capture History filter=%@ visible=%ld", filter.rawValue, visibleItems.count)
+            AppLog.event("library", "capture_history", fields: ["filter": String(describing: filter.rawValue), "visible": String(describing: visibleItems.count)])
         }
     }
     var selectedID: String?
@@ -67,7 +67,7 @@ final class CaptureHistoryModel {
             items = result
             isLoading = false
             updateVisibleItems()
-            NSLog("Capture History loaded total=%ld visible=%ld", items.count, visibleItems.count)
+            AppLog.event("library", "capture_history_loaded", fields: ["total": String(describing: items.count), "visible": String(describing: visibleItems.count)])
         }
     }
 
@@ -82,7 +82,7 @@ final class CaptureHistoryModel {
         let current = visibleItems.firstIndex { $0.id == selectedID } ?? 0
         let index = min(max(current + offset, 0), visibleItems.count - 1)
         selectedID = visibleItems[index].id
-        NSLog("Capture History selection index=%ld id=%@", index, visibleItems[index].id)
+        AppLog.event("library", "capture_history_selection", fields: ["id": AppLog.identifier(visibleItems[index].id), "index": String(describing: index)])
     }
 
     func selectBoundary(last: Bool) {
@@ -123,10 +123,10 @@ enum CaptureHistoryActions {
         Task {
             let items = await recentCaptures()
             for item in items where restore(item) {
-                NSLog("Capture History restore last succeeded id=%@", item.id)
+                AppLog.event("library", "capture_history_restore_last_succeeded", fields: ["id": AppLog.identifier(String(describing: item.id))])
                 return
             }
-            NSLog("Capture History restore last unavailable")
+            AppLog.event("library", "capture_history_restore_last_unavailable")
             NSSound.beep()
         }
     }
@@ -146,18 +146,18 @@ enum CaptureHistoryActions {
     static func restore(_ item: CaptureLibraryItem) -> Bool {
         let url = item.session?.deliverableURL ?? item.fileURL
         guard FileManager.default.fileExists(atPath: url.path) else {
-            NSLog("Capture History restore missing id=%@", item.id)
+            AppLog.event("library", "capture_history_restore_missing", fields: ["id": AppLog.identifier(String(describing: item.id))])
             return false
         }
         let kind: PreviewMediaKind = item.isVideo ? .video : .image
         CaptureShelf.shared.show(existing: url, kind: kind)
         guard CaptureShelf.shared.items.contains(where: { $0.url == url && $0.kind == kind }) else {
-            NSLog("Capture History restore failed id=%@", item.id)
+            AppLog.event("library", "capture_history_restore_failed", fields: ["id": AppLog.identifier(String(describing: item.id))])
             return false
         }
         CaptureShelf.shared.open()
         CaptureShelfPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID())
-        NSLog("Capture History restore succeeded id=%@ kind=%@", item.id, CaptureHistoryFilter.kindTitle(for: item))
+        AppLog.event("library", "capture_history_restore_succeeded", fields: ["id": AppLog.identifier(String(describing: item.id)), "kind": String(describing: CaptureHistoryFilter.kindTitle(for: item))])
         return true
     }
 }

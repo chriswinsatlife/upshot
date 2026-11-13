@@ -19,6 +19,6 @@ struct AnnotationEditorWindowLevel: ViewModifier {
         guard !UpshotStorage.isRenderingStates else { return }
         guard let editorWindow else { return }
         editorWindow.level = alwaysOnTop ? .floating : .normal
-        NSLog("Annotation always on top applied enabled=%@ level=%ld", String(alwaysOnTop), editorWindow.level.rawValue)
+        AppLog.event("annotation", "annotation_always_on_top_applied", fields: ["enabled": String(describing: String(alwaysOnTop)), "level": String(describing: editorWindow.level.rawValue)])
     }
 }

@@ -6,11 +6,13 @@ import Carbon
 @main
 enum UpshotMain {
     static func main() {
+        AppLog.installExceptionHandler()
         if StateRenderer.isRequested { StateRenderer.run() }
         if AutomationCommandLine.isRequested { AutomationCommandLine.run() }
         if AgentRelay.isRequested {
             AgentRelay.run()
         }
+        CrashDiagnostics.shared.start()
         UpshotApp.main()
     }
 }
@@ -170,13 +172,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         let appWindowVisible = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
-        NSLog("Application reopen hasVisibleWindows=%d appWindowVisible=%d library=%@", hasVisibleWindows, appWindowVisible, appWindowVisible ? "skipped" : "shown")
+        AppLog.event("application", "application_reopen", fields: ["appWindowVisible": String(describing: appWindowVisible), "hasVisibleWindows": String(describing: hasVisibleWindows), "library": String(describing: appWindowVisible ? "skipped" : "shown")])
         guard !appWindowVisible else { return false }
         CaptureLibraryModel.shared.show()
         return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AppLog.event("application", "process_terminating")
+        AppLog.shared.flush()
         AutomationConfiguration.shared.stop()
         AgentServer.shared.stop()
     }

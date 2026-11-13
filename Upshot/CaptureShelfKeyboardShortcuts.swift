@@ -49,7 +49,7 @@ final class CaptureShelfKeyboardShortcuts {
         }
         guard eventTap == nil else { return }
         guard Self.accessibilityGranted else {
-            NSLog("Quick Access hover shortcuts scope=otherApps outcome=unavailable reason=accessibilityRequired")
+            AppLog.event("quick_access", "quick_access_hover_shortcuts", fields: ["outcome": "unavailable", "reason": "accessibilityRequired", "scope": "otherApps"])
             return
         }
 
@@ -68,7 +68,7 @@ final class CaptureShelfKeyboardShortcuts {
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            NSLog("Quick Access hover shortcuts scope=otherApps outcome=unavailable reason=eventTapUnavailable")
+            AppLog.event("quick_access", "quick_access_hover_shortcuts", fields: ["outcome": "unavailable", "reason": "eventTapUnavailable", "scope": "otherApps"])
             return
         }
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -77,12 +77,12 @@ final class CaptureShelfKeyboardShortcuts {
         guard CGEvent.tapIsEnabled(tap: tap) else {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
             CFMachPortInvalidate(tap)
-            NSLog("Quick Access hover shortcuts scope=otherApps outcome=unavailable reason=eventTapDisabled")
+            AppLog.event("quick_access", "quick_access_hover_shortcuts", fields: ["outcome": "unavailable", "reason": "eventTapDisabled", "scope": "otherApps"])
             return
         }
         eventTap = tap
         runLoopSource = source
-        NSLog("Quick Access hover shortcuts scope=otherApps outcome=enabled")
+        AppLog.event("quick_access", "quick_access_hover_shortcuts", fields: ["outcome": "enabled", "scope": "otherApps"])
     }
 
     func stop() {
@@ -103,7 +103,7 @@ final class CaptureShelfKeyboardShortcuts {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             suppressedKeyCodes.removeAll()
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
-            NSLog("Quick Access hover shortcuts outcome=eventTapReenabled")
+            AppLog.event("quick_access", "quick_access_hover_shortcuts", fields: ["outcome": "eventTapReenabled"])
             return Unmanaged.passUnretained(event)
         }
 
@@ -128,7 +128,7 @@ final class CaptureShelfKeyboardShortcuts {
         suppressedKeyCodes.insert(keyCode)
         Task {
             let performed = shelf.perform(action, id: item.id)
-            NSLog("Quick Access hover shortcut item=%@ action=%@ outcome=%@ key=consumed", item.id.uuidString, action.rawValue, performed ? "dispatched" : "unavailable")
+            AppLog.event("quick_access", "quick_access_hover_shortcut", fields: ["action": String(describing: action.rawValue), "item": String(describing: item.id.uuidString), "key": "consumed", "outcome": String(describing: performed ? "dispatched" : "unavailable")])
         }
         return nil
     }

@@ -51,7 +51,7 @@ final class CaptureCoordinator {
             switch selection.kind {
             case .recording:
                 lastAllInOneDispatchedWithoutScreenshot = true
-                NSLog("All-In-One recording controls requested")
+                AppLog.event("capture", "all_in_one_recording_controls_requested")
                 RecordingBarPresenter.shared.showPicker()
                 return nil
             case .scrolling:
@@ -62,7 +62,7 @@ final class CaptureCoordinator {
                 return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
             }
         } catch {
-            NSLog("All-In-One capture failed: %@", String(describing: error))
+            AppLog.event("capture", "all_in_one_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
@@ -180,7 +180,7 @@ final class CaptureCoordinator {
             image = selected
 
         } catch {
-            NSLog("Capture Text capture failed: %@", String(describing: error))
+            AppLog.event("capture", "capture_text_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return .captureFailed
         }
@@ -190,7 +190,7 @@ final class CaptureCoordinator {
         do {
             text = try await ImageTextRecognizer.recognizeText(in: image)
         } catch {
-            NSLog("Capture Text recognition failed: %@", String(describing: error))
+            AppLog.event("capture", "capture_text_recognition_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Text recognition failed", displayID: displayID)
             return .recognitionFailed
         }
@@ -249,6 +249,8 @@ final class CaptureCoordinator {
     @discardableResult
     @MainActor
     private func processAndFinishCapture(url: URL, displayID: CGDirectDisplayID?, source: CaptureSource?, presentsPreview: Bool = true) async -> URL? {
+        let operationID = UUID().uuidString
+        let started = ContinuousClock.now
         let metadata = ScreenshotManager.shared.lastCaptureMetadata
         do {
             let processedURL = try await ScreenshotOutputService.processCapture(
@@ -256,9 +258,11 @@ final class CaptureCoordinator {
                 displayID: displayID, captureBounds: metadata.bounds, sourceScale: metadata.sourceScale,
                 cursor: metadata.cursor, skipBackgroundPreset: metadata.skipBackgroundPreset, capturedAt: metadata.capturedAt
             )
-            return finishCapture(url: processedURL, displayID: displayID, source: source, presentsPreview: presentsPreview)
+            let result = finishCapture(url: processedURL, displayID: displayID, source: source, presentsPreview: presentsPreview)
+            AppLog.event("capture", "capture_completed", fields: ["operation_id": operationID, "type": metadata.captureType.rawValue, "outcome": "success", "duration": String(describing: started.duration(to: .now))])
+            return result
         } catch {
-            NSLog("Screenshot output integration failed; raw capture retained file=%@ error=%@", url.path, error.localizedDescription)
+            AppLog.event("capture", "capture_completed", fields: ["operation_id": operationID, "type": metadata.captureType.rawValue, "outcome": "failed", "error": AppLog.error(error), "duration": String(describing: started.duration(to: .now))])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: displayID)
             return nil
         }

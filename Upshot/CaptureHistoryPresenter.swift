@@ -20,7 +20,7 @@ final class CaptureHistoryPresenter: NSObject, NSWindowDelegate {
         applyPlacement()
         model?.refresh()
         panel?.makeKeyAndOrderFront(nil)
-        NSLog("Capture History opened display=%u", targetDisplayID ?? 0)
+        AppLog.event("library", "capture_history_opened", fields: ["display": String(describing: targetDisplayID ?? 0)])
     }
 
     func dismiss() {
@@ -35,7 +35,7 @@ final class CaptureHistoryPresenter: NSObject, NSWindowDelegate {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         keyMonitor = nil
         screenObserver = nil
-        NSLog("Capture History closed")
+        AppLog.event("library", "capture_history_closed")
     }
 
     func windowDidResignKey(_ notification: Notification) {

@@ -74,7 +74,7 @@ enum ScreenshotCompressionService {
         guard CGImageDestinationFinalize(destination) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        NSLog("Screenshot output: JPEG compression completed filename=%@ width=%d height=%d", outputURL.lastPathComponent, flattenedImage.width, flattenedImage.height)
+        AppLog.event("capture", "screenshot_output_jpeg_compression_completed", fields: ["height": String(describing: flattenedImage.height), "width": String(describing: flattenedImage.width)])
 
         return ScreenshotCompressionResult(
             outputURL: outputURL,

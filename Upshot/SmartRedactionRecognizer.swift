@@ -15,7 +15,7 @@ nonisolated enum SmartRedactionRecognizer {
         } catch is CancellationError {
             return []
         } catch {
-            NSLog("Smart Redaction %@: %@", ImageTextRecognizer.failureTitle(for: error), String(describing: error))
+            AppLog.event("annotation", "smart_redaction", fields: ["error": AppLog.error(error), "failure": ImageTextRecognizer.failureTitle(for: error)])
             await CaptureTextFeedbackPresenter.shared.showFailure(title: ImageTextRecognizer.failureTitle(for: error), displayID: nil)
             return []
         }
@@ -35,7 +35,7 @@ nonisolated enum SmartRedactionRecognizer {
                 return SmartRedactionRegion(text: String(line.text[range]), bounds: bounds)
             }
         })
-        NSLog("Smart Redaction recognition completed: lines=%ld regions=%ld", lines.count, regions.count)
+        AppLog.event("annotation", "smart_redaction_recognition_completed", fields: ["lines": String(describing: lines.count), "regions": String(describing: regions.count)])
         return regions
     }
 

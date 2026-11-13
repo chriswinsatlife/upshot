@@ -39,7 +39,7 @@ final class RecordingKeystrokeRecorder {
         lastProcessedEventTimes = [:]
         isCapturing = true
         capturesTypedKeys = UpshotPreferences.recordingCapturesTypedKeys
-        NSLog("[Upshot] Keystroke capture started typedKeys=%@", String(capturesTypedKeys))
+        AppLog.event("recording", "keystroke_capture_started", fields: ["typedKeys": String(describing: String(capturesTypedKeys))])
 
         if !CGPreflightListenEventAccess() {
             _ = CGRequestListenEventAccess()
@@ -162,7 +162,7 @@ final class RecordingKeystrokeRecorder {
             callback: callback,
             userInfo: userInfo
         ) else {
-            NSLog("[Upshot] Keystroke event tap unavailable; using NSEvent monitors only.")
+            AppLog.event("recording", "keystroke_event_tap_unavailable_using_nsevent_monitors_only")
             return
         }
 

@@ -131,7 +131,7 @@ final class CaptureShelfPresenter {
             guard !QuickLookPreviewPresenter.isShown else { return false }
             guard let action = CaptureShelfKeyboardShortcuts.action(for: event) else { return false }
             guard let item = shelf.hoveredItem, CaptureShelf.performHoveredAction(action) else { return false }
-            NSLog("Quick Access hover shortcut item=%@ action=%@ outcome=dispatched", item.id.uuidString, action.rawValue)
+            AppLog.event("quick_access", "quick_access_hover_shortcut", fields: ["action": String(describing: action.rawValue), "item": String(describing: item.id.uuidString), "outcome": "dispatched"])
             return true
         }
     }
@@ -192,7 +192,7 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
         if event.phase.contains(.cancelled) {
             swipeDistance = .zero
             swipeItemID = nil
-            NSLog("Quick Access swipe outcome=cancelled")
+            AppLog.event("quick_access", "quick_access_swipe", fields: ["outcome": "cancelled"])
             return
         }
 
@@ -211,7 +211,7 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
         if shelf.isTucked {
             if !swipedTowardEdge {
                 shelf.open()
-                NSLog("Quick Access swipe action=openShelf outcome=dispatched")
+                AppLog.event("quick_access", "quick_access_swipe", fields: ["action": "openShelf", "outcome": "dispatched"])
             }
             return
         }
@@ -228,6 +228,6 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
         } else {
             performed = false
         }
-        NSLog("Quick Access swipe item=%@ direction=%@ action=%@ outcome=%@", itemID?.uuidString ?? "none", swipedTowardEdge ? "towardEdge" : "awayFromEdge", action.rawValue, performed ? "dispatched" : "ignored")
+        AppLog.event("quick_access", "quick_access_swipe", fields: ["action": String(describing: action.rawValue), "direction": String(describing: swipedTowardEdge ? "towardEdge" : "awayFromEdge"), "item": String(describing: itemID?.uuidString ?? "none"), "outcome": String(describing: performed ? "dispatched" : "ignored")])
     }
 }

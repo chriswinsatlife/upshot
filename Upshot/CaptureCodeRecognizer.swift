@@ -34,7 +34,7 @@ nonisolated enum CaptureCodeRecognizer {
             guard code.payload != nil || code.data != nil, seen.insert(code.id).inserted else { return nil }
             return code
         }
-        NSLog("Capture code detection completed: codes=%ld", codes.count)
+        AppLog.event("capture", "capture_code_detection_completed", fields: ["codes": String(describing: codes.count)])
         return codes
     }
 
@@ -52,7 +52,7 @@ nonisolated enum CaptureCodeRecognizer {
         var seen = Set<URL>()
         let links = try ([text] + codes.compactMap(\.payload)).flatMap { try detectedLinks(in: $0) }
             .filter { seen.insert($0).inserted }
-        NSLog("Capture link detection completed: links=%ld", links.count)
+        AppLog.event("capture", "capture_link_detection_completed", fields: ["links": String(describing: links.count)])
         return CaptureCodeDetection(codes: codes, links: links)
     }
 }

@@ -33,10 +33,10 @@ extension AnnotationEditorModel {
                 return
             }
             installImageResult(result, snapshot: snapshot, shapes: shapes)
-            NSLog("Annotation combine completed layout=%@ width=%.0f height=%.0f", layout.rawValue, imageSize.width, imageSize.height)
+            AppLog.event("annotation", "annotation_combine_completed", fields: ["height": String(describing: imageSize.height), "layout": String(describing: layout.rawValue), "width": String(describing: imageSize.width)])
         } catch {
             errorMessage = "Unable to combine images: \(error.localizedDescription)"
-            NSLog("Annotation combine failed layout=%@ error=%@", layout.rawValue, error.localizedDescription)
+            AppLog.event("annotation", "annotation_combine_failed", fields: ["error": AppLog.error(error), "layout": String(describing: layout.rawValue)])
         }
     }
 }

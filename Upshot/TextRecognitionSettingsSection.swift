@@ -42,11 +42,11 @@ struct TextRecognitionSettingsSection: View {
                 }
             } catch {
                 languageError = "Recognition languages could not be loaded."
-                NSLog("Text recognition settings language loading failed: %@", String(describing: error))
+                AppLog.event("settings", "text_recognition_settings_language_loading_failed", fields: ["error": AppLog.error(error)])
             }
         }
-        .onChange(of: language) { _, _ in NSLog("Text recognition settings language changed: %@", language.isEmpty ? "automatic" : language) }
-        .onChange(of: keepLineBreaks) { _, _ in NSLog("Text recognition settings keep line breaks changed: %@", keepLineBreaks.description) }
-        .onChange(of: detectLinks) { _, _ in NSLog("Text recognition settings detect links changed: %@", detectLinks.description) }
+        .onChange(of: language) { _, _ in AppLog.event("settings", "text_recognition_settings_language_changed", fields: ["language": String(describing: language.isEmpty ? "automatic" : language)]) }
+        .onChange(of: keepLineBreaks) { _, _ in AppLog.event("settings", "text_recognition_settings_keep_line_breaks_changed", fields: ["enabled": String(keepLineBreaks)]) }
+        .onChange(of: detectLinks) { _, _ in AppLog.event("settings", "text_recognition_settings_detect_links_changed", fields: ["enabled": String(detectLinks)]) }
     }
 }

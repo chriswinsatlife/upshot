@@ -98,7 +98,7 @@ nonisolated enum RecordingGIFExporter {
             }
             if let previous { append(previous, duration: accumulatedDuration) }
             guard CGImageDestinationFinalize(destination) else { throw ExportError.encodingFailed }
-            NSLog("[Upshot] GIF export completed frames=%d sourceFrames=%d fps=%d quality=%@ optimized=%@ duration=%.3f", emittedFrames, frameCount, options.gifFrameRate.rawValue, options.gifQuality.rawValue, String(options.optimizesGIF), encodedDuration)
+            AppLog.event("recording", "gif_export_completed", fields: ["duration": String(describing: encodedDuration), "fps": String(describing: options.gifFrameRate.rawValue), "frames": String(describing: emittedFrames), "optimized": String(describing: String(options.optimizesGIF)), "quality": String(describing: options.gifQuality.rawValue), "sourceFrames": String(describing: frameCount)])
             progress(1)
             return outputURL
         } catch {

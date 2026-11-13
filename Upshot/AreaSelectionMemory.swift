@@ -24,12 +24,12 @@ enum AreaSelectionMemory {
             UpshotPreferences.allInOneLastSelectionRect = rect
             UpshotPreferences.allInOneLastSelectionDisplays = displayLayout(intersecting: rect)
         }
-        NSLog("All-In-One selection remembered: mode=%@ x=%.1f y=%.1f width=%.1f height=%.1f", mode.rawValue, rect.minX, rect.minY, rect.width, rect.height)
+        AppLog.event("capture", "all_in_one_selection_remembered", fields: ["height": String(describing: rect.height), "mode": String(describing: mode.rawValue), "width": String(describing: rect.width), "x": String(describing: rect.minX), "y": String(describing: rect.minY)])
     }
 
     static func rememberScreenshot(rect: CGRect) {
         UpshotPreferences.areaSelectionLastScreenshotRect = rect
         UpshotPreferences.areaSelectionLastScreenshotDisplays = displayLayout(intersecting: rect)
-        NSLog("Previous screenshot area remembered: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
+        AppLog.event("capture", "previous_screenshot_area_remembered", fields: ["height": String(describing: rect.height), "width": String(describing: rect.width), "x": String(describing: rect.minX), "y": String(describing: rect.minY)])
     }
 }

@@ -20,7 +20,7 @@ final class CaptureCountdownPresenter {
         guard !isRunning, !Task.isCancelled else { return false }
         guard seconds > 0 else { return true }
         let id = UUID()
-        NSLog("Capture countdown started: seconds=%ld", seconds)
+        AppLog.event("capture", "capture_countdown_started", fields: ["seconds": String(describing: seconds)])
         runID = id
         isRunning = true
         installEscapeMonitors()
@@ -49,13 +49,13 @@ final class CaptureCountdownPresenter {
             task.cancel()
         }
         guard runID == id else { return false }
-        NSLog("Capture countdown finished: completed=%d", completed)
+        AppLog.event("capture", "capture_countdown_finished", fields: ["completed": String(describing: completed)])
         cancel()
         return completed && !Task.isCancelled
     }
 
     func cancel() {
-        if isRunning { NSLog("Capture countdown dismissed") }
+        if isRunning { AppLog.event("capture", "capture_countdown_dismissed") }
         countdownTask?.cancel()
         countdownTask = nil
         runID = nil

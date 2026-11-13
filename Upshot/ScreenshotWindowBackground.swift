@@ -80,7 +80,7 @@ enum ScreenshotWindowBackgroundService {
         }
         context.draw(image, in: CGRect(x: padding, y: padding, width: image.width, height: image.height))
         guard let output = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        NSLog("Screenshot output: window background applied mode=%@ padding=%d width=%d height=%d", configuration.mode.rawValue, padding, width, height)
+        AppLog.event("capture", "screenshot_output_window_background_applied", fields: ["height": String(describing: height), "mode": String(describing: configuration.mode.rawValue), "padding": String(describing: padding), "width": String(describing: width)])
         return output
     }
 }

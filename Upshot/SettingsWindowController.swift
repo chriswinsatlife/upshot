@@ -88,7 +88,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
-        NSLog("Settings window shown visibleWindows=%ld", NSApp.windows.filter(\.isVisible).count)
+        AppLog.event("settings", "settings_window_shown", fields: ["visibleWindows": String(describing: NSApp.windows.filter(\.isVisible).count)])
 
         guard shouldAnimate else { return }
         window.displayIfNeeded()

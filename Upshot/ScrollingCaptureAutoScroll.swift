@@ -47,7 +47,7 @@ final class ScrollingCaptureAutoScroll {
         let target = windows().first { $0.isOnScreen && $0.opacity > 0 && $0.layer == 0 && $0.frame.contains(point) }
         windowID = target?.windowID
         processID = target?.processID
-        NSLog("Scrolling capture auto-scroll target recorded: window=%u process=%d", windowID ?? 0, processID ?? 0)
+        AppLog.event("capture", "scrolling_capture_auto_scroll_target_recorded", fields: ["process": String(describing: processID ?? 0), "window": String(describing: windowID ?? 0)])
     }
 
     func scroll(in rect: CGRect, excluding panelFrame: CGRect) throws {

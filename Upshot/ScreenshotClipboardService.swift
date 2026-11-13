@@ -45,6 +45,6 @@ enum ScreenshotClipboardService {
         }
         pasteboard.clearContents()
         guard pasteboard.writeObjects([item]) else { throw CocoaError(.fileWriteUnknown) }
-        NSLog("Screenshot output: clipboard copied mode=%@", selectedMode.rawValue)
+        AppLog.event("capture", "screenshot_output_clipboard_copied", fields: ["mode": String(describing: selectedMode.rawValue)])
     }
 }

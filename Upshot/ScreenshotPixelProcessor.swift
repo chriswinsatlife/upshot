@@ -57,8 +57,8 @@ nonisolated enum ScreenshotPixelProcessor {
         let context = try bitmapContext(width: width, height: height, colorSpace: colorSpace)
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let converted = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        if options.convertToSRGB { NSLog("Screenshot output: sRGB conversion completed") }
-        if scale > 1 { NSLog("Screenshot output: Retina 1x scaling completed width=%d height=%d", width, height) }
+        if options.convertToSRGB { AppLog.event("capture", "screenshot_output_srgb_conversion_completed") }
+        if scale > 1 { AppLog.event("capture", "screenshot_output_retina_1x_scaling_completed", fields: ["height": String(describing: height), "width": String(describing: width)]) }
         return converted
     }
 
@@ -88,7 +88,7 @@ nonisolated enum ScreenshotPixelProcessor {
         context.clear(CGRect(x: 1, y: 1, width: image.width, height: image.height))
         context.draw(image, in: CGRect(x: 1, y: 1, width: image.width, height: image.height))
         guard let bordered = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        NSLog("Screenshot output: 1px border completed width=%d height=%d", width, height)
+        AppLog.event("capture", "screenshot_output_1px_border_completed", fields: ["height": String(describing: height), "width": String(describing: width)])
         return bordered
     }
 

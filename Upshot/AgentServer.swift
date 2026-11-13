@@ -1,15 +1,12 @@
 
 import Darwin
 import Foundation
-import OSLog
 
 @MainActor
 final class AgentServer {
     static let shared = AgentServer()
 
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
-
-    private static let logger = Logger(subsystem: "co.chrisyork.upshot", category: "AgentServer")
 
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
@@ -37,7 +34,7 @@ final class AgentServer {
         unlink(url.path)
 
         guard var address = AgentSocket.address(for: url.path) else {
-            Self.logger.error("Agent socket path is too long")
+            AppLog.event("automation", "agent_socket_path_too_long")
             return
         }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -50,7 +47,7 @@ final class AgentServer {
         }
         umask(previousMask)
         guard bound == 0, listen(fd, 8) == 0 else {
-            Self.logger.error("Agent socket bind failed errno=\(errno)")
+            AppLog.event("automation", "agent_socket_bind_failed", fields: ["errno": String(errno)])
             close(fd)
             return
         }
@@ -64,7 +61,7 @@ final class AgentServer {
         source.setCancelHandler { close(fd) }
         source.resume()
         acceptSource = source
-        Self.logger.info("Agent server listening")
+        AppLog.event("automation", "agent_server_listening")
     }
 
     func stop() {

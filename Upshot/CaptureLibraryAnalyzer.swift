@@ -21,7 +21,7 @@ nonisolated enum CaptureLibraryAnalyzer {
         } catch is CancellationError {
             return nil
         } catch {
-            NSLog("Capture Library capture failed: id=%@ error=%@", item.id, String(describing: error))
+            AppLog.event("library", "capture_library_capture_failed", fields: ["error": AppLog.error(error), "id": AppLog.identifier(String(describing: item.id))])
             return nil
         }
         guard let primary = frames.first else { return nil }
@@ -37,7 +37,7 @@ nonisolated enum CaptureLibraryAnalyzer {
             } catch is CancellationError {
                 return nil
             } catch {
-                NSLog("Capture Library text recognition failed: id=%@ frame=%ld error=%@", item.id, index, String(describing: error))
+                AppLog.event("library", "capture_library_text_recognition_failed", fields: ["error": AppLog.error(error), "frame": String(describing: index), "id": AppLog.identifier(String(describing: item.id))])
                 continue
             }
             for line in recognized where index == 0 || seen.insert(line.text).inserted {
@@ -46,7 +46,7 @@ nonisolated enum CaptureLibraryAnalyzer {
             }
         }
         guard !Task.isCancelled else { return nil }
-        NSLog("Capture Library text recognition completed: id=%@ lines=%ld", item.id, lines.count)
+        AppLog.event("library", "capture_library_text_recognition_completed", fields: ["id": AppLog.identifier(String(describing: item.id)), "lines": String(describing: lines.count)])
 
         let featurePrint = try? makeFeaturePrint(of: primary)
         var analysis = CaptureAnalysis(id: item.id, fingerprint: item.thumbnailKey)
@@ -73,7 +73,7 @@ nonisolated enum CaptureLibraryAnalyzer {
         } catch is CancellationError {
             return analysis
         } catch {
-            NSLog("Capture Library capture failed during classification: id=%@ error=%@", item.id, String(describing: error))
+            AppLog.event("library", "capture_library_capture_failed_during_classification", fields: ["error": AppLog.error(error), "id": AppLog.identifier(String(describing: item.id))])
             image = nil
         }
         await classify(&analysis, item: item, image: image)
@@ -104,7 +104,7 @@ nonisolated enum CaptureLibraryAnalyzer {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    NSLog("Capture Library frame extraction failed: id=%@ fraction=%.2f error=%@", item.id, fraction, String(describing: error))
+                    AppLog.event("library", "capture_library_frame_extraction_failed", fields: ["error": AppLog.error(error), "fraction": String(describing: fraction), "id": AppLog.identifier(String(describing: item.id))])
                 }
             }
             return frames

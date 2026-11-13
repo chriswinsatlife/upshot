@@ -121,7 +121,7 @@ struct AreaCaptureSnapshot {
             context.restoreGState()
         }
         guard let image = context.makeImage() else { throw CocoaError(.fileReadCorruptFile) }
-        NSLog("Area composition completed: displays=%ld pixels=%ldx%ld scale=%.2f", intersecting.count, image.width, image.height, scale)
+        AppLog.event("capture", "area_composition_completed", fields: ["displays": String(describing: intersecting.count), "width": String(describing: image.width), "scale": String(describing: scale), "height": String(describing: image.height)])
         return image
     }
 }

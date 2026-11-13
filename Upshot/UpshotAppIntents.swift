@@ -89,10 +89,10 @@ nonisolated struct CaptureTextIntent: AppIntent {
         case .noTextFound:
             throw UpshotIntentError.noTextRecognized
         case .captureFailed:
-            NSLog("Capture Text intent failed: capture failed")
+            AppLog.event("application", "capture_text_intent_failed_capture_failed")
             throw UpshotIntentError.captureFailed
         case .recognitionFailed:
-            NSLog("Capture Text intent failed: text recognition failed")
+            AppLog.event("application", "capture_text_intent_failed_text_recognition_failed")
             throw UpshotIntentError.recognitionFailed
         case .copied(let text):
             return .result(value: text)

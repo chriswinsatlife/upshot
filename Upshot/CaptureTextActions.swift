@@ -12,15 +12,15 @@ enum CaptureTextActions {
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(text, forType: .string) else {
                 CaptureTextFeedbackPresenter.shared.showFailure(title: "Copy failed", displayID: displayID)
-                NSLog("Capture text clipboard write failed")
+                AppLog.event("capture", "capture_text_clipboard_write_failed")
                 return
             }
-            NSLog("Capture text clipboard write completed")
+            AppLog.event("capture", "capture_text_clipboard_write_completed")
             CaptureTextFeedbackPresenter.shared.showCopied(text: text, displayID: displayID)
         } catch is CancellationError {
             return
         } catch {
-            NSLog("Capture text %@: %@", ImageTextRecognizer.failureTitle(for: error), String(describing: error))
+            AppLog.event("capture", "capture_text", fields: ["error": AppLog.error(error), "failure": ImageTextRecognizer.failureTitle(for: error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: ImageTextRecognizer.failureTitle(for: error), displayID: displayID)
         }
     }

@@ -169,7 +169,7 @@ nonisolated struct ScrollingCaptureStitcher: Sendable {
         self.previous = current
         previousHashes = hashes
         if match.contentRows.lowerBound > 0 || footerRows > 0 {
-            NSLog("Scrolling capture fixed rows verified: headerRows=%ld footerRows=%ld", match.contentRows.lowerBound, footerRows)
+            AppLog.event("capture", "scrolling_capture_fixed_rows_verified", fields: ["footerRows": String(describing: footerRows), "headerRows": String(describing: match.contentRows.lowerBound)])
         }
         return Update(kind: height == maximumHeight ? .maximumLengthReached : .appended,
                       height: height, addedRows: addedRows, overlapRows: overlap, meanError: match.error)

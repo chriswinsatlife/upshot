@@ -15,13 +15,15 @@ enum AutomationActions {
     private static var captureInProgress = false
 
     static func perform(_ action: CaptureHotkeyAction, parameters: [String: String] = [:]) async throws -> JSONValue {
-        NSLog("Automation action started action=%@", action.route)
+        let operationID = UUID().uuidString
+        let started = ContinuousClock.now
+        AppLog.event("automation", "automation_action_started", fields: ["action": action.route, "operation_id": operationID])
         do {
             let result = try await execute(action, parameters: parameters)
-            NSLog("Automation action completed action=%@", action.route)
+            AppLog.event("automation", "automation_action_completed", fields: ["action": action.route, "operation_id": operationID, "outcome": "success", "duration": String(describing: started.duration(to: .now))])
             return result
         } catch {
-            NSLog("Automation action failed action=%@ error=%@", action.route, error.localizedDescription)
+            AppLog.event("automation", "automation_action_completed", fields: ["action": action.route, "operation_id": operationID, "outcome": error is CancellationError ? "cancelled" : "failed", "error": AppLog.error(error), "duration": String(describing: started.duration(to: .now))])
             throw error
         }
     }
@@ -260,7 +262,7 @@ enum AutomationActions {
            AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot) {
             CaptureShelfPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
         }
-        NSLog("Automation capture completed action=%@ path=%@", action.route, result["path"]?.stringValue ?? captured.path)
+        AppLog.event("automation", "automation_capture_completed", fields: ["action": String(describing: action.route)])
         return .object(result)
     }
 }

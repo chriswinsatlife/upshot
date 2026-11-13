@@ -56,7 +56,7 @@ final class ScrollingCaptureFrameSource {
             let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
             return DisplayRegion(displayID: region.displayID, frame: intersection, filter: filter, configuration: configuration)
         }
-        NSLog("Scrolling capture source prepared: displays=%ld scale=%.2f excludedPanel=%u", regions.count, scale, panelID)
+        AppLog.event("capture", "scrolling_capture_source_prepared", fields: ["displays": String(describing: regions.count), "excludedPanel": String(describing: panelID), "scale": String(describing: scale)])
     }
 
     func captureFrame() async throws -> CGImage {

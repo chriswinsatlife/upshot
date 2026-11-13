@@ -24,7 +24,7 @@ enum AnnotationEditorAction {
             model.setRedactionKind(style)
         case let .setWatermark(settings):
             model.backgroundSettings.watermark = settings
-            NSLog("Annotation watermark changed position=%@ opacity=%.2f", settings.position.rawValue, settings.opacity)
+            AppLog.event("annotation", "annotation_watermark_changed", fields: ["opacity": String(describing: settings.opacity), "position": String(describing: settings.position.rawValue)])
         case let .combineImage(url, layout):
             await model.combineImage(at: url, layout: layout)
         case let .setColorAdjustments(settings):
@@ -40,7 +40,7 @@ enum AnnotationEditorAction {
             model.setAutomaticallyExpandsCanvas(enabled)
         case let .setAlwaysOnTop(enabled):
             UpshotStorage.defaults.set(enabled, forKey: UpshotPreferences.annotationEditorAlwaysOnTopKey)
-            NSLog("Annotation always on top preference changed enabled=%@", String(enabled))
+            AppLog.event("annotation", "annotation_always_on_top_preference_changed", fields: ["enabled": String(describing: String(enabled))])
         }
     }
 }

@@ -42,7 +42,7 @@ final class CaptureTextFeedbackPresenter {
     }
 
     func showFailure(title: String, displayID: CGDirectDisplayID?) {
-        NSLog("Text recognition feedback presented: %@", title)
+        AppLog.event("capture", "text_recognition_feedback_presented")
         let detail = switch title {
         case "Capture failed": "The screenshot could not be captured or read."
         case "Text recognition failed": "The capture succeeded, but text recognition failed."

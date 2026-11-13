@@ -52,7 +52,7 @@ struct StateRenderFixtures {
         _ = await ScreenshotHistoryStore.shared.importRecordingSession(project)
         _ = await ScreenshotHistoryStore.shared.importVideo(from: project.screenURL)
         let items = await CaptureHistoryActions.recentCaptures()
-        NSLog("State renderer fixtures outcome=created screenshots=%ld captures=%ld recordingDuration=8", screenshots.count, items.count)
+        AppLog.event("rendering", "state_renderer_fixtures", fields: ["captures": String(describing: items.count), "outcome": "created", "recordingDuration": "8", "screenshots": String(describing: screenshots.count)])
         return Self(screenshots: screenshots, image: image, project: project, items: items)
     }
 

@@ -78,7 +78,7 @@ nonisolated enum CloudSidecarUploader {
                 creds: creds
             )
         } catch {
-            print("Sidecar upload failed for \(uploadID): \(error)")
+            AppLog.event("capture", "sidecar_upload_failed", fields: ["error": AppLog.error(error)])
         }
     }
 

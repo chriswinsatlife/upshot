@@ -5,7 +5,7 @@ enum ScreenshotBackgroundService {
     static func presetSettings(skipPreset: Bool) throws -> AnnotationBackgroundSettings? {
         guard UpshotPreferences.screenshotApplyBackgroundPreset else { return nil }
         guard !skipPreset else {
-            NSLog("Screenshot output: background preset skipped with Shift")
+            AppLog.event("capture", "screenshot_output_background_preset_skipped_with_shift")
             return nil
         }
         let store = AnnotationBackgroundPresetStore.shared
@@ -14,7 +14,7 @@ enum ScreenshotBackgroundService {
               !preset.hasMissingWallpaper else {
             throw ScreenshotBackgroundError.presetUnavailable
         }
-        NSLog("Screenshot output: background preset selected id=%@", preset.id.uuidString)
+        AppLog.event("capture", "screenshot_output_background_preset_selected", fields: ["id": String(describing: preset.id.uuidString)])
         return preset.settings
     }
 
@@ -36,7 +36,7 @@ enum ScreenshotBackgroundService {
                 )
             }
         )
-        NSLog("Screenshot output: background preset applied width=%d height=%d", output.width, output.height)
+        AppLog.event("capture", "screenshot_output_background_preset_applied", fields: ["height": String(describing: output.height), "width": String(describing: output.width)])
         return output
     }
 }

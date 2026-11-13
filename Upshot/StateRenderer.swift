@@ -75,7 +75,7 @@ enum StateRenderer {
                 try await render(to: output, state: arguments.count == 3 ? arguments[2] : nil)
                 exit(0)
             } catch {
-                NSLog("State renderer outcome=failed error=%@", error.localizedDescription)
+                AppLog.event("rendering", "state_renderer", fields: ["error": AppLog.error(error), "outcome": "failed"])
                 FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
                 exit(1)
             }
@@ -107,7 +107,7 @@ enum StateRenderer {
         let inventory = selected.map { ["state": $0.name, "sourceFile": $0.sourceFile, "line": String($0.line), "status": "pending"] }
         try JSONSerialization.data(withJSONObject: inventory, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("catalog.json"), options: .atomic)
-        NSLog("State renderer started statesPerAppearance=%ld activationPolicy=prohibited", selected.count)
+        AppLog.event("rendering", "state_renderer_started", fields: ["activationPolicy": "prohibited", "statesPerAppearance": String(describing: selected.count)])
         var entries: [StateRenderEntry] = []
         for appearance in ["light", "dark"] {
             for definition in selected where requested == nil || requested == definition.name || requested == definition.name + "-" + appearance {
@@ -128,7 +128,7 @@ enum StateRenderer {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
-        NSLog("State renderer outcome=success images=%ld isolation=verified contactSheet=contact_sheet.png", entries.count)
+        AppLog.event("rendering", "state_renderer", fields: ["contactSheet": "contact_sheet.png", "images": String(describing: entries.count), "isolation": "verified", "outcome": "success"])
         print("Rendered \(entries.count) PNGs to \(output.path)")
     }
 
@@ -215,7 +215,7 @@ enum StateRenderer {
         } else {
             try png.write(to: destination, options: .atomic)
         }
-        NSLog("State renderer state=%@ pixels=%ldx%ld level=%ld desktopLevel=%ld method=%@ outcome=success", name, width, height, actualLevel, desktopLevel, captureMethod)
+        AppLog.event("rendering", "state_renderer", fields: ["desktopLevel": String(describing: desktopLevel), "level": String(describing: actualLevel), "method": String(describing: captureMethod), "outcome": "success", "width": String(describing: width), "state": String(describing: name), "height": String(describing: height)])
         return StateRenderEntry(name: name, state: definition.name, appearance: appearance,
                                 sourceFile: definition.sourceFile, line: definition.line, pixelWidth: width,
                                 pixelHeight: height, scale: 2, captureMethod: captureMethod, windowLevel: actualLevel,

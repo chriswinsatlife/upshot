@@ -392,7 +392,7 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
             do {
                 _ = try await AutomationActions.perform(self)
             } catch {
-                NSLog("Automation action failed action=%@ error=%@", route, error.localizedDescription)
+                AppLog.event("settings", "automation_action_failed", fields: ["action": String(describing: route), "error": AppLog.error(error)])
                 let alert = NSAlert()
                 alert.messageText = title
                 alert.informativeText = error.localizedDescription

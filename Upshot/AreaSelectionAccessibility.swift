@@ -7,7 +7,7 @@ enum AreaSelectionAccessibility {
     static func requestPermission() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
-        NSLog("Smart element permission requested: trusted=%d", trusted)
+        AppLog.event("capture", "smart_element_permission_requested", fields: ["trusted": String(describing: trusted)])
     }
 
     static func frame(at point: CGPoint, processID: pid_t) -> CGRect? {

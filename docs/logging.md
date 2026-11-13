@@ -1,0 +1,77 @@
+---
+review_status: implementation_verified
+approval_status: not_approved
+---
+
+# Logging
+
+## Locations
+
+Upshot writes application events to `~/Library/Logs/Upshot/upshot.log` and Apple's unified log. The subsystem is `co.chrisyork.upshot`. Categories identify application, capture, annotation, recording, library, quick_access, settings, automation, rendering, crash, and verification events.
+
+The file rotates before an append would exceed 5 MiB. Three backups, `upshot.log.1` through `upshot.log.3`, retain earlier events. The newest backup is `.1`. A crash and its breadcrumbs remain together in one append; a single crash record larger than 5 MiB can exceed the rotation threshold. Files use owner-only permissions. A process lock coordinates concurrent writers and rotation.
+
+```bash
+/usr/bin/log show --last 30m --style compact --predicate 'subsystem == "co.chrisyork.upshot"'
+tail -200 "$HOME/Library/Logs/Upshot/upshot.log"
+```
+
+## Event Format
+
+Each event occupies one physical line:
+
+```text
+2026-11-13T05:45:23.497Z area=capture event=capture_completed duration="0.04 seconds" operation_id="..." outcome="success" pid="123" session_id="..." type="area"
+```
+
+Timestamps use ISO 8601 in UTC. Fields use `key="value"`. Backslashes, quotes, tabs, carriage returns, and newlines are escaped. `session_id` identifies one process execution; `pid` identifies the operating system process. Home-directory paths use `~`. Library identifiers are hashed because recording identifiers can contain paths.
+
+`AppLog.event` writes the same public, sanitized line to both destinations. Each area has its own `Logger`. Dynamic values use explicit public privacy after the caller selects non-sensitive fields. Capture processing and automation completion events include outcome, duration, and operation identifier. Existing feature events provide progress, configuration, counts, geometry, and failure context.
+
+Screenshot pixels, recognized text, clipboard contents, keystroke contents, credentials, user-selected filenames, and raw error descriptions are excluded. Errors contain the NSError domain and code. Exception reasons preserve recognized Foundation nil-dictionary messages and the verification exception. Other exception reasons are reduced to a category or `redacted_exception_reason`, because framework reasons can embed document or clipboard contents. MetricKit records include numeric exception details and the call-stack tree; the full diagnostic payload and exception arguments are excluded.
+
+## Crash Records
+
+`event=uncaught_exception` contains the Objective-C exception name, sanitized reason, call stack, and `crash_id`. The handler appends and synchronizes the crash record before normal exception termination continues. It does not catch the exception or resume execution.
+
+The process retains its last 200 events in memory. The exception handler copies these events into `event=crash_breadcrumb` lines with the same `crash_id`. The breadcrumb `index` increases from oldest to newest. The `original` field contains the original event with its original timestamp, session identifier, and process identifier.
+
+On launch, `event=system_crash_report` summarizes new regular Upshot or Upshot Dev `.ips` and `.crash` reports from `~/Library/Logs/DiagnosticReports`. Each report must identify an Upshot bundle identifier. `crash-report-checkpoint.json` records the completed scan time. `system_crash_scan_completed` records the number imported. Reports from other applications are ignored.
+
+MetricKit registration occurs before application startup. The subscriber processes past diagnostic payloads and later diagnostic deliveries. `event=metrickit_crash` includes a diagnostic identifier, reporting period, signal, exception codes, available exception name, sanitized reason, and call-stack tree. `metrickit-checkpoint.json` prevents repeated imports of the same diagnostic. System delivery determines when diagnostics become available.
+
+A signal, Swift trap, or process kill does not invoke the Objective-C handler. Every event already exists in the file. On a later launch, system and MetricKit crash imports attach the retained events from the preceding logged process execution. The original breadcrumb process identifier and timestamp establish whether that execution corresponds to the reported crash; delayed MetricKit delivery may refer to an earlier execution.
+
+To investigate a crash, locate its `crash_id`, read the associated breadcrumbs in increasing index order, and correlate the original `session_id` and `pid` with completion events. The system report filename locates the complete operating system report for symbolication. Keep all rotated files when collecting evidence.
+
+## Offline Verification
+
+These commands compile a separate executable with the production logger and crash subscriber. They do not launch Upshot or create windows.
+
+```bash
+mkdir -p .local/crash-logging
+xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
+  Upshot/AppLog.swift Upshot/CrashDiagnostics.swift scripts/verify-logging.swift \
+  -o .local/crash-logging/verify-logging
+.local/crash-logging/verify-logging file verification-marker
+/usr/bin/log show --last 3m --style compact --predicate 'subsystem == "co.chrisyork.upshot"'
+.local/crash-logging/verify-logging rotation .local/crash-logging/rotation
+.local/crash-logging/verify-logging scan .local/crash-logging/scan
+.local/crash-logging/verify-logging metrickit .local/crash-logging/metrickit
+.local/crash-logging/verify-logging exception
+```
+
+The file command verifies a readable marker and a home-directory path written with `~`. Rotation verifies concurrent writes and four readable files at a reduced threshold. Scan verifies modern and legacy report imports, bundle filtering, malformed input, and duplicate prevention; use a fresh scan directory for each run. The MetricKit command registers the production subscriber and consumes available past payloads. An empty payload array verifies registration without exercising crash ingestion.
+
+The exception command intentionally exits with SIGABRT. The final `uncaught_exception` line must contain `name="NSInvalidArgumentException"`, `reason="Upshot logging verification exception"`, a call stack, and `breadcrumb_count="200"`. Its 200 breadcrumb lines must contain original event indices 25 through 224. This verifies that the oldest 25 events were discarded.
+
+## References
+
+- Apple. (n.d.). [Logger](https://developer.apple.com/documentation/os/logger).
+- Apple. (n.d.). [OSLogPrivacy](https://developer.apple.com/documentation/os/oslogprivacy).
+- Apple. (n.d.). [NSSetUncaughtExceptionHandler](https://developer.apple.com/documentation/foundation/nssetuncaughtexceptionhandler(_:)).
+- Apple. (n.d.). [MXDiagnosticPayload](https://developer.apple.com/documentation/metrickit/mxdiagnosticpayload).
+- Apple. (n.d.). [MXCrashDiagnostic](https://developer.apple.com/documentation/metrickit/mxcrashdiagnostic).
+- Apple. (n.d.). [CTLineGetTypographicBounds](https://developer.apple.com/documentation/coretext/ctlinegettypographicbounds(_:_:_:_:)).
+- Tane, B. (n.d.). [Logging sucks](https://loggingsucks.com/).
+- Stripe. (2019). [Fast and flexible observability with canonical log lines](https://stripe.com/blog/canonical-log-lines).

@@ -168,7 +168,7 @@ final class ScreenshotHistoryStore {
             saveMetadata()
             return destinationURL
         } catch {
-            print("Failed to import screenshot into history: \(error)")
+            AppLog.event("library", "screenshot_history_import_failed", fields: ["error": AppLog.error(error)])
             return sourceURL
         }
     }
@@ -202,7 +202,7 @@ final class ScreenshotHistoryStore {
             saveMetadata()
             return destinationURL
         } catch {
-            print("Failed to import video into history: \(error)")
+            AppLog.event("library", "video_history_import_failed", fields: ["error": AppLog.error(error)])
             return sourceURL
         }
     }
@@ -332,7 +332,7 @@ final class ScreenshotHistoryStore {
             do {
                 try FileManager.default.removeItem(at: url)
             } catch {
-                print("Failed to delete history file: \(error)")
+                AppLog.event("library", "history_file_delete_failed", fields: ["error": AppLog.error(error)])
             }
         }
 
@@ -440,7 +440,7 @@ final class ScreenshotHistoryStore {
             let data = try JSONEncoder().encode(items)
             try data.write(to: Self.metadataURL, options: .atomic)
         } catch {
-            print("Failed to save screenshot history: \(error)")
+            AppLog.event("library", "screenshot_history_save_failed", fields: ["error": AppLog.error(error)])
         }
     }
 

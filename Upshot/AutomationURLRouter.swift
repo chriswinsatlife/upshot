@@ -49,12 +49,12 @@ enum AutomationURLRouter {
                 let request = try AutomationRequest(url: url)
                 if let action = CaptureHotkeyAction.allCases.first(where: { $0.route == request.route }),
                    confirmationRequiredActions.contains(action), !confirm(action) {
-                    NSLog("URL scheme declined route=%@", request.route)
+                    AppLog.event("automation", "url_scheme_declined", fields: ["route": String(describing: request.route)])
                     return
                 }
                 _ = try await perform(route: request.route, parameters: request.parameters)
             } catch {
-                NSLog("URL scheme failed error=%@", error.localizedDescription)
+                AppLog.event("automation", "url_scheme_failed", fields: ["error": AppLog.error(error)])
                 let alert = NSAlert()
                 alert.messageText = "Upshot could not perform the URL action"
                 alert.informativeText = error.localizedDescription

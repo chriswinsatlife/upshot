@@ -25,14 +25,14 @@ final class RecordingAreaHighlightPresenter {
         self.source = source
         rebuildPanels()
         update()
-        NSLog("[Upshot] Recording dimming started on \(panels.count) displays")
+        AppLog.event("recording", "recording_dimming_started", fields: ["displays": String(describing: panels.count)])
     }
 
     @discardableResult
     func update() -> Bool {
         guard let source else { return true }
         if screenFrames != NSScreen.screens.map(\.frame) {
-            NSLog("[Upshot] Recording dimming detected a display configuration change")
+            AppLog.event("recording", "recording_dimming_detected_a_display_configuration_change")
             return false
         }
         let recordingRect = source.liveRecordingRect
@@ -53,7 +53,7 @@ final class RecordingAreaHighlightPresenter {
         screenFrames.removeAll()
         source = nil
         if wasVisible {
-            NSLog("[Upshot] Recording dimming stopped")
+            AppLog.event("recording", "recording_dimming_stopped")
         }
     }
 

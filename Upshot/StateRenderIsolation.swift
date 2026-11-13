@@ -34,7 +34,7 @@ struct StateRenderIsolation {
         let after = try Self.snapshot(roots)
         try Self.write(after, to: output.appendingPathComponent("isolation-after.json"))
         guard before == after else { throw StateRenderFailure(message: "Protected file modification times changed during rendering") }
-        NSLog("State renderer isolation outcome=verified protectedEntries=%ld defaultsSuite=%@", before.count, UpshotStorage.fixtureIdentifier)
+        AppLog.event("rendering", "state_renderer_isolation", fields: ["defaultsSuite": String(describing: UpshotStorage.fixtureIdentifier), "outcome": "verified", "protectedEntries": String(describing: before.count)])
     }
 
     private static func write(_ entries: [Entry], to url: URL) throws {

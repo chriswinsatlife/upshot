@@ -165,7 +165,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
             try? FileManager.default.removeItem(at: outputURL)
             throw ExportError.writerFailed(writer.error)
         }
-        NSLog("[Upshot] Audio export completed mono=%@ format=%@", String(configuration.monoAudio), configuration.format.rawValue)
+        AppLog.event("recording", "audio_export_completed", fields: ["format": String(describing: configuration.format.rawValue), "mono": String(describing: String(configuration.monoAudio))])
         progress(1)
         return outputURL
     }

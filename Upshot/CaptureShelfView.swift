@@ -50,7 +50,7 @@ struct CaptureShelfView: View {
             .onChange(of: overlaySize) { _, size in
                 CaptureShelfPresenter.shared.applyPlacement()
                 shelf.capacity = CaptureShelfMetrics.capacity(forHeight: proxy.size.height)
-                NSLog("Quick Access overlay size=%@ width=%.0f height=%.0f capacity=%d", size.rawValue, CaptureShelfMetrics.cardSize.width, CaptureShelfMetrics.cardSize.height, shelf.capacity)
+                AppLog.event("quick_access", "quick_access_overlay", fields: ["capacity": String(describing: shelf.capacity), "height": String(describing: CaptureShelfMetrics.cardSize.height), "size": String(describing: size.rawValue), "width": String(describing: CaptureShelfMetrics.cardSize.width)])
             }
         }
         .onChange(of: positionRaw) { _, _ in

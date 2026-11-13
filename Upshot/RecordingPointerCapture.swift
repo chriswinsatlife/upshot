@@ -359,7 +359,7 @@ nonisolated final class PointerActivityRecorder: NSObject, @unchecked Sendable {
             callback: callback,
             userInfo: userInfo
         ) else {
-            NSLog("[Upshot] Pointer event tap unavailable; using sampled cursor fallback.")
+            AppLog.event("recording", "pointer_event_tap_unavailable_using_sampled_cursor_fallback")
             return false
         }
 
@@ -374,7 +374,7 @@ nonisolated final class PointerActivityRecorder: NSObject, @unchecked Sendable {
         guard CGEvent.tapIsEnabled(tap: tap) else {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
             CFMachPortInvalidate(tap)
-            NSLog("[Upshot] Pointer event tap created but not enabled (Input Monitoring not granted); using sampled cursor fallback.")
+            AppLog.event("recording", "pointer_event_tap_created_but_not_enabled_input_monitoring_not_granted_using_sampled_cursor_fallback")
             return false
         }
 

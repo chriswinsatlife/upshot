@@ -55,7 +55,7 @@ final class RecordingPenPresenter {
         panel.contentView = view
         self.panel = panel
         panel.orderFrontRegardless()
-        NSLog("[Upshot] Recording live pen prepared")
+        AppLog.event("recording", "recording_live_pen_prepared")
     }
 
     func updateGeometry() {
@@ -91,7 +91,7 @@ final class RecordingPenPresenter {
 
     func strokeEnded() {
         RecordingPenStrokeStore.shared.end()
-        NSLog("[Upshot] Recording live pen stroke completed")
+        AppLog.event("recording", "recording_live_pen_stroke_completed")
     }
 
     private func setEnabled(_ enabled: Bool) {
@@ -100,13 +100,13 @@ final class RecordingPenPresenter {
         panel?.ignoresMouseEvents = !enabled || isPaused
         if !enabled { RecordingPenStrokeStore.shared.end() }
         panel?.resetCursorRects()
-        NSLog("[Upshot] Recording live pen \(enabled ? "enabled" : "disabled")")
+        AppLog.event("recording", "recording_live_pen", fields: ["enabled": String(enabled)])
     }
 
     private func clear() {
         RecordingPenStrokeStore.shared.clear()
         strokeChanged()
-        NSLog("[Upshot] Recording live pen cleared")
+        AppLog.event("recording", "recording_live_pen_cleared")
     }
 }
 

@@ -258,7 +258,7 @@ final class CaptureShelf {
         keepCardAfterDrag = NSEvent.modifierFlags.contains(.option)
         engage(id)
         draggingID = id
-        NSLog("Quick Access drag item=%@ keepWithOption=%@ outcome=started", id.uuidString, keepCardAfterDrag.description)
+        AppLog.event("quick_access", "quick_access_drag", fields: ["item": String(describing: id.uuidString), "keepWithOption": String(describing: keepCardAfterDrag.description), "outcome": "started"])
     }
 
     func endDrag(id: ShelfItem.ID, operation: DropOperation) {
@@ -267,10 +267,10 @@ final class CaptureShelf {
         keepCardAfterDrag = false
         if completed && !keepWithOption && UpshotPreferences.previewCloseAfterDragging {
             dismiss(id: id)
-            NSLog("Quick Access drag item=%@ outcome=completed card=closed", id.uuidString)
+            AppLog.event("quick_access", "quick_access_drag", fields: ["card": "closed", "item": String(describing: id.uuidString), "outcome": "completed"])
         } else {
             withAnimation(.morphQuickIfAllowed) { draggingID = nil }
-            NSLog("Quick Access drag item=%@ outcome=%@ keepWithOption=%@ card=retained", id.uuidString, completed ? "completed" : "cancelled", keepWithOption.description)
+            AppLog.event("quick_access", "quick_access_drag", fields: ["card": "retained", "item": String(describing: id.uuidString), "keepWithOption": String(describing: keepWithOption.description), "outcome": String(describing: completed ? "completed" : "cancelled")])
         }
     }
 
@@ -380,7 +380,7 @@ final class CaptureShelf {
               !CloudUploader.shared.uploadingItems.contains(id) else { return }
         engage(id)
         let url = item.url
-        NSLog("Quick Access upload item=%@ outcome=started", id.uuidString)
+        AppLog.event("quick_access", "quick_access_upload", fields: ["item": String(describing: id.uuidString), "outcome": "started"])
         Task {
             do {
                 let result = try await CloudUploader.shared.upload(
@@ -391,25 +391,25 @@ final class CaptureShelf {
                 copyString(result.url)
                 ScreenshotHistoryStore.shared.setCloudURL(for: url, cloudURL: result.url)
                 guard self.item(id: id)?.url == url else {
-                    NSLog("Quick Access upload item=%@ outcome=succeeded card=changedOrRemoved", id.uuidString)
+                    AppLog.event("quick_access", "quick_access_upload", fields: ["card": "changedOrRemoved", "item": String(describing: id.uuidString), "outcome": "succeeded"])
                     return
                 }
                 if UpshotPreferences.previewCloseAfterUploading {
                     dismiss(id: id)
-                    NSLog("Quick Access upload item=%@ outcome=succeeded card=closed", id.uuidString)
+                    AppLog.event("quick_access", "quick_access_upload", fields: ["card": "closed", "item": String(describing: id.uuidString), "outcome": "succeeded"])
                 } else {
                     flash(.linkCopied, on: id)
-                    NSLog("Quick Access upload item=%@ outcome=succeeded card=retained", id.uuidString)
+                    AppLog.event("quick_access", "quick_access_upload", fields: ["card": "retained", "item": String(describing: id.uuidString), "outcome": "succeeded"])
                 }
             } catch is CancellationError {
-                NSLog("Quick Access upload item=%@ outcome=cancelled card=retained", id.uuidString)
+                AppLog.event("quick_access", "quick_access_upload", fields: ["card": "retained", "item": String(describing: id.uuidString), "outcome": "cancelled"])
                 return
             } catch {
                 CloudUploader.shared.clearFailed(for: id)
                 if self.item(id: id)?.url == url {
                     flash(.uploadFailed, on: id)
                 }
-                NSLog("Quick Access upload item=%@ outcome=failed card=retained error=%@", id.uuidString, error.localizedDescription)
+                AppLog.event("quick_access", "quick_access_upload", fields: ["card": "retained", "error": AppLog.error(error), "item": String(describing: id.uuidString), "outcome": "failed"])
             }
         }
     }
@@ -500,7 +500,7 @@ final class CaptureShelf {
             } catch is CancellationError {
                 return
             } catch {
-                print("Failed to compress screenshot: \(error)")
+                AppLog.event("capture", "screenshot_compression_failed", fields: ["error": AppLog.error(error)])
             }
         }
     }
@@ -606,7 +606,7 @@ final class CaptureShelf {
         let action = UpshotPreferences.previewAutoCloseAction
         autoCloseTasks[id] = nil
         engage(id)
-        NSLog("Quick Access auto-close item=%@ action=%@ outcome=started", id.uuidString, action.rawValue)
+        AppLog.event("quick_access", "quick_access_auto_close", fields: ["action": String(describing: action.rawValue), "item": String(describing: id.uuidString), "outcome": "started"])
 
         Task {
             let succeeded: Bool
@@ -634,11 +634,11 @@ final class CaptureShelf {
 
             guard succeeded else {
                 flash(.actionFailed(message: action == .saveAndClose ? "Save Failed" : "Copy Failed"), on: id)
-                NSLog("Quick Access auto-close item=%@ action=%@ outcome=failed card=retained", id.uuidString, action.rawValue)
+                AppLog.event("quick_access", "quick_access_auto_close", fields: ["action": String(describing: action.rawValue), "card": "retained", "item": String(describing: id.uuidString), "outcome": "failed"])
                 return
             }
             dismiss(id: id)
-            NSLog("Quick Access auto-close item=%@ action=%@ outcome=succeeded card=closed", id.uuidString, action.rawValue)
+            AppLog.event("quick_access", "quick_access_auto_close", fields: ["action": String(describing: action.rawValue), "card": "closed", "item": String(describing: id.uuidString), "outcome": "succeeded"])
         }
     }
 
@@ -701,7 +701,7 @@ final class CaptureShelf {
                 copyString(result.url)
                 ScreenshotHistoryStore.shared.setCloudURL(for: url, cloudURL: result.url)
             } catch {
-                print("Auto cloud upload failed: \(error)")
+                AppLog.event("capture", "cloud_upload_failed", fields: ["error": AppLog.error(error)])
             }
         }
     }
@@ -712,7 +712,7 @@ final class CaptureShelf {
             do {
                 try ScreenshotFileActions.replaceExistingExport(from: item.url, at: savedURL)
             } catch {
-                print("Failed to update saved screenshot: \(error)")
+                AppLog.event("capture", "saved_screenshot_update_failed", fields: ["error": AppLog.error(error)])
             }
         } else if UpshotPreferences.autoSave {
             let savedURL = saveToDefaultLocation(from: item.url)
@@ -751,7 +751,7 @@ final class CaptureShelf {
             try ScreenshotFileActions.copyImageToClipboard(from: url)
             return true
         } catch {
-            print("Failed to copy screenshot: \(error)")
+            AppLog.event("capture", "screenshot_copy_failed", fields: ["error": AppLog.error(error)])
             return false
         }
     }
@@ -760,7 +760,7 @@ final class CaptureShelf {
         do {
             return try ScreenshotFileActions.saveToDefaultLocation(from: url)
         } catch {
-            print("Failed to auto save: \(error)")
+            AppLog.event("capture", "screenshot_auto_save_failed", fields: ["error": AppLog.error(error)])
             return nil
         }
     }
@@ -770,7 +770,7 @@ final class CaptureShelf {
         do {
             try FileManager.default.removeItem(at: url)
         } catch {
-            print("Failed to delete capture: \(error)")
+            AppLog.event("capture", "capture_delete_failed", fields: ["error": AppLog.error(error)])
         }
     }
 

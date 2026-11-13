@@ -13,7 +13,7 @@ final class PinnedScreenshotPresenter {
 
     func pin(url: URL) {
         guard let image = ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: 1600) else {
-            NSLog("Pinned screenshot outcome=failed reason=imageUnavailable")
+            AppLog.event("quick_access", "pinned_screenshot", fields: ["outcome": "failed", "reason": "imageUnavailable"])
             return
         }
 
@@ -51,7 +51,7 @@ final class PinnedScreenshotPresenter {
         panel.setFrameOrigin(cascadedOrigin(for: contentSize))
         panel.orderFrontRegardless()
         panels.insert(panel)
-        NSLog("Pinned screenshot outcome=opened roundedCorners=%@ shadow=%@ border=%@", UpshotPreferences.pinnedScreenshotRoundedCorners.description, UpshotPreferences.pinnedScreenshotShadow.description, UpshotPreferences.pinnedScreenshotBorder.description)
+        AppLog.event("quick_access", "pinned_screenshot", fields: ["border": String(describing: UpshotPreferences.pinnedScreenshotBorder.description), "outcome": "opened", "roundedCorners": String(describing: UpshotPreferences.pinnedScreenshotRoundedCorners.description), "shadow": String(describing: UpshotPreferences.pinnedScreenshotShadow.description)])
     }
 
     private func close(_ panel: NSPanel) {
@@ -62,7 +62,7 @@ final class PinnedScreenshotPresenter {
             NotificationCenter.default.removeObserver(appearanceObserver)
             self.appearanceObserver = nil
         }
-        NSLog("Pinned screenshot outcome=closed remaining=%d", panels.count)
+        AppLog.event("quick_access", "pinned_screenshot", fields: ["outcome": "closed", "remaining": String(describing: panels.count)])
     }
 
     private func observeAppearance() {
@@ -85,7 +85,7 @@ final class PinnedScreenshotPresenter {
             panel.hasShadow = updated.shadow
             panel.invalidateShadow()
         }
-        NSLog("Pinned screenshot appearance roundedCorners=%@ shadow=%@ border=%@ panels=%d", updated.roundedCorners.description, updated.shadow.description, updated.border.description, panels.count)
+        AppLog.event("quick_access", "pinned_screenshot_appearance", fields: ["border": String(describing: updated.border.description), "panels": String(describing: panels.count), "roundedCorners": String(describing: updated.roundedCorners.description), "shadow": String(describing: updated.shadow.description)])
     }
 
     private func displaySize(forPixelSize pixelSize: CGSize) -> NSSize {
@@ -211,7 +211,7 @@ struct PinnedScreenshotView: View {
                 withAnimation(.morphQuickIfAllowed) { didCopy = false }
             }
         } catch {
-            print("Failed to copy pinned screenshot: \(error)")
+            AppLog.event("capture", "pinned_screenshot_copy_failed", fields: ["error": AppLog.error(error)])
         }
     }
 
@@ -233,7 +233,7 @@ struct PinnedScreenshotView: View {
             do {
                 try ScreenshotFileActions.save(from: url, to: destURL)
             } catch {
-                print("Failed to save pinned screenshot: \(error)")
+                AppLog.event("capture", "pinned_screenshot_save_failed", fields: ["error": AppLog.error(error)])
             }
         }
     }

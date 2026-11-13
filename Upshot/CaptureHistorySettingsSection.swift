@@ -22,7 +22,7 @@ struct CaptureHistorySettingsSection: View {
             Text("0 keeps captures indefinitely. Older captures and video projects move to Trash. Captures with an open editor are kept until a later cleanup after the editor closes. Saved copies outside the capture library are kept.")
         }
         .onChange(of: retentionDays) { _, days in
-            NSLog("Capture History retention setting days=%ld", max(0, days))
+            AppLog.event("library", "capture_history_retention_setting", fields: ["days": String(describing: max(0, days))])
             CaptureHistoryRetention.shared.scheduleCleanup()
         }
     }

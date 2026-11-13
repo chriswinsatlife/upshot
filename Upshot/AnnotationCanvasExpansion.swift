@@ -21,7 +21,7 @@ extension AnnotationEditorModel {
         if enabled { engine.pageLimits = nil }
         updateCanvasExpansion()
         engine.notifyChanged()
-        NSLog("Annotation canvas automatic expansion enabled=%@", String(enabled))
+        AppLog.event("annotation", "annotation_canvas_automatic_expansion", fields: ["enabled": String(describing: String(enabled))])
     }
 
     func updateCanvasExpansion() {
@@ -60,7 +60,6 @@ extension AnnotationEditorModel {
         )
         guard expansion != backgroundSettings.canvasExpansion else { return }
         backgroundSettings.canvasExpansion = expansion
-        NSLog("Annotation canvas expanded left=%.0f top=%.0f right=%.0f bottom=%.0f",
-              expansion.left, expansion.top, expansion.right, expansion.bottom)
+        AppLog.event("annotation", "annotation_canvas_expanded", fields: ["bottom": String(describing: expansion.bottom), "left": String(describing: expansion.left), "right": String(describing: expansion.right), "top": String(describing: expansion.top)])
     }
 }

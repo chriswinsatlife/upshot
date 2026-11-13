@@ -24,7 +24,7 @@ extension AnnotationEditorModel {
             engine.currentTextStyle = newValue
             updateSelectedText { $0.style = newValue }
             engine.notifyChanged()
-            NSLog("Annotation text style applied style=%@", newValue.rawValue)
+            AppLog.event("annotation", "annotation_text_style_applied", fields: ["style": String(describing: newValue.rawValue)])
         }
     }
 

@@ -19,14 +19,14 @@ enum ScreenshotCaptureNamePrompt {
         alert.window.initialFirstResponder = field
         NSApplication.shared.activate(ignoringOtherApps: true)
         field.selectText(nil)
-        NSLog("Screenshot output: capture name prompt shown")
+        AppLog.event("capture", "screenshot_output_capture_name_prompt_shown")
         guard alert.runModal() == .alertFirstButtonReturn,
               !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            NSLog("Screenshot output: generated capture name retained")
+            AppLog.event("capture", "screenshot_output_generated_capture_name_retained")
             return suggested
         }
         let result = resolvedFileName(entered: field.stringValue, outputScale: outputScale)
-        NSLog("Screenshot output: capture name accepted")
+        AppLog.event("capture", "screenshot_output_capture_name_accepted")
         return result
     }
 

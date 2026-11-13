@@ -36,7 +36,7 @@ enum ScreenshotCursorService {
     ) throws -> CGImage {
         guard captureBounds.width > 0, captureBounds.height > 0,
               captureBounds.contains(cursor.location) else {
-            NSLog("Screenshot output: cursor omitted outside capture bounds")
+            AppLog.event("capture", "screenshot_output_cursor_omitted_outside_capture_bounds")
             return image
         }
         let scaleX = CGFloat(image.width) / captureBounds.width
@@ -55,7 +55,7 @@ enum ScreenshotCursorService {
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         context.draw(cursor.image, in: rect)
         guard let result = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        NSLog("Screenshot output: cursor composited x=%.1f y=%.1f", rect.minX, rect.minY)
+        AppLog.event("capture", "screenshot_output_cursor_composited", fields: ["x": String(describing: rect.minX), "y": String(describing: rect.minY)])
         return result
     }
 }

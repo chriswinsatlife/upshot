@@ -33,7 +33,7 @@ final class CaptureHistoryRetention {
                 self?.scheduleCleanup()
             }
         }
-        NSLog("Capture History retention started days=%ld interval=3600", observedRetentionDays)
+        AppLog.event("library", "capture_history_retention_started", fields: ["days": String(describing: observedRetentionDays), "interval": "3600"])
     }
 
     func scheduleCleanup() {
@@ -63,7 +63,7 @@ final class CaptureHistoryRetention {
                   !CaptureLibraryOpenEditors.isEditing(item.fileURL),
                   !StudioProjectRegistry.shared.hasLoadedEditor(for: item.ownedURL) else {
                 protectedCount += 1
-                NSLog("Capture History retention protected editor or recording id=%@", item.id)
+                AppLog.event("library", "capture_history_retention_protected_editor_or_recording", fields: ["id": AppLog.identifier(String(describing: item.id))])
                 continue
             }
             do {
@@ -76,10 +76,10 @@ final class CaptureHistoryRetention {
                     let cards = CaptureShelf.shared.items.filter { $0.url.standardizedFileURL == item.fileURL.standardizedFileURL }
                     for card in cards { CaptureShelf.shared.dismiss(id: card.id) }
                 }
-                NSLog("Capture History retention trashed id=%@", item.id)
+                AppLog.event("library", "capture_history_retention_trashed", fields: ["id": AppLog.identifier(String(describing: item.id))])
             } catch {
                 failedCount += 1
-                NSLog("Capture History retention failed id=%@ error=%@", item.id, error.localizedDescription)
+                AppLog.event("library", "capture_history_retention_failed", fields: ["error": AppLog.error(error), "id": AppLog.identifier(String(describing: item.id))])
             }
         }
         if removedCount > 0 {
@@ -87,6 +87,6 @@ final class CaptureHistoryRetention {
             RecordingProjectStore.shared.reload()
             CaptureLibraryModel.shared.refresh()
         }
-        NSLog("Capture History retention completed days=%ld candidates=%ld trashed=%ld protected=%ld failed=%ld", retentionDays, candidates.count, removedCount, protectedCount, failedCount)
+        AppLog.event("library", "capture_history_retention_completed", fields: ["candidates": String(describing: candidates.count), "days": String(describing: retentionDays), "failed": String(describing: failedCount), "protected": String(describing: protectedCount), "trashed": String(describing: removedCount)])
     }
 }

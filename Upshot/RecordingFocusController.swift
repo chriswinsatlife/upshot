@@ -54,10 +54,10 @@ final class RecordingFocusController {
             try data.write(to: restorationURL, options: .atomic)
             self.restoration = restoration
             _ = try await RecordingFocusShortcut.run(name: name, action: "enable", previousFocus: previousFocus)
-            NSLog("[Upshot] Recording Do Not Disturb enabled; previous Focus saved")
+            AppLog.event("recording", "recording_do_not_disturb_enabled_previous_focus_saved")
             return nil
         } catch {
-            NSLog("[Upshot] Recording Do Not Disturb failed: \(error.localizedDescription)")
+            AppLog.event("recording", "recording_do_not_disturb_failed", fields: ["error": AppLog.error(error)])
             let restoreWarning = await restorePendingFocus()
             return ["Do Not Disturb could not be enabled: \(error.localizedDescription)", restoreWarning]
                 .compactMap { $0 }.joined(separator: "\n\n")
@@ -77,10 +77,10 @@ final class RecordingFocusController {
             )
             try FileManager.default.removeItem(at: restorationURL)
             self.restoration = nil
-            NSLog("[Upshot] Recording Do Not Disturb restored previous Focus")
+            AppLog.event("recording", "recording_do_not_disturb_restored_previous_focus")
             return nil
         } catch {
-            NSLog("[Upshot] Recording Do Not Disturb restoration failed: \(error.localizedDescription)")
+            AppLog.event("recording", "recording_do_not_disturb_restoration_failed", fields: ["error": AppLog.error(error)])
             return "The previous Focus could not be restored: \(error.localizedDescription). The saved Focus state will be retried before the next recording."
         }
     }

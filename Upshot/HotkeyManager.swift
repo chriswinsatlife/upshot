@@ -78,7 +78,7 @@ final class HotkeyManager {
             CaptureHotkeyPreferences.saveShortcut(shortcuts[action], for: action)
         }
         registrationErrors.removeAll()
-        NSLog("Shortcut catalog loaded bindings=%ld", shortcuts.count)
+        AppLog.event("settings", "shortcut_catalog_loaded", fields: ["bindings": String(describing: shortcuts.count)])
     }
 
     func suspendForShortcutRecording() {
@@ -113,7 +113,7 @@ final class HotkeyManager {
         if status == noErr {
             eventHandlerRef = handlerRef
         } else {
-            print("Failed to install hotkey handler, status=\(status)")
+            AppLog.event("settings", "hotkey_handler_install_failed", fields: ["status": String(status)])
         }
     }
     
@@ -131,7 +131,7 @@ final class HotkeyManager {
         hotKeyRefs[action] = newRef
         CaptureHotkeyPreferences.saveShortcut(shortcut, for: action)
         registrationErrors[action] = nil
-        NSLog("Shortcut updated action=%@ binding=%@", action.route, shortcut?.displayString ?? "disabled")
+        AppLog.event("settings", "shortcut_updated", fields: ["action": String(describing: action.route), "binding": String(describing: shortcut?.displayString ?? "disabled")])
     }
 
     private func registerHotKey(action: CaptureHotkeyAction, shortcut: HotkeyShortcut) throws -> EventHotKeyRef {

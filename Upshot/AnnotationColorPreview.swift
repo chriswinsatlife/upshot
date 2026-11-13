@@ -39,8 +39,7 @@ extension AnnotationEditorModel {
             previewImage = NSImage(cgImage: output, size: CGSize(width: output.width, height: output.height))
             previewCGImage = output
             isPreviewDownscaled = CGFloat(output.width) < imageSize.width || CGFloat(output.height) < imageSize.height
-            NSLog("Annotation color preview applied exposure=%.2f contrast=%.2f saturation=%.2f temperature=%.1f",
-                  settings.exposure, settings.contrast, settings.saturation, settings.temperature)
+            AppLog.event("annotation", "annotation_color_preview_applied", fields: ["contrast": String(describing: settings.contrast), "exposure": String(describing: settings.exposure), "saturation": String(describing: settings.saturation), "temperature": String(describing: settings.temperature)])
         } catch {
             guard !Task.isCancelled else { return }
             errorMessage = "Color adjustment failed: \(error.localizedDescription)"

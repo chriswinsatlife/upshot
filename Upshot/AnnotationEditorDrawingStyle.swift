@@ -17,7 +17,7 @@ extension AnnotationEditorModel {
             shape.kind = .redaction(props)
         }
         engine.notifyChanged()
-        NSLog("Annotation redaction style applied style=%@", kind.rawValue)
+        AppLog.event("annotation", "annotation_redaction_style_applied", fields: ["style": String(describing: kind.rawValue)])
     }
 
     var objectShadowsEnabled: Bool {
@@ -30,7 +30,7 @@ extension AnnotationEditorModel {
         UpshotStorage.defaults.set(enabled, forKey: UpshotPreferences.annotationObjectShadowsKey)
         engine.applyStyleToSelection { $0.castsShadow = enabled }
         engine.notifyChanged()
-        NSLog("Annotation object shadows applied enabled=%@ selected=%ld", String(enabled), engine.selectedIds.count)
+        AppLog.event("annotation", "annotation_object_shadows_applied", fields: ["enabled": String(describing: String(enabled)), "selected": String(describing: engine.selectedIds.count)])
     }
 
     var drawingSmoothing: Double {
@@ -48,6 +48,6 @@ extension AnnotationEditorModel {
             shape.kind = .draw(props)
         }
         engine.notifyChanged()
-        NSLog("Annotation freehand smoothing applied value=%.2f", smoothing)
+        AppLog.event("annotation", "annotation_freehand_smoothing_applied", fields: ["value": String(describing: smoothing)])
     }
 }

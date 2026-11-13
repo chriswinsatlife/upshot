@@ -73,7 +73,7 @@ final class CameraRecordingManager {
         do {
             try await engine.startSession(device: device)
         } catch {
-            print("Camera preview failed to start: \(error)")
+            AppLog.event("recording", "camera_preview_start_failed", fields: ["error": AppLog.error(error)])
             return false
         }
 
@@ -103,7 +103,7 @@ final class CameraRecordingManager {
         do {
             try await engine.beginWriting(outputURL: outputURL)
         } catch {
-            print("Camera recording failed to start: \(error)")
+            AppLog.event("recording", "camera_recording_start_failed", fields: ["error": AppLog.error(error)])
             isRunning = false
             activeDeviceID = nil
             hidePreview()

@@ -54,11 +54,11 @@ enum ScreenshotOutputService {
                 try FileManager.default.moveItem(at: processingURL, to: destination)
                 try? FileManager.default.removeItem(at: url)
             }
-            NSLog("Screenshot output: capture finalized type=%@ filename=%@ width=%d height=%d scale=%.2f", captureType.rawValue, destination.lastPathComponent, result.width, result.height, result.outputScale)
+            AppLog.event("capture", "screenshot_output_capture_finalized", fields: ["height": String(describing: result.height), "scale": String(describing: result.outputScale), "type": String(describing: captureType.rawValue), "width": String(describing: result.width)])
             return destination
         } catch {
             try? FileManager.default.removeItem(at: processingURL)
-            NSLog("Screenshot output: processing failed type=%@ error=%@", captureType.rawValue, error.localizedDescription)
+            AppLog.event("capture", "screenshot_output_processing_failed", fields: ["error": AppLog.error(error), "type": String(describing: captureType.rawValue)])
             throw error
         }
     }

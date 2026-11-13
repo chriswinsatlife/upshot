@@ -35,7 +35,7 @@ final class CaptureCodeFeedbackPresenter {
         PreviewWindowCaptureExclusion.shared.register(window: panel)
         panel.orderFrontRegardless()
         self.panel = panel
-        NSLog("Capture code prompt presented: codes=%ld links=%ld", detection.codes.count, detection.links.count)
+        AppLog.event("capture", "capture_code_prompt_presented", fields: ["codes": String(describing: detection.codes.count), "links": String(describing: detection.links.count)])
     }
 }
 
@@ -103,10 +103,10 @@ struct CaptureCodeFeedbackView: View {
         if NSPasteboard.general.writeObjects([item]) {
             copied.insert(code.id)
             failure = nil
-            NSLog("Capture code payload copied: symbology=%@", code.symbology)
+            AppLog.event("capture", "capture_code_payload_copied", fields: ["symbology": String(describing: code.symbology)])
         } else {
             failure = "The payload could not be copied."
-            NSLog("Capture code payload copy failed")
+            AppLog.event("capture", "capture_code_payload_copy_failed")
         }
     }
 
@@ -115,20 +115,20 @@ struct CaptureCodeFeedbackView: View {
         if NSPasteboard.general.setString(link.absoluteString, forType: .string) {
             copied.insert(link.absoluteString)
             failure = nil
-            NSLog("Capture detected link copied")
+            AppLog.event("capture", "capture_detected_link_copied")
         } else {
             failure = "The link could not be copied."
-            NSLog("Capture detected link copy failed")
+            AppLog.event("capture", "capture_detected_link_copy_failed")
         }
     }
 
     private func open(_ link: URL) {
         if NSWorkspace.shared.open(link) {
             failure = nil
-            NSLog("Capture detected link opened after confirmation")
+            AppLog.event("capture", "capture_detected_link_opened_after_confirmation")
         } else {
             failure = "The link could not be opened."
-            NSLog("Capture detected link open failed")
+            AppLog.event("capture", "capture_detected_link_open_failed")
         }
     }
 }

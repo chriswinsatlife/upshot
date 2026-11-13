@@ -226,7 +226,7 @@ extension AnnoEditor {
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
                     props.isComplete = true
-                    NSLog("Annotation freehand committed points=%ld smoothing=%.2f", props.points.count, props.smoothing ?? 0.62)
+                    AppLog.event("annotation", "annotation_freehand_committed", fields: ["points": String(describing: props.points.count), "smoothing": String(describing: props.smoothing ?? 0.62)])
                     if props.points.count > 3,
                        Vec.distMin(props.points[0], props.points[props.points.count - 1], props.strokeWidth * 2) {
                         props.isClosed = true
@@ -245,7 +245,7 @@ extension AnnoEditor {
                 break
             }
             if let props = document.shape(id)?.redactionProps {
-                NSLog("Annotation redaction committed style=%@ density=%.2f", props.kind.rawValue, props.density)
+                AppLog.event("annotation", "annotation_redaction_committed", fields: ["density": String(describing: props.density), "style": String(describing: props.kind.rawValue)])
             }
             if let shape = document.shape(id), let size = boxSize(of: shape), size.width <= 2, size.height <= 2 {
                 let fallback = Swift.max(48, Double(Swift.max(viewport.imageSize.width, viewport.imageSize.height)) * 0.08)
@@ -257,9 +257,9 @@ extension AnnoEditor {
         case let .creatingArrow(id):
             updateCreationArrowDirection(optionHeld: pointer.alt)
             if let properties = document.shape(id)?.arrowProps, properties.isMeasurement == true {
-                NSLog("Annotation measure committed distance=%.1f px", AnnotationMeasurement.distance(properties))
+                AppLog.event("annotation", "annotation_measure_committed", fields: ["distance": String(describing: AnnotationMeasurement.distance(properties))])
             } else {
-                NSLog("Annotation arrow committed inverse=%@", String(pointer.alt))
+                AppLog.event("annotation", "annotation_arrow_committed", fields: ["inverse": String(describing: String(pointer.alt))])
             }
             if let shape = document.shape(id), let props = shape.arrowProps,
                Vec.distMin(props.start, props.end, 4) {
@@ -699,7 +699,7 @@ extension AnnoEditor {
         }
         onEditingTextChanged?(nil)
         if let props = document.shape(id)?.textProps {
-            NSLog("Annotation text committed style=%@", (props.style ?? .plain).rawValue)
+            AppLog.event("annotation", "annotation_text_committed", fields: ["style": String(describing: (props.style ?? .plain).rawValue)])
         }
         if tool == .text { tool = .select }
         notifyChanged()

@@ -11,7 +11,7 @@ enum CaptureCodeActions {
         } catch is CancellationError {
             return
         } catch {
-            NSLog("Capture code detection failed: %@", String(describing: error))
+            AppLog.event("capture", "capture_code_detection_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(
                 title: error is TextRecognitionError ? ImageTextRecognizer.failureTitle(for: error) : "Code recognition failed",
                 displayID: displayID

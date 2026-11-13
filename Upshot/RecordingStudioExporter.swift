@@ -5,13 +5,10 @@ import CoreGraphics
 import CoreText
 import Foundation
 import ImageIO
-import OSLog
 import SwiftUI
 import VideoToolbox
 
 nonisolated final class RecordingStudioExporter: @unchecked Sendable {
-    private static let logger = Logger(subsystem: "co.chrisyork.upshot", category: "StudioExport")
-
     struct Configuration: Sendable {
         let screenURL: URL
         let cameraURL: URL?
@@ -169,7 +166,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             } else {
                 result = videoURL
             }
-            NSLog("[Upshot] Recording export completed format=%@ seconds=%.3f", configuration.deliveryOptions.format.rawValue, CFAbsoluteTimeGetCurrent() - started)
+            AppLog.event("recording", "recording_export_completed", fields: ["format": String(describing: configuration.deliveryOptions.format.rawValue), "seconds": String(describing: CFAbsoluteTimeGetCurrent() - started)])
             return result
         } onCancel: {
             cancelFlag.cancel()
@@ -181,16 +178,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        NSLog(
-            "[Upshot] Export appearance zoom=%@ shot=%@ reframe=%@ keystrokeSize=%@ keystrokeStyle=%@ keystrokePosition=%@ keystrokeFilter=%@",
-            configuration.appearance.zoomAnimationStyle.rawValue,
-            configuration.appearance.shot.rawValue,
-            String(configuration.reframe != nil),
-            configuration.appearance.keystrokes.size.rawValue,
-            configuration.appearance.keystrokes.style.rawValue,
-            configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue,
-            configuration.appearance.keystrokes.filter.rawValue
-        )
+        AppLog.event("recording", "export_appearance", fields: ["keystrokeFilter": String(describing: configuration.appearance.keystrokes.filter.rawValue), "keystrokePosition": String(describing: configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue), "keystrokeSize": String(describing: configuration.appearance.keystrokes.size.rawValue), "keystrokeStyle": String(describing: configuration.appearance.keystrokes.style.rawValue), "reframe": String(describing: String(configuration.reframe != nil)), "shot": String(describing: configuration.appearance.shot.rawValue), "zoom": String(describing: configuration.appearance.zoomAnimationStyle.rawValue)])
         let timing = RecordingExportTiming(
             settings: configuration.exportSettings,
             motionBlurLevel: configuration.deliveryOptions.motionBlurLevel,
@@ -226,7 +214,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let canvasWidth = max(2, Int(outputSize.width.rounded()) & ~1)
         let canvasHeight = max(2, Int(outputSize.height.rounded()) & ~1)
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
-        NSLog("[Upshot] Retina export scale=%.2f output=%dx%d motionBlur=%@ fps=%.0f", pixelScale, canvasWidth, canvasHeight, timing.motionBlurLevel.rawValue, timing.framesPerSecond)
+        AppLog.event("recording", "retina_export", fields: ["fps": String(describing: timing.framesPerSecond), "motionBlur": String(describing: timing.motionBlurLevel.rawValue), "width": String(describing: canvasWidth), "scale": String(describing: pixelScale), "height": String(describing: canvasHeight)])
 
         let screenReader = try AVAssetReader(asset: screenAsset)
         let videoOutput = AVAssetReaderTrackOutput(
@@ -473,7 +461,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             try? FileManager.default.removeItem(at: outputURL)
             throw ExportError.writerFailed(writer.error)
         }
-        NSLog("[Upshot] Recording audio export mono=%@ included=%@ separateTracks=%@", String(configuration.deliveryOptions.monoAudio), String(!configuration.exportSettings.removeAudio), String(configuration.deliveryOptions.separateAudioTracks))
+        AppLog.event("recording", "recording_audio_export", fields: ["included": String(describing: String(!configuration.exportSettings.removeAudio)), "mono": String(describing: String(configuration.deliveryOptions.monoAudio)), "separateTracks": String(describing: String(configuration.deliveryOptions.separateAudioTracks))])
         progress(1)
         return outputURL
     }
@@ -512,7 +500,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         var cameraSeconds = 0.0
         var renderedFrames = 0
         defer {
-            Self.logger.info("Export frames=\(renderedFrames) fps=\(timing.framesPerSecond) motionBlur=\(timing.motionBlurLevel.rawValue, privacy: .public) Metal blur frames=\(compositor.metalFrameCount) reusedScreenFrames=\(compositor.reusedScreenFrameCount) reusedComposedFrames=\(compositor.reusedComposedFrameCount) renderSeconds=\(renderSeconds) metalSeconds=\(compositor.metalSeconds) cutoutWaitSeconds=\(compositor.cutoutWaitSeconds) decodeSeconds=\(decodeSeconds) cameraSeconds=\(cameraSeconds) writerWaitSeconds=\(writerWaitSeconds)")
+            AppLog.event("recording", "export_frames_completed", fields: ["frames": String(describing: renderedFrames), "fps": String(describing: timing.framesPerSecond), "motion_blur": String(describing: timing.motionBlurLevel.rawValue), "metal_frames": String(describing: compositor.metalFrameCount), "reused_screen_frames": String(describing: compositor.reusedScreenFrameCount), "reused_composed_frames": String(describing: compositor.reusedComposedFrameCount), "render_seconds": String(describing: renderSeconds), "metal_seconds": String(describing: compositor.metalSeconds), "cutout_wait_seconds": String(describing: compositor.cutoutWaitSeconds), "decode_seconds": String(describing: decodeSeconds), "camera_seconds": String(describing: cameraSeconds), "writer_wait_seconds": String(describing: writerWaitSeconds)])
         }
 
         var cachedPool: CVPixelBufferPool?

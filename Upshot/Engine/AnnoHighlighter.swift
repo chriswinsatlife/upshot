@@ -34,6 +34,6 @@ extension AnnoEditor {
         selectedIds = identifiers.isEmpty ? [id] : identifiers
         tool = .select
         highlighterDragRect = nil
-        NSLog("Annotation highlighter committed snapped=%@ boxes=%ld", String(!boxes.isEmpty), boxes.count)
+        AppLog.event("annotation", "annotation_highlighter_committed", fields: ["boxes": String(describing: boxes.count), "snapped": String(describing: String(!boxes.isEmpty))])
     }
 }

@@ -92,7 +92,7 @@ struct AnnotationSwatchStrip: View {
     private func swatchButton(for swatch: AnnotationSwatch) -> some View {
         Button {
             onSelect(swatch)
-            NSLog("Annotation color selected name=%@", swatch.title)
+            AppLog.event("annotation", "annotation_color_selected", fields: ["name": String(describing: swatch.title)])
         } label: {
             VStack(spacing: 3) {
                 swatchCircle(
@@ -118,7 +118,7 @@ struct AnnotationSwatchStrip: View {
             ) { color in
                 let swatch = AnnotationSwatch.custom(from: color)
                 onSelect(swatch)
-                NSLog("Annotation color selected name=%@", swatch.title)
+                AppLog.event("annotation", "annotation_color_selected", fields: ["name": String(describing: swatch.title)])
             }
         } label: {
             VStack(spacing: 3) {

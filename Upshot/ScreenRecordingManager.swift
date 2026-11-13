@@ -190,7 +190,7 @@ final class ScreenRecordingManager {
                 self.session = session
                 let focusWarning = await RecordingFocusController.shared.begin()
                 guard isStarting(session: session) else { return }
-                if let focusWarning { NSLog("Recording Focus not enabled: %@", focusWarning) }
+                if focusWarning != nil { AppLog.event("recording", "recording_focus_not_enabled") }
                 let content = try await ScreenRecordingCapture.availableContent()
                 guard isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)
@@ -270,7 +270,7 @@ final class ScreenRecordingManager {
                 accumulatedPauseDuration = 0
                 elapsedTime = 0
                 state = .recording
-                NSLog("[Upshot] Recording timer started")
+                AppLog.event("recording", "recording_timer_started")
                 beginActivity()
                 startTimer()
             } catch {
@@ -296,7 +296,7 @@ final class ScreenRecordingManager {
         TeleprompterController.shared.setPaused(true)
         pausedAt = Date()
         state = .paused
-        NSLog("[Upshot] Recording timer paused at \(formattedElapsedTime)")
+        AppLog.event("recording", "recording_timer_paused", fields: ["elapsed": String(describing: formattedElapsedTime)])
         updateElapsedTime()
     }
 
@@ -316,7 +316,7 @@ final class ScreenRecordingManager {
         TeleprompterController.shared.setPaused(false)
         state = .recording
         updateElapsedTime()
-        NSLog("[Upshot] Recording timer resumed at \(formattedElapsedTime)")
+        AppLog.event("recording", "recording_timer_resumed", fields: ["elapsed": String(describing: formattedElapsedTime)])
     }
 
     func restartRecording() {
@@ -361,7 +361,7 @@ final class ScreenRecordingManager {
             do {
                 try await capture.stopCapture()
             } catch {
-                print("Screen recording capture stop failed: \(error)")
+                AppLog.event("recording", "recording_capture_stop_failed", fields: ["error": AppLog.error(error)])
             }
             RecordingAreaHighlightPresenter.shared.hide()
 
@@ -399,7 +399,7 @@ final class ScreenRecordingManager {
                 do {
                     try session.writePointerCapture(capture)
                 } catch {
-                    NSLog("[Upshot] Failed to save recording input timeline: \(error)")
+                    AppLog.event("recording", "failed_to_save_recording_input_timeline", fields: ["error": AppLog.error(error)])
                     metadataWarnings.append(
                         "The screen footage was saved, but its cursor and click data could not be saved."
                     )
@@ -412,7 +412,7 @@ final class ScreenRecordingManager {
             do {
                 try session.writeCaptureManifest(manifest)
             } catch {
-                NSLog("[Upshot] Failed to save recording manifest: \(error)")
+                AppLog.event("recording", "failed_to_save_recording_manifest", fields: ["error": AppLog.error(error)])
                 metadataWarnings.append(
                     "The screen footage was saved, but some Studio metadata could not be saved."
                 )
@@ -687,7 +687,7 @@ final class ScreenRecordingManager {
         finishAction = .preview
         isStopping = false
         state = .idle
-        NSLog("[Upshot] Recording timer cleared")
+        AppLog.event("recording", "recording_timer_cleared")
     }
 
     private static func captureTarget(
@@ -1189,13 +1189,13 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                         self.didReportFailure = true
                         self.onFailure?(error)
                     }
-                    NSLog("[Upshot] Recording live pen compositing failed: \(error.localizedDescription)")
+                    AppLog.event("recording", "recording_live_pen_compositing_failed", fields: ["error": AppLog.error(error)])
                     return
                 }
                 if pixelBufferAdaptor.append(composited, withPresentationTime: adjustedPTS) {
                     if !strokes.isEmpty, !self.hasWrittenPen {
                         self.hasWrittenPen = true
-                        NSLog("[Upshot] Recording live pen pixels written to screen movie")
+                        AppLog.event("recording", "recording_live_pen_pixels_written_to_screen_movie")
                     }
                     self.latestAdjustedTime = adjustedPTS
                 } else {

@@ -39,7 +39,7 @@ struct AnnotationWatermarkSourceControls: View {
                 settings.imageData = data
                 settings.position = .bottomRight
                 settings.rotationDegrees = 0
-                NSLog("Annotation watermark image loaded bytes=%ld", data.count)
+                AppLog.event("annotation", "annotation_watermark_image_loaded", fields: ["bytes": String(describing: data.count)])
             } catch {
                 importError = error.localizedDescription
             }

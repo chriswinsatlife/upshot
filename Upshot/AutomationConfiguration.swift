@@ -33,7 +33,7 @@ final class AutomationConfiguration {
         lastSnapshot = try snapshot().encoded()
         rejectedFileData = nil
         errorMessage = nil
-        NSLog("Configuration loaded preferences and shortcuts")
+        AppLog.event("automation", "configuration_loaded_preferences_and_shortcuts")
     }
 
     func synchronize() {
@@ -60,10 +60,10 @@ final class AutomationConfiguration {
             lastSnapshot = encoded
             rejectedFileData = nil
             errorMessage = nil
-            NSLog("Configuration saved preferences and shortcuts")
+            AppLog.event("automation", "configuration_saved_preferences_and_shortcuts")
         } catch {
             errorMessage = error.localizedDescription
-            NSLog("Configuration rejected error=%@", error.localizedDescription)
+            AppLog.event("automation", "configuration_rejected", fields: ["error": AppLog.error(error)])
         }
     }
 

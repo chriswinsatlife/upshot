@@ -130,17 +130,14 @@ enum AnnotationRenderer {
                 throw CocoaError(.fileWriteUnknown)
             }
 
-            NSLog("Annotation export completed width=%ld height=%ld annotations=%ld", renderedImage.width, renderedImage.height, shapes.count)
+            AppLog.event("annotation", "annotation_export_completed", fields: ["annotations": String(describing: shapes.count), "height": String(describing: renderedImage.height), "width": String(describing: renderedImage.width)])
             if !backgroundSettings.colorAdjustments.isDefault {
                 let adjustments = backgroundSettings.colorAdjustments
-                NSLog("Annotation color export applied exposure=%.2f contrast=%.2f saturation=%.2f temperature=%.1f",
-                      adjustments.exposure, adjustments.contrast, adjustments.saturation, adjustments.temperature)
+                AppLog.event("annotation", "annotation_color_export_applied", fields: ["contrast": String(describing: adjustments.contrast), "exposure": String(describing: adjustments.exposure), "saturation": String(describing: adjustments.saturation), "temperature": String(describing: adjustments.temperature)])
             }
 
             if backgroundSettings.watermark.isVisible {
-                NSLog("Annotation watermark exported kind=%@ position=%@ opacity=%.2f",
-                      backgroundSettings.watermark.imageData == nil ? "text" : "image",
-                      backgroundSettings.watermark.position.rawValue, backgroundSettings.watermark.opacity)
+                AppLog.event("annotation", "annotation_watermark_exported", fields: ["kind": String(describing: backgroundSettings.watermark.imageData == nil ? "text" : "image"), "opacity": String(describing: backgroundSettings.watermark.opacity), "position": String(describing: backgroundSettings.watermark.position.rawValue)])
             }
         }
 

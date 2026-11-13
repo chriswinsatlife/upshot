@@ -252,7 +252,7 @@ actor CaptureLibraryIndexStore {
                 }
             }
         } catch {
-            NSLog("[Upshot] Failed to save Library index entry: \(error)")
+            AppLog.event("library", "failed_to_save_library_index_entry", fields: ["error": AppLog.error(error)])
         }
     }
 

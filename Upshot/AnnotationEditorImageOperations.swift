@@ -31,10 +31,10 @@ extension AnnotationEditorModel {
                 return shape
             }
             installImageResult(result, snapshot: snapshot, shapes: transformedShapes)
-            NSLog("Annotation image transform completed operation=%@ width=%.0f height=%.0f", operation.rawValue, imageSize.width, imageSize.height)
+            AppLog.event("annotation", "annotation_image_transform_completed", fields: ["height": String(describing: imageSize.height), "operation": String(describing: operation.rawValue), "width": String(describing: imageSize.width)])
         } catch {
             errorMessage = "Image transform failed: \(error.localizedDescription)"
-            NSLog("Annotation image transform failed operation=%@ error=%@", operation.rawValue, error.localizedDescription)
+            AppLog.event("annotation", "annotation_image_transform_failed", fields: ["error": AppLog.error(error), "operation": String(describing: operation.rawValue)])
         }
     }
 

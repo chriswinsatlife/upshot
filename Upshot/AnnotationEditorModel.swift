@@ -488,7 +488,7 @@ final class AnnotationEditorModel {
                       self.sourceURL == loadedSourceURL,
                       self.baseImageURL == recognitionURL || self.sourceURL == recognitionURL else { return }
                 self.smartRedactionMessage = ImageTextRecognizer.failureTitle(for: error)
-                NSLog("Smart Redaction %@: %@", ImageTextRecognizer.failureTitle(for: error), String(describing: error))
+                AppLog.event("annotation", "smart_redaction", fields: ["error": AppLog.error(error), "failure": ImageTextRecognizer.failureTitle(for: error)])
                 return
             }
 

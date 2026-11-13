@@ -52,6 +52,6 @@ nonisolated final class RecordingAudioTrackExport: @unchecked Sendable {
         }
         if reader.status == .failed { throw reader.error ?? RecordingStudioExporter.ExportError.writerFailed(nil) }
         input.markAsFinished()
-        NSLog("[Upshot] Separate audio track completed title=%@", title)
+        AppLog.event("recording", "separate_audio_track_completed")
     }
 }

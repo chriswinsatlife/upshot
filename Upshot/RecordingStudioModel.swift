@@ -109,7 +109,7 @@ final class RecordingStudioModel {
                     try RecordingExportAppearanceStore.save(exportAppearance, to: session.directoryURL)
                     session.removeFinalVideos()
                 } catch {
-                    NSLog("[Upshot] Export appearance save failed: %@", error.localizedDescription)
+                    AppLog.event("recording", "export_appearance_save_failed", fields: ["error": AppLog.error(error)])
                 }
             }
             rebuildMotionTimeline()
@@ -124,7 +124,7 @@ final class RecordingStudioModel {
                     try RecordingExportOptionStore.save(exportDeliveryOptions, to: session.directoryURL)
                     session.removeFinalVideos()
                 } catch {
-                    NSLog("[Upshot] Export options save failed: %@", error.localizedDescription)
+                    AppLog.event("recording", "export_options_save_failed", fields: ["error": AppLog.error(error)])
                 }
             }
         }

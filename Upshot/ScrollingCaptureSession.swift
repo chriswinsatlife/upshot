@@ -77,7 +77,7 @@ final class ScrollingCaptureSession {
                     panel.onCancel = { [weak self] in self?.cancel() }
                     self.panel = panel
                     panel.show()
-                    NSLog("Scrolling capture controls opened: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
+                    AppLog.event("capture", "scrolling_capture_controls_opened", fields: ["height": String(describing: rect.height), "width": String(describing: rect.width), "x": String(describing: rect.minX), "y": String(describing: rect.minY)])
                 }
             } onCancel: {
                 Task { @MainActor in
@@ -85,7 +85,7 @@ final class ScrollingCaptureSession {
                 }
             }
         } catch {
-            NSLog("Scrolling capture failed: %@", error.localizedDescription)
+            AppLog.event("capture", "scrolling_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: error.localizedDescription,
                                                           displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
@@ -96,12 +96,12 @@ final class ScrollingCaptureSession {
         guard continuation != nil, task == nil, !finishing, !maximumLengthReached else { return }
         if mode == .automatic, !CGPreflightPostEventAccess(), !CGRequestPostEventAccess() {
             update(status: "Enable Accessibility for Auto-Scroll, or choose Manual.", running: false)
-            NSLog("Scrolling capture auto-scroll unavailable: event posting permission denied")
+            AppLog.event("capture", "scrolling_capture_auto_scroll_unavailable_event_posting_permission_denied")
             return
         }
         stopRequested = false
         update(status: mode == .manual ? "Scroll down slowly inside the selected area. Stop saves the image." : "Auto-Scroll is running. Stop saves the image.", running: true)
-        NSLog("Scrolling capture started: mode=%@", mode == .manual ? "manual" : "automatic")
+        AppLog.event("capture", "scrolling_capture_started", fields: ["mode": String(describing: mode == .manual ? "manual" : "automatic")])
         let identifier = identifier
         task = Task { [weak self] in
             guard let self else { return }
@@ -147,7 +147,7 @@ final class ScrollingCaptureSession {
                         self.update(status: mode == .manual ? "Scroll down slowly. Stop saves the image." : "Auto-Scroll is running. Stop saves the image.", running: true)
                     }
                     if mode == .automatic && unchangedFrames >= 4 {
-                        NSLog("Scrolling capture auto-scroll reached end: height=%ld", height)
+                        AppLog.event("capture", "scrolling_capture_auto_scroll_reached_end", fields: ["height": String(describing: height)])
                         stopRequested = true
                     }
                 } catch ScrollingCaptureError.unverifiedOverlap {
@@ -164,15 +164,15 @@ final class ScrollingCaptureSession {
             reachMaximumLength()
         } catch let error as ScrollingCaptureAutoScroll.Failure {
             guard !Task.isCancelled, continuation != nil else { return }
-            NSLog("Scrolling capture auto-scroll stopped: window=%u height=%ld reason=%@", autoScroll?.windowID ?? 0, height, error.localizedDescription)
+            AppLog.event("capture", "scrolling_capture_auto_scroll_stopped", fields: ["height": String(describing: height), "reason": AppLog.error(error), "window": String(describing: autoScroll?.windowID ?? 0)])
             update(status: "\(error.localizedDescription) Stop saves captured content.", running: false)
         } catch {
             guard !Task.isCancelled, continuation != nil else { return }
             if stopRequested && height > 0 {
-                NSLog("Scrolling capture final frame skipped: %@", error.localizedDescription)
+                AppLog.event("capture", "scrolling_capture_final_frame_skipped", fields: ["error": AppLog.error(error)])
                 await save()
             } else {
-                NSLog("Scrolling capture paused: height=%ld error=%@", height, error.localizedDescription)
+                AppLog.event("capture", "scrolling_capture_paused", fields: ["error": AppLog.error(error), "height": String(describing: height)])
                 update(status: error.localizedDescription, running: false)
             }
         }
@@ -186,8 +186,7 @@ final class ScrollingCaptureSession {
         try Task.checkCancellation()
         height = result.height
         if result.addedRows > 0 {
-            NSLog("Scrolling capture frame verified: kind=%@ addedRows=%ld overlapRows=%ld meanError=%.6f height=%ld",
-                  result.kind.rawValue, result.addedRows, result.overlapRows, result.meanError, height)
+            AppLog.event("capture", "scrolling_capture_frame_verified", fields: ["addedRows": String(describing: result.addedRows), "height": String(describing: height), "kind": String(describing: result.kind.rawValue), "meanError": String(describing: result.meanError), "overlapRows": String(describing: result.overlapRows)])
         }
         if result.kind == .maximumLengthReached { reachMaximumLength() }
         return result
@@ -195,8 +194,7 @@ final class ScrollingCaptureSession {
 
     private func reachMaximumLength() {
         maximumLengthReached = true
-        NSLog("Scrolling capture maximum length reached: height=%ld maximumHeight=%ld maximumPixels=%ld", height,
-              ScrollingCaptureOutputLimits.maximumHeight, ScrollingCaptureOutputLimits.maximumPixelCount)
+        AppLog.event("capture", "scrolling_capture_maximum_length_reached", fields: ["height": String(describing: height), "maximumHeight": String(describing: ScrollingCaptureOutputLimits.maximumHeight), "maximumPixels": String(describing: ScrollingCaptureOutputLimits.maximumPixelCount)])
         update(status: "Maximum length reached", running: false)
     }
 
@@ -211,7 +209,7 @@ final class ScrollingCaptureSession {
         guard continuation != nil, !finishing else { return }
         stopRequested = true
         update(status: "Finishing scrolling capture…", running: true, finishing: true)
-        NSLog("Scrolling capture stop requested: height=%ld", height)
+        AppLog.event("capture", "scrolling_capture_stop_requested", fields: ["height": String(describing: height)])
         if task == nil {
             let identifier = identifier
             task = Task { [weak self] in
@@ -238,20 +236,20 @@ final class ScrollingCaptureSession {
             }
             guard continuation != nil else { return }
             AreaSelectionMemory.rememberScreenshot(rect: rect)
-            NSLog("Scrolling capture saved: pixels=%ldx%ld frames=%ld scale=%.2f file=%@", saved.width, saved.height, saved.frameCount, scale, url.lastPathComponent)
+            AppLog.event("capture", "scrolling_capture_saved", fields: ["frames": String(describing: saved.frameCount), "width": String(describing: saved.width), "scale": String(describing: scale), "height": String(describing: saved.height)])
             complete(Result(url: url, displayID: frameSource?.displayID, source: source))
         } catch is CancellationError {
         } catch {
             guard !Task.isCancelled, continuation != nil else { return }
             finishing = false
-            NSLog("Scrolling capture save failed: %@", error.localizedDescription)
+            AppLog.event("capture", "scrolling_capture_save_failed", fields: ["error": AppLog.error(error)])
             update(status: "Save failed. Press Stop to retry, or Cancel.", running: false)
         }
     }
 
     private func cancel() {
         guard continuation != nil else { return }
-        NSLog("Scrolling capture cancelled: discardedHeight=%ld", height)
+        AppLog.event("capture", "scrolling_capture_cancelled", fields: ["discardedHeight": String(describing: height)])
         task?.cancel()
         complete(nil)
     }

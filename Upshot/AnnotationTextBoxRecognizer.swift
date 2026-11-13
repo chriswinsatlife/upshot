@@ -13,10 +13,10 @@ nonisolated enum AnnotationTextBoxRecognizer {
                     let bounds = observation.boundingBox
                     return CGRect(x: bounds.minX, y: 1 - bounds.maxY, width: bounds.width, height: bounds.height)
                 }
-                NSLog("Annotation highlighter recognition completed boxes=%ld", boxes.count)
+                AppLog.event("annotation", "annotation_highlighter_recognition_completed", fields: ["boxes": String(describing: boxes.count)])
                 return boxes
             } catch {
-                NSLog("Annotation highlighter recognition failed error=%@", error.localizedDescription)
+                AppLog.event("annotation", "annotation_highlighter_recognition_failed", fields: ["error": AppLog.error(error)])
                 return []
             }
         }.value

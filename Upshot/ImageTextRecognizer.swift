@@ -59,7 +59,7 @@ nonisolated enum ImageTextRecognizer {
         } catch is CancellationError {
             return ""
         } catch {
-            NSLog("Text recognition failed for capture file: %@", String(describing: error))
+            AppLog.event("capture", "text_recognition_failed_for_capture_file", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: failureTitle(for: error), displayID: nil)
             return ""
         }
@@ -80,7 +80,7 @@ nonisolated enum ImageTextRecognizer {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            NSLog("Capture code detection failed during text recognition: %@", String(describing: error))
+            AppLog.event("capture", "capture_code_detection_failed_during_text_recognition", fields: ["error": AppLog.error(error)])
             if text.isEmpty { throw error }
             codes = []
         }
@@ -131,7 +131,7 @@ nonisolated enum ImageTextRecognizer {
                 if ImageAnalyzer.supportedTextRecognitionLanguages.contains(options.language) {
                     configuration.locales = [options.language]
                 } else {
-                    NSLog("Text recognition Live Text skipped: selected language unavailable")
+                    AppLog.event("capture", "text_recognition_live_text_skipped_selected_language_unavailable")
                     return try await recognizeVisionLines(in: image, options: options, includeCharacterBounds: includeCharacterBounds)
                 }
             }
@@ -141,15 +141,15 @@ nonisolated enum ImageTextRecognizer {
                 liveText = analysis.transcript.components(separatedBy: .newlines)
                     .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
                     .map { ImageTextLine(text: $0, bounds: nil, characterBounds: []) }
-                NSLog("Text recognition Live Text completed: %ld lines", liveText.count)
+                AppLog.event("capture", "text_recognition_live_text_completed", fields: ["lines": String(describing: liveText.count)])
                 if !liveText.isEmpty, !requiresBounds { return liveText }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                NSLog("Text recognition Live Text failed; trying Vision: %@", String(describing: error))
+                AppLog.event("capture", "text_recognition_live_text_failed_trying_vision", fields: ["error": AppLog.error(error)])
             }
         } else {
-            NSLog("Text recognition Live Text unavailable; trying Vision")
+            AppLog.event("capture", "text_recognition_live_text_unavailable_trying_vision")
         }
         let lines = try await recognizeVisionLines(in: image, options: options, includeCharacterBounds: includeCharacterBounds)
         return lines.isEmpty && !requiresBounds ? liveText : lines
@@ -158,12 +158,12 @@ nonisolated enum ImageTextRecognizer {
     @concurrent
     private static func recognizeVisionLines(in image: CGImage, options: TextRecognitionOptions, includeCharacterBounds: Bool) async throws -> [ImageTextLine] {
         let original = try visionLines(in: image, language: options.language, orientation: .up, includeCharacterBounds: includeCharacterBounds)
-        NSLog("Text recognition Vision initial completed: %ld lines", original.count)
+        AppLog.event("capture", "text_recognition_vision_initial_completed", fields: ["lines": String(describing: original.count)])
         if !original.isEmpty { return original }
 
         let enhanced = try contrastEnhancedImage(image)
         let contrast = try visionLines(in: enhanced, language: options.language, orientation: .up, includeCharacterBounds: includeCharacterBounds)
-        NSLog("Text recognition contrast retry completed: %ld lines", contrast.count)
+        AppLog.event("capture", "text_recognition_contrast_retry_completed", fields: ["lines": String(describing: contrast.count)])
         if !contrast.isEmpty { return contrast }
 
         let request = VNRecognizeTextRequest()
@@ -175,11 +175,11 @@ nonisolated enum ImageTextRecognizer {
         for language in languages {
             for orientation in [CGImagePropertyOrientation.up, .right, .left] {
                 let vertical = try visionLines(in: enhanced, language: language, orientation: orientation, includeCharacterBounds: includeCharacterBounds)
-                NSLog("Text recognition vertical CJK retry completed: language=%@ orientation=%u lines=%ld", language, orientation.rawValue, vertical.count)
+                AppLog.event("capture", "text_recognition_vertical_cjk_retry_completed", fields: ["language": String(describing: language), "lines": String(describing: vertical.count), "orientation": String(describing: orientation.rawValue)])
                 if !vertical.isEmpty { return vertical }
             }
         }
-        NSLog("Text recognition completed: no text found")
+        AppLog.event("capture", "text_recognition_completed_no_text_found")
         return []
     }
 
@@ -249,7 +249,7 @@ nonisolated enum ImageTextRecognizer {
                         return try candidate.boundingBox(for: index..<text.index(after: index))
                             .map { ImageTextLine.imageBounds($0.boundingBox, orientation: orientation) }
                     } catch {
-                        NSLog("Text recognition character bounds unavailable; using line bounds")
+                        AppLog.event("capture", "text_recognition_character_bounds_unavailable_using_line_bounds")
                         return nil
                     }
                 }
