@@ -1004,7 +1004,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     private var pauseStartTime: CMTime?
     private var totalPauseDuration: CMTime = .zero
     private var latestAdjustedTime: CMTime = .zero
-    private var needsPauseDurationUpdate = false
     private var failureError: Error?
     private var didReportFailure = false
     private var latestScreenSample: SendableSampleBuffer?
@@ -1085,7 +1084,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
             pauseStartTime = nil
             totalPauseDuration = .zero
             latestAdjustedTime = .zero
-            needsPauseDurationUpdate = false
             failureError = nil
             didReportFailure = false
         }
@@ -1101,20 +1099,25 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     }
 
     func pause() {
+        let requestedTime = CMClockGetTime(CMClockGetHostTimeClock())
         writingQueue.async { [weak self] in
             guard let self, !isPaused else { return }
 
             isPaused = true
-            pauseStartTime = nil
+            pauseStartTime = requestedTime
         }
     }
 
     func resume() {
+        let requestedTime = CMClockGetTime(CMClockGetHostTimeClock())
         writingQueue.async { [weak self] in
             guard let self, isPaused else { return }
 
             isPaused = false
-            needsPauseDurationUpdate = true
+            if let pauseStartTime {
+                totalPauseDuration = CMTimeAdd(totalPauseDuration, CMTimeSubtract(requestedTime, pauseStartTime))
+            }
+            pauseStartTime = nil
         }
     }
 
@@ -1158,7 +1161,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                     self.isSessionStarted = true
                 }
 
-                guard self.handlePauseState(sampleTime: time) else { return }
+                guard !self.isPaused else { return }
 
                 let adjustedPTS = self.adjustedTime(time)
                 guard adjustedPTS >= .zero, adjustedPTS > self.latestAdjustedTime || self.latestAdjustedTime == .zero, self.checkWriterHealth() else { return }
@@ -1324,25 +1327,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         return adjusted
     }
 
-    private func handlePauseState(sampleTime: CMTime) -> Bool {
-        if isPaused {
-            if pauseStartTime == nil {
-                pauseStartTime = sampleTime
-            }
-            return false
-        }
-
-        if needsPauseDurationUpdate, let pauseStartTime {
-            totalPauseDuration = CMTimeAdd(totalPauseDuration, CMTimeSubtract(sampleTime, pauseStartTime))
-            self.pauseStartTime = nil
-            needsPauseDurationUpdate = false
-        } else if needsPauseDurationUpdate {
-            needsPauseDurationUpdate = false
-        }
-
-        return true
-    }
-
     private static func retime(_ sampleBuffer: CMSampleBuffer, to newPTS: CMTime) -> CMSampleBuffer? {
         var timing = CMSampleTimingInfo(
             duration: CMSampleBufferGetDuration(sampleBuffer),
@@ -1376,7 +1360,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         pauseStartTime = nil
         totalPauseDuration = .zero
         latestAdjustedTime = .zero
-        needsPauseDurationUpdate = false
         failureError = nil
         didReportFailure = false
     }
