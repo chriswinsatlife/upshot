@@ -50,14 +50,6 @@ struct SettingsAboutPane: View {
                                 updaterManager.checkForUpdates()
                             }
                             .disabled(!updaterManager.canCheckForUpdates)
-
-                            SettingsButton("GitHub", systemImage: "chevron.left.forwardslash.chevron.right") {
-                                open("https://github.com/chriswinsatlife/upshot")
-                            }
-
-                            SettingsButton("@fayazara", systemImage: "at") {
-                                open("https://x.com/fayazara")
-                            }
                         }
                     }
                     .padding(.top, Space.xs)
@@ -78,18 +70,6 @@ struct SettingsAboutPane: View {
                 }
                 .toggleStyle(.ink)
             }
-
-            Section {
-                Text("Upshot is open source and built by Fayaz Ahmed. Issues, ideas and pull requests are welcome on GitHub.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
-    }
-
-    private func open(_ string: String) {
-        guard let url = URL(string: string) else { return }
-        NSWorkspace.shared.open(url)
     }
 }
