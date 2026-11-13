@@ -3,6 +3,7 @@ import Foundation
 extension UpshotPreferences {
     static let screenshotConvertToSRGBKey = "screenshotConvertToSRGB"
     static let screenshotScaleToOneXKey = "screenshotScaleToOneX"
+    static let screenshotBorderKey = "screenshotBorder"
 
     static var screenshotConvertToSRGB: Bool {
         UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
@@ -10,5 +11,9 @@ extension UpshotPreferences {
 
     static var screenshotScaleToOneX: Bool {
         UserDefaults.standard.bool(forKey: screenshotScaleToOneXKey)
+    }
+
+    static var screenshotBorder: Bool {
+        UserDefaults.standard.bool(forKey: screenshotBorderKey)
     }
 }

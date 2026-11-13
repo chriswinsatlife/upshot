@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 nonisolated struct ScreenshotPixelOptions: Sendable {
     var convertToSRGB = false
     var scaleToOneX = false
+    var addBorder = false
 }
 
 nonisolated struct ScreenshotPixelProcessingResult: Sendable {
@@ -30,7 +31,8 @@ nonisolated enum ScreenshotPixelProcessor {
         let scale = sourceScale.flatMap { $0.isFinite && $0 >= 1 ? $0 : nil }
             ?? max(1, dpi / 72)
         let outputScale: CGFloat = options.scaleToOneX ? 1 : scale
-        let outputImage = try process(image: image, sourceScale: scale, options: options)
+        var outputImage = try process(image: image, sourceScale: scale, options: options)
+        if options.addBorder { outputImage = try addingBorder(to: outputImage) }
         try writePNG(outputImage, to: url, scale: outputScale)
         return ScreenshotPixelProcessingResult(
             width: outputImage.width,
@@ -68,6 +70,19 @@ nonisolated enum ScreenshotPixelProcessor {
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
         try (data as Data).write(to: url, options: .atomic)
+    }
+
+    static func addingBorder(to image: CGImage) throws -> CGImage {
+        let width = image.width + 2
+        let height = image.height + 2
+        let context = try bitmapContext(width: width, height: height, colorSpace: colorSpace(for: image))
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.clear(CGRect(x: 1, y: 1, width: image.width, height: image.height))
+        context.draw(image, in: CGRect(x: 1, y: 1, width: image.width, height: image.height))
+        guard let bordered = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
+        NSLog("Screenshot output: 1px border completed width=%d height=%d", width, height)
+        return bordered
     }
 
     static func bitmapContext(width: Int, height: Int, colorSpace: CGColorSpace) throws -> CGContext {
