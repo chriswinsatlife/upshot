@@ -334,9 +334,6 @@ enum StateRenderCatalog {
                 AnyView(CaptureFeedbackRenderBackdrop(image: fixtures.image) { CaptureFeedbackRenderStates.codeFeedbackView(variant: variant) })
             }
         }
-        add("menu-bar", "MenuBarView", "struct MenuBarView", 400, 800) {
-            AnyView(VStack(alignment: .leading, spacing: 10) { MenuBarView() }.buttonStyle(.borderless).padding(18))
-        }
         return states + StateRenderSupplementalCatalog.states(fixtures: fixtures)
     }
 }

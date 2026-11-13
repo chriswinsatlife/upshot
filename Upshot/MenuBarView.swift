@@ -1,104 +1,85 @@
 import AppKit
-import AVFoundation
-import ScreenCaptureKit
+import Combine
 import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject private var updaterManager = UpdaterManager.shared
     @State private var historyStore = ScreenshotHistoryStore.shared
     @State private var projectStore = RecordingProjectStore.shared
+    @State private var recordingManager = ScreenRecordingManager.shared
+    @State private var hotkeyManager = HotkeyManager.shared
+    @State private var shortcuts = CaptureHotkeyPreferences.shortcuts()
 
     var body: some View {
         Group {
-            Button {
-                CaptureCoordinator.shared.captureFullscreen()
-            } label: {
-                Label("Capture Fullscreen", systemImage: "macwindow")
-            }
+            actionButton(.area, symbol: "rectangle.dashed") { CaptureCoordinator.shared.captureArea() }
+            actionButton(.fullscreen, symbol: "camera") { CaptureCoordinator.shared.captureFullscreen() }
+            actionButton(.window, symbol: "macwindow") { CaptureCoordinator.shared.captureWindow() }
+            actionButton(.allInOne, symbol: "viewfinder")
+            actionButton(.scrollingCapture, symbol: "arrow.down.to.line")
+            actionButton(.selfTimer, symbol: "timer")
+            actionButton(.textCapture, symbol: "text.viewfinder") { CaptureCoordinator.shared.captureText() }
+            actionButton(.screenRecording, symbol: "record.circle") { RecordingPickerPresenter.shared.show() }
 
-            Button {
-                CaptureCoordinator.shared.captureWindow()
-            } label: {
-                Label("Capture Window", systemImage: "macwindow.on.rectangle")
-            }
-
-            Button {
-                CaptureCoordinator.shared.captureArea()
-            } label: {
-                Label("Capture Area", systemImage: "rectangle.dashed")
-            }
-
-            Button {
-                CaptureCoordinator.shared.captureText()
-            } label: {
-                Label("Capture Text", systemImage: "text.viewfinder")
-            }
-
-            Button {
-                RecordingPickerPresenter.shared.show()
-            } label: {
-                Label("Record Screen", systemImage: "record.circle")
-            }
-
-            Menu("Capture Actions") {
-                ForEach(CaptureHotkeyAction.allCases.filter {
-                    $0.route.hasPrefix("capture/") || [.toggleCrosshair, .toggleMagnifier, .toggleDesktopIcons].contains($0)
-                }) { action in
-                    Button(action.title) { action.perform() }
-                }
-            }
-
-            Menu("Recording Controls") {
-                ForEach(CaptureHotkeyAction.allCases.filter { $0.route.hasPrefix("recording/") && $0 != .screenRecording }) { action in
-                    Button(action.title) { action.perform() }
-                }
-            }
+            actionMenu(Self.captureActionsTitle, symbol: "ellipsis.circle", groups: Self.captureActionGroups)
+            actionMenu(Self.recordingControlsTitle, symbol: "pause.circle", groups: Self.recordingControlGroups)
 
             Divider()
 
-            Button {
-                CaptureLibraryModel.shared.show()
-            } label: {
-                Label("Open Library", systemImage: "square.grid.2x2")
-            }
-            .keyboardShortcut("l", modifiers: [.command, .shift])
+            actionButton(.toggleDesktopIcons, symbol: "eye")
 
-            Menu {
-                projectsMenuContent
-            } label: {
-                Label("Recordings", systemImage: "film.stack")
+            Divider()
+
+            actionButton(.library, symbol: "square.grid.2x2", fallbackShortcut: KeyboardShortcut("l", modifiers: [.command, .shift])) {
+                CaptureLibraryModel.shared.show()
             }
+            actionButton(.captureHistory, symbol: "clock.arrow.circlepath")
+            actionButton(.restoreLastCapture, symbol: "arrow.uturn.backward")
 
             Menu {
                 historyMenuContent
             } label: {
-                Label("Recent Captures", systemImage: "clock.arrow.circlepath")
+                Label(Self.recentCapturesTitle, systemImage: "photo")
             }
 
-            Button {
-                openScreenshotsFolder()
+            Menu {
+                projectsMenuContent
             } label: {
-                Label("Open Screenshots Folder", systemImage: "folder")
+                Label(Self.recordingsTitle, systemImage: "film.stack")
             }
 
-            Button {
-                openSettings(tab: .general)
-            } label: {
-                Label("Settings", systemImage: "gearshape")
+            actionButton(.screenshotsFolder, symbol: "folder") { openScreenshotsFolder() }
+
+            Divider()
+
+            actionMenu(Self.libraryActionsTitle, symbol: "rectangle.stack", groups: Self.libraryActionGroups)
+            actionMenu(Self.screenshotEditorActionsTitle, symbol: "pencil.tip.crop.circle", groups: Self.screenshotEditorActionGroups)
+            actionMenu(Self.recordingEditorActionsTitle, symbol: "film", groups: Self.recordingEditorActionGroups)
+
+            Divider()
+
+            actionButton(.settingsAbout, symbol: "info.circle")
+
+            Divider()
+
+            actionButton(.settings, symbol: "gearshape", fallbackShortcut: KeyboardShortcut(",", modifiers: [.command])) {
+                SettingsWindowController.show(tab: .general)
             }
-            .keyboardShortcut(",", modifiers: [.command])
+            actionMenu(Self.settingsPanesTitle, symbol: "sidebar.left", groups: Self.settingsPaneGroups)
 
             Button {
                 updaterManager.checkForUpdates()
             } label: {
-                Label("Check for Updates…", systemImage: "arrow.down.circle")
+                Label(Self.checkForUpdatesTitle, systemImage: "arrow.down.circle")
             }
             .disabled(!updaterManager.canCheckForUpdates)
 
             Divider()
 
-            Button("Quit Upshot") {
+            Button {
                 NSApplication.shared.terminate(nil)
+            } label: {
+                Label(Self.quitTitle, systemImage: "power")
             }
             .keyboardShortcut("q")
         }
@@ -106,26 +87,83 @@ struct MenuBarView: View {
             historyStore.reload()
             projectStore.reload()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            let latest = CaptureHotkeyPreferences.shortcuts()
+            if latest != shortcuts { shortcuts = latest }
+        }
+    }
+
+    private func actionButton(
+        _ action: CaptureHotkeyAction,
+        symbol: String? = nil,
+        fallbackShortcut: KeyboardShortcut? = nil,
+        perform: (() -> Void)? = nil
+    ) -> some View {
+        Button {
+            if let perform { perform() } else { action.perform() }
+        } label: {
+            if let symbol {
+                Label(Self.menuTitle(for: action), systemImage: symbol)
+            } else {
+                Text(Self.menuTitle(for: action))
+            }
+        }
+        .keyboardShortcut(menuShortcut(for: action) ?? fallbackShortcut)
+        .disabled(!isAvailable(action))
+    }
+
+    private func actionMenu(_ title: String, symbol: String, groups: [[CaptureHotkeyAction]]) -> some View {
+        Menu {
+            ForEach(groups.indices, id: \.self) { index in
+                if index > 0 { Divider() }
+                ForEach(groups[index]) { action in
+                    actionButton(action)
+                }
+            }
+        } label: {
+            Label(title, systemImage: symbol)
+        }
+    }
+
+    private func menuShortcut(for action: CaptureHotkeyAction) -> KeyboardShortcut? {
+        guard hotkeyManager.registrationErrors[action] == nil else { return nil }
+        return shortcuts[action]?.menuKeyboardShortcut
+    }
+
+    private func isAvailable(_ action: CaptureHotkeyAction) -> Bool {
+        let state = recordingManager.state
+        switch action {
+        case .recordingStart:
+            return !recordingManager.isActive
+        case .recordingToggle:
+            return [.idle, .recording, .paused].contains(state)
+        case .recordingStop, .recordingRestart, .recordingDiscard:
+            return [.recording, .paused].contains(state)
+        case .recordingPause, .recordingTogglePen, .recordingClearPen:
+            return state == .recording
+        case .recordingResume:
+            return state == .paused
+        default:
+            return true
+        }
     }
 
     @ViewBuilder
     private var projectsMenuContent: some View {
         if projectStore.projects.isEmpty {
-            Text("No recordings")
+            Text("No Recordings")
         } else {
             ForEach(projectStore.recentProjects) { project in
                 Button(projectMenuTitle(for: project)) {
                     RecordingProjectOpener.shared.open(project.session)
                 }
             }
-
-            Divider()
         }
 
-        Button {
+        Divider()
+
+        Button("Show All Recordings…") {
             CaptureLibraryModel.shared.show(filter: .recordings)
-        } label: {
-            Label("Show All Recordings…", systemImage: "square.grid.2x2")
         }
     }
 
@@ -136,25 +174,20 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var historyMenuContent: some View {
-        Button(CaptureHotkeyAction.captureHistory.title) { CaptureHotkeyAction.captureHistory.perform() }
-        Button(CaptureHotkeyAction.restoreLastCapture.title) { CaptureHotkeyAction.restoreLastCapture.perform() }
-        Divider()
         if historyStore.recentItems.isEmpty {
-            Text("No captures")
+            Text("No Captures")
         } else {
             ForEach(historyStore.recentItems) { item in
                 Button(historyMenuTitle(for: item)) {
                     showHistoryPreview(item)
                 }
             }
-
-            Divider()
         }
 
-        Button {
+        Divider()
+
+        Button("Show All Captures…") {
             CaptureLibraryModel.shared.show(filter: .all)
-        } label: {
-            Label("Show All Captures…", systemImage: "rectangle.stack")
         }
     }
 
@@ -165,10 +198,6 @@ struct MenuBarView: View {
             CaptureShelf.shared.show(existing: item.url, kind: .image)
         }
         CaptureShelfPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: false))
-    }
-
-    private func openSettings(tab: SettingsTab) {
-        SettingsWindowController.show(tab: tab)
     }
 
     private func openScreenshotsFolder() {
@@ -223,6 +252,116 @@ struct MenuBarView: View {
 }
 
 extension MenuBarView {
-    var renderProjectsMenu: some View { projectsMenuContent }
-    var renderHistoryMenu: some View { historyMenuContent }
+    static let captureActionsTitle = "Capture Actions"
+    static let recordingControlsTitle = "Recording Controls"
+    static let recentCapturesTitle = "Recent Captures"
+    static let recordingsTitle = "Recordings"
+    static let libraryActionsTitle = "Library Actions"
+    static let screenshotEditorActionsTitle = "Screenshot Editor Actions"
+    static let recordingEditorActionsTitle = "Recording Editor Actions"
+    static let settingsPanesTitle = "Settings Panes"
+    static let checkForUpdatesTitle = "Check for Updates…"
+    static let quitTitle = "Quit Upshot"
+
+    static let topLevelActions: [CaptureHotkeyAction] = [
+        .area, .fullscreen, .window, .allInOne, .scrollingCapture, .selfTimer, .textCapture, .screenRecording,
+        .toggleDesktopIcons,
+        .library, .captureHistory, .restoreLastCapture, .screenshotsFolder,
+        .settingsAbout, .settings
+    ]
+
+    static let captureActionGroups: [[CaptureHotkeyAction]] = [
+        [.smartElement, .previousArea],
+        [.areaCopy, .areaSave, .areaUpload],
+        [.toggleCrosshair, .toggleMagnifier]
+    ]
+
+    static let recordingControlGroups: [[CaptureHotkeyAction]] = [
+        [.recordingStart, .recordingStop, .recordingToggle],
+        [.recordingPause, .recordingResume, .recordingRestart, .recordingDiscard],
+        [.recordingTogglePen, .recordingClearPen]
+    ]
+
+    static let libraryActionGroups: [[CaptureHotkeyAction]] = [
+        [.libraryScreenshots, .libraryRecordings, .libraryRefresh],
+        [.libraryPreview, .libraryEdit, .libraryRename, .libraryCopy, .libraryExport, .libraryReveal, .libraryTrash],
+        [.libraryCopyText, .libraryDetectCodes]
+    ]
+
+    static let screenshotEditorActionGroups: [[CaptureHotkeyAction]] = [
+        [.editorOpen],
+        [.editorSave, .editorSaveCopy, .editorDone, .editorShare],
+        [.editorUndo, .editorRedo],
+        [.editorHighlighter, .editorMeasure, .editorTextPlain, .editorTextLabel, .editorTextCallout, .editorRedactionStyle],
+        [.editorRotateClockwise, .editorRotateCounterclockwise, .editorFlipHorizontal, .editorFlipVertical,
+         .editorCombineSideBySide, .editorCombineStacked],
+        [.editorWatermark, .editorColorAdjustments, .editorDrawingSmoothing, .editorObjectShadows,
+         .editorExpandCanvas, .editorAlwaysOnTop]
+    ]
+
+    static let recordingEditorActionGroups: [[CaptureHotkeyAction]] = [
+        [.recordingEditorOpen],
+        [.recordingEditorPlay, .recordingEditorPause],
+        [.recordingEditorUndo, .recordingEditorRedo, .recordingEditorSave],
+        [.recordingEditorExport, .recordingEditorExportGIF, .recordingEditorExportAudio, .recordingEditorCancelExport]
+    ]
+
+    static let settingsPaneGroups: [[CaptureHotkeyAction]] = [
+        [.settingsScreenshots, .settingsVideo, .settingsOverlay, .settingsMCP, .settingsCloud]
+    ]
+
+    static var menuActions: [CaptureHotkeyAction] {
+        topLevelActions + [
+            captureActionGroups, recordingControlGroups, libraryActionGroups,
+            screenshotEditorActionGroups, recordingEditorActionGroups, settingsPaneGroups
+        ].flatMap { $0.flatMap { $0 } }
+    }
+
+    static func menuTitle(for action: CaptureHotkeyAction) -> String {
+        switch action {
+        case .screenRecording: "Record Screen"
+        case .settingsAbout: "About Upshot"
+        case .settings: "Settings…"
+        case .settingsScreenshots: SettingsTab.screenshots.title
+        case .settingsVideo: SettingsTab.video.title
+        case .settingsOverlay: SettingsTab.overlay.title
+        case .settingsMCP: SettingsTab.mcp.title
+        case .settingsCloud: SettingsTab.cloud.title
+        default: action.title
+        }
+    }
+}
+
+private extension HotkeyShortcut {
+    var menuKeyboardShortcut: KeyboardShortcut? {
+        guard isValid, let token = displayTokens.last, let key = Self.menuKeyEquivalent(for: token) else { return nil }
+        var eventModifiers: EventModifiers = []
+        if modifiers.contains(.command) { eventModifiers.insert(.command) }
+        if modifiers.contains(.option) { eventModifiers.insert(.option) }
+        if modifiers.contains(.control) { eventModifiers.insert(.control) }
+        if modifiers.contains(.shift) { eventModifiers.insert(.shift) }
+        return KeyboardShortcut(key, modifiers: eventModifiers)
+    }
+
+    static func menuKeyEquivalent(for token: String) -> KeyEquivalent? {
+        switch token {
+        case "↩": return .return
+        case "⇥": return .tab
+        case "Space": return .space
+        case "⌫": return .delete
+        case "⌦": return .deleteForward
+        case "⎋": return .escape
+        case "←": return .leftArrow
+        case "→": return .rightArrow
+        case "↑": return .upArrow
+        case "↓": return .downArrow
+        default:
+            if token.count > 1, token.first == "F", let number = Int(token.dropFirst()), (1...12).contains(number),
+               let scalar = UnicodeScalar(NSF1FunctionKey + number - 1) {
+                return KeyEquivalent(Character(scalar))
+            }
+            guard token.count == 1, let character = token.lowercased().first else { return nil }
+            return KeyEquivalent(character)
+        }
+    }
 }

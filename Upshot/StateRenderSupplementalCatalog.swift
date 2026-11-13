@@ -124,18 +124,9 @@ enum StateRenderSupplementalCatalog {
                 )
             }
         }
-        for filter in ["capture-actions", "recording-controls", "history", "projects"] {
-            add("menu-\(filter)", "MenuBarView", "struct MenuBarView", 500, filter == "capture-actions" ? 1600 : 900) {
-                if filter == "history" { return AnyView(VStack(alignment: .leading, spacing: 10) { MenuBarView().renderHistoryMenu }.padding(18)) }
-                if filter == "projects" { return AnyView(VStack(alignment: .leading, spacing: 10) { MenuBarView().renderProjectsMenu }.padding(18)) }
-                let actions = CaptureHotkeyAction.allCases.filter {
-                    filter == "capture-actions"
-                        ? $0.route.hasPrefix("capture/") || [.toggleCrosshair, .toggleMagnifier, .toggleDesktopIcons].contains($0)
-                        : $0.route.hasPrefix("recording/") && $0 != .screenRecording
-                }
-                return AnyView(VStack(alignment: .leading, spacing: 14) {
-                    ForEach(actions) { action in Text(action.title).frame(maxWidth: .infinity, alignment: .leading) }
-                }.padding(20))
+        for state in MenuBarMenuRenderState.allCases {
+            add(state.rawValue, "MenuBarView", "struct MenuBarView", state.size.width, state.size.height) {
+                await MenuBarMenuRendering.makeView(for: state)
             }
         }
         for variant in ["display", "window"] {

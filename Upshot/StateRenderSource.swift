@@ -145,8 +145,8 @@ enum StateRenderSource {
             ("struct LiveRecordingSettingsSection: View {", 3),
         ],
         "Upshot/MenuBarView.swift": [
-            ("struct MenuBarView: View {", 6),
-            ("let alert = NSAlert()", 193),
+            ("struct MenuBarView: View {", 5),
+            ("let alert = NSAlert()", 222),
         ],
         "Upshot/PinnedScreenshotPresenter.swift": [
             ("final class PinnedScreenshotPresenter {", 5),
