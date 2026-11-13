@@ -93,7 +93,8 @@ enum MenuBarMenuRendering {
         let items = MenuBarMenuSnapshotItem.items(in: menu)
         logCoverage(items: items, state: state)
         logMetrics()
-        return AnyView(MenuBarMenuRenderView(items: items, openSubmenuTitle: state.openSubmenuTitle))
+        let availableHeight = (try? StateRenderDisplay.visibleFrame.height) ?? .infinity
+        return AnyView(MenuBarMenuRenderView(items: items, openSubmenuTitle: state.openSubmenuTitle, availableHeight: availableHeight))
     }
 
     private static func assignFixtureShortcuts() {
@@ -161,6 +162,7 @@ private extension MenuBarMenuSnapshotItem {
 struct MenuBarMenuRenderView: View {
     let items: [MenuBarMenuSnapshotItem]
     let openSubmenuTitle: String?
+    var availableHeight: CGFloat = .infinity
 
     private let rowHeight: CGFloat = 24
     private let separatorHeight: CGFloat = 11
@@ -174,11 +176,19 @@ struct MenuBarMenuRenderView: View {
             if let openSubmenuTitle, let index = items.firstIndex(where: { $0.title == openSubmenuTitle }),
                let submenu = items[index].submenu {
                 menuPanel(submenu, highlightedTitle: nil)
-                    .padding(.top, offset(before: index) - menuPadding)
+                    .padding(.top, submenuTop(before: index, submenu: submenu))
             }
         }
         .fixedSize()
         .padding(Self.shadowRoom)
+    }
+
+    private func height(of items: [MenuBarMenuSnapshotItem]) -> CGFloat {
+        menuPadding * 2 + items.reduce(0) { $0 + ($1.isSeparator ? separatorHeight : rowHeight) }
+    }
+
+    private func submenuTop(before index: Int, submenu: [MenuBarMenuSnapshotItem]) -> CGFloat {
+        max(0, min(offset(before: index) - menuPadding, availableHeight - height(of: submenu) - 8))
     }
 
     private func offset(before index: Int) -> CGFloat {

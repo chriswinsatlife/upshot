@@ -311,7 +311,7 @@ enum StateRenderCatalog {
                 }
                 let scale = CGSize(width: StateRenderDisplay.size.width / 1000, height: StateRenderDisplay.size.height / 625)
                 let selection = (variant == "magnifier-above" ? CGRect(x: 120, y: 60, width: 500, height: 230) : variant == "magnifier-below" ? CGRect(x: 120, y: 330, width: 500, height: 230) : nil)
-                    .map { CGRect(x: $0.minX * scale.width, y: $0.minY * scale.height, width: $0.width * scale.width, height: $0.height * scale.height) }
+                    .map { CGRect(x: ($0.minX * scale.width).rounded(), y: ($0.minY * scale.height).rounded(), width: ($0.width * scale.width).rounded(), height: ($0.height * scale.height).rounded()) }
                 let pointer = selection.map { CGPoint(x: $0.maxX, y: variant == "magnifier-above" ? $0.maxY : $0.minY) }
                 return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: .area, allInOne: false, crosshair: false, size: StateRenderDisplay.size, pointer: pointer, selection: selection) })
             }

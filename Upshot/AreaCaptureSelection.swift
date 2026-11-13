@@ -857,7 +857,7 @@ extension AreaCaptureSelection {
         selector.aspect = aspect
         selector.status = status
         selector.start = nil
-        selector.pointer = pointer ?? CGPoint(x: size.width * 0.65, y: size.height * 0.592)
+        selector.pointer = pointer ?? CGPoint(x: (size.width * 0.65).rounded(), y: (size.height * 0.592).rounded())
         let selection = selection ?? CGRect(x: size.width * 0.12, y: size.height * 0.28, width: size.width * 0.62, height: size.height * 0.528)
         selector.highlightedRect = crosshair || mode == .text ? nil : aspect.map { RecordingAreaGeometry.reshaped(selection, to: $0.ratio, in: snapshot.frame) } ?? selection
         return AreaCaptureSelectionView(snapshot: snapshot, frozen: true, selector: selector)

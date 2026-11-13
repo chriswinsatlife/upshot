@@ -43,7 +43,7 @@ enum StateRenderSupplementalCatalog {
             return AnyView(SettingsView())
         }
         add("design-gallery", "InterfaceStyleGallery", "struct InterfaceStyleGallery", 1380, 2900) {
-            AnyView(InterfaceStyleGallery(backdrop: fixtures.image))
+            AnyView(ScrollView { InterfaceStyleGallery(backdrop: fixtures.image) })
         }
         for variant in ["annotation", "studio"] {
             add("\(variant)-new-style", variant == "annotation" ? "AnnotationStyleStrip" : "RecordingStudioLook", "private var nameEditor", 340, 330) {
