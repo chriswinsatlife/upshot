@@ -34,6 +34,8 @@ Screenshot pixels, recognized text, clipboard contents, keystroke contents, cred
 
 ## Crash Records
 
+`UpshotApplication.reportException` routes AppKit-caught event and drawing exceptions to `event=appkit_exception`. The application principal class and normal startup instantiate this subclass. The override records the exception without invoking the default raw NSLog dump.
+
 `event=uncaught_exception` contains the Objective-C exception name, sanitized reason, call stack, and `crash_id`. The handler attempts its own try-lock, snapshots breadcrumbs with a try-lock, and writes the crash record directly to the preopened crash descriptor. It never waits for the event writer, its process lock, or a flush. A 25 ms cooperative budget limits breadcrumb formatting and write retries. A kernel write can exceed that budget; the handler uses no fsync. `breadcrumb_status` records an unavailable snapshot or exceeded formatting budget. It does not catch the exception or resume execution.
 
 The process retains its last 200 events in memory. The exception handler copies these events into `event=crash_breadcrumb` lines with the same `crash_id`. The breadcrumb `index` increases from oldest to newest. The `original` field contains the original event with its original timestamp, session identifier, and process identifier.
@@ -78,3 +80,14 @@ The exception command intentionally exits with SIGABRT. The crash file’s `unca
 - Apple. (n.d.). [CTLineGetTypographicBounds](https://developer.apple.com/documentation/coretext/ctlinegettypographicbounds(_:_:_:_:)).
 - Tane, B. (n.d.). [Logging sucks](https://loggingsucks.com/).
 - Stripe. (2019). [Fast and flexible observability with canonical log lines](https://stripe.com/blog/canonical-log-lines).
+
+## AppKit Exception Verification
+
+```bash
+xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
+  Upshot/AppLog.swift Upshot/CrashLogWriter.swift Upshot/UpshotApplication.swift \
+  scripts/verify-appkit-exception.swift -o .local/crash-logging/verify-appkit-exception
+.local/crash-logging/verify-appkit-exception
+```
+
+This separate executable posts an application-defined event and raises an Objective-C exception from sendEvent. AppKit’s event loop catches the exception and invokes the production reportException override. The executable checks the persisted appkit_exception and 200 breadcrumbs. It asserts a prohibited activation policy and zero windows.

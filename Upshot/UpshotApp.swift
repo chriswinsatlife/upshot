@@ -12,6 +12,7 @@ enum UpshotMain {
         if AgentRelay.isRequested {
             AgentRelay.run()
         }
+        _ = UpshotApplication.shared
         CrashDiagnostics.shared.start()
         UpshotApp.main()
     }

@@ -34,12 +34,16 @@ nonisolated enum AppLog {
     static func installExceptionHandler() {
         shared.prepareCrashCapture()
         NSSetUncaughtExceptionHandler { exception in
-            AppLog.shared.recordCrash(event: "uncaught_exception", fields: [
-                "name": exception.name.rawValue,
-                "reason": AppLog.exceptionReason(exception.reason),
-                "call_stack": exception.callStackSymbols.joined(separator: " | ")
-            ])
+            AppLog.captureException(exception, event: "uncaught_exception")
         }
+    }
+
+    static func captureException(_ exception: NSException, event: String) {
+        shared.recordCrash(event: event, fields: [
+            "name": exception.name.rawValue,
+            "reason": exceptionReason(exception.reason),
+            "call_stack": exception.callStackSymbols.joined(separator: " | ")
+        ])
     }
 
     static func exceptionReason(_ reason: String?) -> String {
