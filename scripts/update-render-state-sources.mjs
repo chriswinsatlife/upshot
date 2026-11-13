@@ -3,14 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const catalogs = await Promise.all(['StateRenderCatalog', 'StateRenderSupplementalCatalog'].map(name => readFile(resolve(root, 'Upshot', `${name}.swift`), 'utf8')));
+const catalogs = await Promise.all(['StateRenderCatalog', 'StateRenderSupplementalCatalog', 'StateRenderAlertCatalog'].map(name => readFile(resolve(root, 'Upshot', `${name}.swift`), 'utf8')));
 const names = new Set(catalogs.flatMap(text => [...text.matchAll(/"([A-Z][A-Za-z]+)"/g)].map(match => match[1])));
 const locations = [];
 for (const name of [...names].sort()) {
     const source = `Upshot/${name}.swift`;
     try { await access(resolve(root, source)); } catch { continue; }
     const lines = (await readFile(resolve(root, source), 'utf8')).split('\n');
-    const matches = lines.flatMap((text, index) => /\b(struct|class|enum)\s|NSAlert\(\)|\.alert\(|private var nameEditor/.test(text)
+    const matches = lines.flatMap((text, index) => /\b(struct|class|enum)\s|NSAlert\(\)|\.alert\(|AppAlerts\.\w+|beginSheet\(|private var nameEditor/.test(text)
         ? [`        (${JSON.stringify(text.trim())}, ${index + 1}),`]
         : []);
     locations.push(`        ${JSON.stringify(source)}: [\n${matches.map(line => '    ' + line).join('\n')}\n        ],`);

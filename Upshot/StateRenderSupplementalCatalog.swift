@@ -2,45 +2,6 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-struct StateRenderAlertView: NSViewRepresentable {
-    let title: String
-    let detail: String
-    let buttons: [String]
-    var field: String? = nil
-    var critical = false
-
-    func makeNSView(context: Context) -> NSView {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = detail
-        alert.alertStyle = critical ? .critical : .warning
-        for title in buttons { alert.addButton(withTitle: title) }
-        if let field {
-            let text = NSTextField(string: field)
-            text.frame = CGRect(x: 0, y: 0, width: 320, height: 24)
-            alert.accessoryView = text
-        }
-        alert.window.level = StateRenderer.renderLevel
-        alert.window.isReleasedWhenClosed = false
-        alert.layout()
-        let content = alert.window.contentView!
-        alert.window.contentView = nil
-        alert.window.close()
-        let container = NSView()
-        container.addSubview(content)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            content.widthAnchor.constraint(equalToConstant: content.frame.width),
-            content.heightAnchor.constraint(equalToConstant: content.frame.height)
-        ])
-        return container
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 enum StateRenderSupplementalCatalog {
     static func states(fixtures: StateRenderFixtures) -> [StateRenderDefinition] {
         var states: [StateRenderDefinition] = []
@@ -179,39 +140,7 @@ enum StateRenderSupplementalCatalog {
             RecordingPenStrokeStore.shared.end()
             return AnyView(Image(nsImage: fixtures.image).resizable().overlay { StateRenderAppKitView { RecordingPenView() } })
         }
-        let alerts: [(String, String, String, String, [String], String?)] = [
-            ("editor-unsaved", "EditorCloseGuard", "Do you want to save the changes to “Release Overview”?", "Your changes since the last save will be lost if you don't save them.", ["Save and Close", "Discard Changes", "Cancel"], nil),
-            ("editor-unsaved-project", "EditorCloseGuard", "Do you want to save your project before closing or delete it?", "This recording has never been saved. Deleting it removes the footage as well.", ["Save and Close", "Delete and Close", "Cancel"], nil),
-            ("library-rename", "CaptureLibraryView", "Rename Capture", "", ["Rename", "Cancel"], "Release Overview"),
-            ("library-trash", "CaptureLibraryView", "Move capture to Trash?", "The local files and their edits will move to Trash. Exported copies and cloud links will remain available.", ["Move to Trash", "Cancel"], nil),
-            ("library-trash-multiple", "CaptureLibraryView", "Move 3 captures to Trash?", "The local files and their edits will move to Trash. Exported copies and cloud links will remain available.", ["Move to Trash", "Cancel"], nil),
-            ("library-error", "CaptureLibraryView", "The Library action could not be completed", "The capture could not be opened.", ["OK"], nil),
-            ("cloud-delete", "CaptureLibraryInspector", "Delete from cloud?", "This permanently removes the cloud copy and breaks its share link. Your local capture stays in the Library.", ["Delete", "Cancel"], nil),
-            ("annotation-delete-style", "AnnotationStyleStrip", "Delete Style?", "“Review” will be removed from your styles. This screenshot won’t change.", ["Delete", "Cancel"], nil),
-            ("studio-delete-style", "RecordingStudioLook", "Delete Style?", "“Review” will be removed from your styles. This recording won’t change.", ["Delete", "Cancel"], nil),
-            ("watermark-import-error", "AnnotationWatermarkSourceControls", "Watermark Image Failed", "The image could not be read.", ["OK"], nil),
-            ("studio-media-import-error", "RecordingStudioTimelineDock", "Some files weren't added", "The selected media could not be read.", ["OK"], nil),
-            ("capture-name", "ScreenshotCaptureNamePrompt", "Name Screenshot", "Enter the screenshot name. The PNG extension is added automatically.", ["Use Name", "Keep Generated Name"], "Release Overview"),
-            ("recording-input-warning", "ScreenRecordingManager", "Some recording inputs are unavailable", "The selected microphone is no longer available, so it was turned off.", ["Continue"], nil),
-            ("recording-ended-early", "ScreenRecordingManager", "The recording ended early, but your footage was saved", "The recording was interrupted.", ["OK"], nil),
-            ("recording-save-error", "ScreenRecordingManager", "The recording could not be saved", "The recording destination could not be written.", ["OK"], nil),
-            ("recording-start-error", "ScreenRecordingManager", "Couldn't start the recording", "The selected recording source is unavailable.", ["OK"], nil),
-            ("recording-camera-export-error", "RecordingSessionRenderer", "The camera video could not be added", "Your screen, camera, and audio masters are safe in the recording project, but Upshot could not create the combined video: The export could not be completed.", ["OK"], nil),
-            ("recording-recovered", "RecordingRecoveryCoordinator", "Recovered an interrupted recording", "The playable footage was preserved in History and can be reopened in Upshot Studio.", ["OK"], nil),
-            ("screen-recording-permission", "ScreenRecordingManager", "Screen Recording permission needed", "Upshot can't record until it's allowed under Privacy & Security > Screen & System Audio Recording. After turning it on, quit and reopen Upshot - macOS applies the permission on relaunch.", ["Open System Settings", "Cancel"], nil),
-            ("microphone-permission", "RecordingInputAuthorization", "Microphone access needed", "Allow Upshot to use the microphone in Privacy & Security, then select it again.", ["Open System Settings", "Cancel"], nil),
-            ("camera-permission", "RecordingInputAuthorization", "Camera access needed", "Allow Upshot to use the camera in Privacy & Security, then select it again.", ["Open System Settings", "Cancel"], nil),
-            ("automation-confirmation", "AutomationURLRouter", "Allow a link to run “Share”?", "Another app or a web page opened an Upshot link that uploads, shares, deletes, or saves changes.", ["Run", "Cancel"], nil),
-            ("automation-error", "AutomationURLRouter", "Upshot could not perform the URL action", "Unknown Upshot route.", ["OK"], nil),
-            ("screenshots-folder-error", "MenuBarView", "Could not open screenshots folder.", "The export folder is unavailable.", ["OK"], nil),
-            ("quit-unsaved", "UpshotApp", "You have 1 unsaved capture", "These captures haven't been saved to your Mac and will be lost if you quit. Turn on Auto Save in Settings to keep every capture automatically.", ["Cancel", "Quit Anyway"], nil),
-            ("quit-recording", "UpshotApp", "A screen recording is still in progress", "Upshot will finish and save the recording before quitting.", ["Cancel", "Finish Recording and Quit"], nil)
-        ]
-        for (name, source, title, detail, buttons, field) in alerts {
-            add("alert-\(name)", source, source == "CaptureLibraryView" ? ".alert(" : "NSAlert()", 620, 400) {
-                AnyView(StateRenderAlertView(title: title, detail: detail, buttons: buttons, field: field, critical: name == "recording-save-error"))
-            }
-        }
+        states.append(contentsOf: StateRenderAlertCatalog.states())
         return states
     }
 }
