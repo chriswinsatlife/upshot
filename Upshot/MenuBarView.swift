@@ -42,7 +42,9 @@ struct MenuBarView: View {
             }
 
             Menu("Capture Actions") {
-                ForEach(CaptureHotkeyAction.allCases.filter { $0.route.hasPrefix("capture/") }) { action in
+                ForEach(CaptureHotkeyAction.allCases.filter {
+                    $0.route.hasPrefix("capture/") || [.toggleCrosshair, .toggleMagnifier, .toggleDesktopIcons].contains($0)
+                }) { action in
                     Button(action.title) { action.perform() }
                 }
             }

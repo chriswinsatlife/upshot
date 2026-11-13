@@ -90,7 +90,12 @@ final class ScreenshotManager {
         switch selection.kind {
         case .fullscreen(let displayID):
             guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
-            return await captureFullscreen(displayID: displayID)
+            let url = await captureFullscreen(displayID: displayID)
+            if delaySeconds == 0 {
+                lastCaptureMetadata.skipBackgroundPreset = selection.skipBackgroundPreset
+                lastCaptureMetadata.capturedAt = selection.capturedAt
+            }
+            return url
         case .scrolling, .recording:
             throw CocoaError(.featureUnsupported)
         case .area, .element, .window: break
@@ -100,7 +105,9 @@ final class ScreenshotManager {
             var arguments = ["-l", "\(windowID)"]
             if !includeShadow { arguments.append("-o") }
             NSLog("Area window capture started: window=%u shadow=%d", windowID, includeShadow)
-            let metadata = ScreenshotCaptureMetadata(captureType: .window, skipBackgroundPreset: selection.skipBackgroundPreset, capturedAt: selection.capturedAt)
+            let metadata = ScreenshotCaptureMetadata(captureType: .window,
+                skipBackgroundPreset: delaySeconds > 0 ? NSEvent.modifierFlags.contains(.shift) : selection.skipBackgroundPreset,
+                capturedAt: delaySeconds > 0 ? Date() : selection.capturedAt)
             let url = await runScreencapture(args: arguments + ScreenshotCursorService.noninteractiveCaptureArguments)
             lastCaptureMetadata = metadata
             return url

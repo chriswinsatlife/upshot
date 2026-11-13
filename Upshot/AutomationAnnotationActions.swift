@@ -28,8 +28,7 @@ enum AutomationAnnotationActions {
             return .setTextStyle(style)
         case .editorRedactionStyle:
             let styles = RedactionKind.allCases
-            let next = styles[(styles.firstIndex(of: model.redactionKind) ?? 0) + 1 < styles.count
-                ? (styles.firstIndex(of: model.redactionKind) ?? 0) + 1 : 0]
+            let next = styles[((styles.firstIndex(of: model.redactionKind) ?? 0) + 1) % styles.count]
             guard let style = value.flatMap(RedactionKind.init(rawValue:)) ?? (value == nil ? next : nil) else {
                 throw AutomationError.message("Redaction style must be one of: \(styles.map(\.rawValue).joined(separator: ", ")).")
             }
