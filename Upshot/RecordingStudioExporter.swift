@@ -169,7 +169,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             } else {
                 result = videoURL
             }
-            Self.logger.info("Export completed totalSeconds=\(CFAbsoluteTimeGetCurrent() - started)")
+            NSLog("[Upshot] Recording export completed format=%@ seconds=%.3f", configuration.deliveryOptions.format.rawValue, CFAbsoluteTimeGetCurrent() - started)
             return result
         } onCancel: {
             cancelFlag.cancel()
@@ -181,7 +181,16 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        Self.logger.info("Export appearance zoom=\(configuration.appearance.zoomAnimationStyle.rawValue, privacy: .public) shot=\(configuration.appearance.shot.rawValue, privacy: .public) reframe=\(configuration.reframe != nil) keystrokeSize=\(configuration.appearance.keystrokes.size.rawValue, privacy: .public) keystrokeStyle=\(configuration.appearance.keystrokes.style.rawValue, privacy: .public) keystrokePosition=\(configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue, privacy: .public) keystrokeFilter=\(configuration.appearance.keystrokes.filter.rawValue, privacy: .public)")
+        NSLog(
+            "[Upshot] Export appearance zoom=%@ shot=%@ reframe=%@ keystrokeSize=%@ keystrokeStyle=%@ keystrokePosition=%@ keystrokeFilter=%@",
+            configuration.appearance.zoomAnimationStyle.rawValue,
+            configuration.appearance.shot.rawValue,
+            String(configuration.reframe != nil),
+            configuration.appearance.keystrokes.size.rawValue,
+            configuration.appearance.keystrokes.style.rawValue,
+            configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue,
+            configuration.appearance.keystrokes.filter.rawValue
+        )
         let timing = RecordingExportTiming(
             settings: configuration.exportSettings,
             motionBlurLevel: configuration.deliveryOptions.motionBlurLevel,
@@ -217,7 +226,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let canvasWidth = max(2, Int(outputSize.width.rounded()) & ~1)
         let canvasHeight = max(2, Int(outputSize.height.rounded()) & ~1)
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
-        Self.logger.info("Retina export scale=\(pixelScale) output=\(canvasWidth)x\(canvasHeight)")
+        NSLog("[Upshot] Retina export scale=%.2f output=%dx%d motionBlur=%@ fps=%.0f", pixelScale, canvasWidth, canvasHeight, timing.motionBlurLevel.rawValue, timing.framesPerSecond)
 
         let screenReader = try AVAssetReader(asset: screenAsset)
         let videoOutput = AVAssetReaderTrackOutput(
@@ -464,7 +473,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             try? FileManager.default.removeItem(at: outputURL)
             throw ExportError.writerFailed(writer.error)
         }
-        Self.logger.info("Audio export mono=\(configuration.deliveryOptions.monoAudio) included=\(!configuration.exportSettings.removeAudio)")
+        NSLog("[Upshot] Recording audio export mono=%@ included=%@ separateTracks=%@", String(configuration.deliveryOptions.monoAudio), String(!configuration.exportSettings.removeAudio), String(configuration.deliveryOptions.separateAudioTracks))
         progress(1)
         return outputURL
     }
