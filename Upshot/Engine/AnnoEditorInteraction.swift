@@ -221,7 +221,8 @@ extension AnnoEditor {
 
     func pointerUp(_ pointer: PointerInfo) {
         switch interaction {
-        case let .drawing(id, _):
+        case let .drawing(id, origin):
+            appendDrawPoint(id: id, origin: origin, pointer: pointer)
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
                     props.isComplete = true
@@ -361,8 +362,9 @@ extension AnnoEditor {
         }
 
         if document.shape(id)?.geoProps?.isHighlighter == true {
-            highlighterDragRect = CGRect(x: minX, y: minY, width: w, height: h)
-            let boxes = matchingTextBoxes(in: highlighterDragRect!)
+            let dragRect = CGRect(x: minX, y: minY, width: w, height: h)
+            highlighterDragRect = dragRect
+            let boxes = matchingTextBoxes(in: dragRect)
             if let first = boxes.first {
                 let bounds = boxes.dropFirst().reduce(first) { $0.union($1) }
                 minX = bounds.minX
