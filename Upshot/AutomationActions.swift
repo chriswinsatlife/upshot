@@ -174,6 +174,8 @@ enum AutomationActions {
             case .copied(let recognized): text = recognized
             case .cancelled: throw AutomationError.message("Text capture was cancelled or failed.")
             case .noTextFound: throw AutomationError.message("No text was recognized.")
+            case .captureFailed: throw AutomationError.message("Text capture failed.")
+            case .recognitionFailed: throw AutomationError.message("Text recognition failed.")
             }
             if let output = parameters["output"] {
                 let destination = URL(fileURLWithPath: output)
