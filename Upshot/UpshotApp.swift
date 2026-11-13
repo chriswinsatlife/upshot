@@ -118,7 +118,6 @@ struct UpshotApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterManager = UpdaterManager.shared
-    private var openedFilesAtLaunch = false
 
     private var pendingOpenURLs: [URL] = []
     var onOpenFiles: (([URL]) -> Void)? {
@@ -147,19 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             CaptureLibraryIndex.shared.start()
         }
-        let launchEvent = NSAppleEventManager.shared().currentAppleEvent
-        let launchReason = launchEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue
-        let launchedInBackground = launchReason == keyAELaunchedAsLogInItem
-            || launchReason == keyAELaunchedAsServiceItem
-            || CommandLine.arguments.contains(AgentSocket.launchedByAgentArgument)
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !launchedInBackground, !self.openedFilesAtLaunch else { return }
-            CaptureLibraryModel.shared.show()
-        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        openedFilesAtLaunch = true
         guard let onOpenFiles else {
             pendingOpenURLs.append(contentsOf: urls)
             return
