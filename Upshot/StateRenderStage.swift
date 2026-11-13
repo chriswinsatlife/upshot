@@ -391,16 +391,22 @@ extension StateRenderStage {
         if anchorView.isFlipped { anchorRect.origin.y = anchorView.bounds.height - anchorRect.maxY }
         let anchorOnScreen = context.convertToScreen(anchorView.convert(anchorRect, to: nil))
         let gap: CGFloat = 6
-        var origin: CGPoint
-        switch anchor.edge {
-        case .minY: origin = CGPoint(x: anchorOnScreen.midX - size.width / 2, y: anchorOnScreen.minY - gap - size.height)
-        case .maxY: origin = CGPoint(x: anchorOnScreen.midX - size.width / 2, y: anchorOnScreen.maxY + gap)
-        case .minX: origin = CGPoint(x: anchorOnScreen.minX - gap - size.width, y: anchorOnScreen.midY - size.height / 2)
-        default: origin = CGPoint(x: anchorOnScreen.maxX + gap, y: anchorOnScreen.midY - size.height / 2)
+        func origin(for edge: NSRectEdge) -> CGPoint {
+            switch edge {
+            case .minY: CGPoint(x: anchorOnScreen.midX - size.width / 2, y: anchorOnScreen.minY - gap - size.height)
+            case .maxY: CGPoint(x: anchorOnScreen.midX - size.width / 2, y: anchorOnScreen.maxY + gap)
+            case .minX: CGPoint(x: anchorOnScreen.minX - gap - size.width, y: anchorOnScreen.midY - size.height / 2)
+            default: CGPoint(x: anchorOnScreen.maxX + gap, y: anchorOnScreen.midY - size.height / 2)
+            }
         }
         let visible = try StateRenderDisplay.visibleFrame.insetBy(dx: 8, dy: 8)
-        origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
-        origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
+        func clamped(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: min(max(point.x, visible.minX), visible.maxX - size.width), y: min(max(point.y, visible.minY), visible.maxY - size.height))
+        }
+        let opposite: [NSRectEdge: NSRectEdge] = [.minY: .maxY, .maxY: .minY, .minX: .maxX, .maxX: .minX]
+        let edges = [anchor.edge, opposite[anchor.edge] ?? anchor.edge, .maxX, .minX]
+        let placed = edges.lazy.map { clamped(origin(for: $0)) }.first { !CGRect(origin: $0, size: size).intersects(anchorOnScreen) }
+        let origin = placed ?? clamped(origin(for: anchor.edge))
         let frame = CGRect(origin: origin, size: size).integral
         let glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: frame.size))
         glass.cornerRadius = Self.popoverCornerRadius
