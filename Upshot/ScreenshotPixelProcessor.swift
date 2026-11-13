@@ -29,9 +29,9 @@ nonisolated enum ScreenshotPixelProcessor {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
         let scale = Self.sourceScale(properties: properties, override: sourceScale)
         let outputScale: CGFloat = options.scaleToOneX ? 1 : scale
-        var outputImage = try process(image: image, sourceScale: scale, options: options)
+        var outputImage = try convertAndScale(image: image, sourceScale: scale, options: options)
         if options.addBorder { outputImage = try addingBorder(to: outputImage) }
-        try writePNG(outputImage, to: url, scale: outputScale)
+        try writePNG(outputImage, to: url, scale: outputScale, backgroundPresetApplied: ScreenshotOutputMetadata.hasAppliedBackgroundPreset(properties: properties))
         return ScreenshotPixelProcessingResult(
             width: outputImage.width,
             height: outputImage.height,
@@ -46,7 +46,7 @@ nonisolated enum ScreenshotPixelProcessor {
         return dpi.isFinite ? max(1, dpi / 72) : 1
     }
 
-    static func process(image: CGImage, sourceScale: CGFloat = 1, options: ScreenshotPixelOptions) throws -> CGImage {
+    static func convertAndScale(image: CGImage, sourceScale: CGFloat = 1, options: ScreenshotPixelOptions) throws -> CGImage {
         let scale = options.scaleToOneX && sourceScale.isFinite ? max(1, sourceScale) : 1
         guard options.convertToSRGB || scale > 1 else { return image }
         let colorSpace = options.convertToSRGB
@@ -62,15 +62,18 @@ nonisolated enum ScreenshotPixelProcessor {
         return converted
     }
 
-    static func writePNG(_ image: CGImage, to url: URL, scale: CGFloat) throws {
+    static func writePNG(_ image: CGImage, to url: URL, scale: CGFloat, backgroundPresetApplied: Bool = false) throws {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        let properties: [CFString: Any] = [
+        var properties: [CFString: Any] = [
             kCGImagePropertyDPIWidth: 72 * scale,
             kCGImagePropertyDPIHeight: 72 * scale
         ]
+        if backgroundPresetApplied {
+            properties[kCGImagePropertyPNGDictionary] = [kCGImagePropertyPNGDescription: ScreenshotOutputMetadata.backgroundPresetDescription]
+        }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
         try (data as Data).write(to: url, options: .atomic)

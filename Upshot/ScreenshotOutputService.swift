@@ -79,7 +79,7 @@ enum ScreenshotOutputService {
                 guard let captureBounds else { throw ScreenshotOutputError.cursorBoundsMissing }
                 image = try ScreenshotCursorService.composite(image: image, cursor: cursor, captureBounds: captureBounds)
             }
-            image = try ScreenshotPixelProcessor.process(image: image, sourceScale: scale, options: options)
+            image = try ScreenshotPixelProcessor.convertAndScale(image: image, sourceScale: scale, options: options)
             if let windowBackground {
                 image = try ScreenshotWindowBackgroundService.compose(image: image, configuration: windowBackground, outputScale: outputScale)
             }
@@ -87,7 +87,12 @@ enum ScreenshotOutputService {
             if options.addBorder { image = try ScreenshotPixelProcessor.addingBorder(to: image) }
             if options.convertToSRGB || options.scaleToOneX || options.addBorder || cursor != nil || preset != nil
                 || (windowBackground != nil && windowBackground?.mode != .original) {
-                try ScreenshotPixelProcessor.writePNG(image, to: url, scale: outputScale)
+                try ScreenshotPixelProcessor.writePNG(
+                    image,
+                    to: url,
+                    scale: outputScale,
+                    backgroundPresetApplied: preset != nil || ScreenshotOutputMetadata.hasAppliedBackgroundPreset(properties: properties)
+                )
             }
             return ScreenshotPixelProcessingResult(width: image.width, height: image.height, sourceScale: scale, outputScale: outputScale)
         }
