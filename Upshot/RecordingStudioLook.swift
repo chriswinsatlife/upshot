@@ -16,15 +16,9 @@ struct RecordingStudioStyleStrip: View {
     private static let tileAspect: CGFloat = 1.5
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            HStack(spacing: 6) {
-                Text("Styles")
-                    .font(.inspectorSectionHeader)
-                    .foregroundStyle(Palette.label.opacity(0.95))
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: 24)
-            .padding(.horizontal, InspectorMetrics.horizontalPadding)
+        VStack(alignment: .leading, spacing: Space.ml) {
+            InterfaceSectionHeader("Styles")
+                .frame(minHeight: InterfaceMetrics.rowMinimumHeight)
 
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 6) {
@@ -33,12 +27,10 @@ struct RecordingStudioStyleStrip: View {
                     }
                     addTile
                 }
-                .padding(.horizontal, InspectorMetrics.horizontalPadding - 2.5)
             }
             .scrollIndicators(.never)
+            .scrollClipDisabled()
         }
-        .padding(.top, InspectorMetrics.sectionVerticalPadding / 2 + 3)
-        .padding(.bottom, 4)
         .task(id: model.screenURL) {
             poster = await Self.poster(for: model.screenURL)
         }
@@ -149,7 +141,7 @@ struct RecordingStudioStyleStrip: View {
             }
 
             Text(presetStore.presets.isEmpty ? "Save Look" : "Save")
-                .font(.system(size: 10))
+                .font(.dsCaption)
                 .foregroundStyle(Palette.tertiaryLabel)
         }
         .frame(width: Self.tileWidth)
@@ -166,18 +158,13 @@ struct RecordingStudioStyleStrip: View {
     }
 
     private var nameEditor: some View {
-        InspectorPopover(
-            title: "New Style",
-            message: "Saves the background, frame, cursor size and camera. New recordings start with it.",
-            confirmTitle: "Save",
-            isConfirmDisabled: !canSaveName,
-            width: 292,
-            onCancel: { isNameEditorPresented = false },
-            onConfirm: savePreset
-        ) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.l) {
+            InterfaceSectionHeader("New Style", detail: "Saves the background, frame, cursor size, and camera. New recordings start with it.")
+
+            VStack(alignment: .leading, spacing: Space.s) {
                 TextField("Style name", text: $draftName)
-                    .inspectorTextField()
+                    .font(.dsBody)
+                    .interfaceFieldChrome()
                     .focused($isNameFieldFocused)
                     .onSubmit(savePreset)
                     .onChange(of: draftName) { _, newValue in
@@ -194,18 +181,31 @@ struct RecordingStudioStyleStrip: View {
                         "The selected wallpaper can’t be found. Choose it again before saving.",
                         systemImage: "exclamationmark.triangle.fill"
                     )
-                    .font(.inspectorLabel)
-                    .foregroundStyle(Palette.record)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.destructiveLabel)
                 } else if duplicateNamePreset != nil {
                     Label(
                         "A style with this name already exists.",
                         systemImage: "exclamationmark.circle.fill"
                     )
-                    .font(.inspectorLabel)
-                    .foregroundStyle(Palette.record)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.destructiveLabel)
                 }
             }
+
+            HStack(spacing: Space.m) {
+                Spacer(minLength: 0)
+                Button("Cancel") { isNameEditorPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save", action: savePreset)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSaveName)
+            }
+            .buttonStyle(.interfaceAction)
         }
+        .padding(Space.xl)
+        .frame(width: InspectorMetrics.columnIdealWidth)
+        .presentationBackground(Palette.panel)
         .onAppear {
             Task { @MainActor in
                 isNameFieldFocused = true
