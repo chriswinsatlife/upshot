@@ -40,11 +40,13 @@ struct RecordingExportOptionsPopover: View {
 
     init(
         initialSettings: VideoCompressionSettings,
+        initialDeliveryOptions: RecordingExportDeliveryOptions? = nil,
         onConfirm: @escaping (VideoCompressionSettings) -> Void
     ) {
         self.initialSettings = initialSettings
         self.onConfirm = onConfirm
         _settings = State(initialValue: initialSettings)
+        _delivery = State(initialValue: initialDeliveryOptions ?? UpshotPreferences.recordingExtendedExportDefaults)
     }
 
     var body: some View {
@@ -72,18 +74,22 @@ struct RecordingExportOptionsPopover: View {
                     toggle("Optimize GIF", isOn: $delivery.optimizesGIF)
                     InspectorHint("GIF exports loop continuously and contain no audio. Optimization combines identical frames.")
                 }
-                segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
-                segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
+                if delivery.format == .video {
+                    segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
+                    segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
+                }
                 segmented("Resolution", options: VideoCompressionResolution.allCases, selection: $settings.resolution)
                 toggle("Scale Retina to 1x", isOn: $delivery.scalesRetinaToOne)
-                segmented(
-                    "Frame rate",
-                    options: VideoExportFrameRate.allCases,
-                    selection: Binding(
-                        get: { settings.effectiveFrameRate },
-                        set: { settings.frameRate = $0 }
+                if delivery.format == .video {
+                    segmented(
+                        "Frame rate",
+                        options: VideoExportFrameRate.allCases,
+                        selection: Binding(
+                            get: { settings.effectiveFrameRate },
+                            set: { settings.frameRate = $0 }
+                        )
                     )
-                )
+                }
 
                 segmented(
                     "Motion blur",
@@ -94,25 +100,27 @@ struct RecordingExportOptionsPopover: View {
                     )
                 )
 
-                segmented(
-                    "Format",
-                    options: VideoExportContainer.allCases,
-                    selection: Binding(
-                        get: { settings.effectiveContainer },
-                        set: { settings.container = $0 }
+                if delivery.format == .video {
+                    segmented(
+                        "Format",
+                        options: VideoExportContainer.allCases,
+                        selection: Binding(
+                            get: { settings.effectiveContainer },
+                            set: { settings.container = $0 }
+                        )
                     )
-                )
 
-                InspectorHint(formatHint)
+                    InspectorHint(formatHint)
 
-                toggle("Mono audio", isOn: $delivery.monoAudio)
-                toggle("Separate audio tracks", isOn: $delivery.separateAudioTracks)
-                    .help("Keep microphone and system audio as independent tracks. Added audio uses its own mixed track. An imported replacement soundtrack replaces the recorded tracks.")
-                toggle("Include audio", isOn: Binding(
-                    get: { !settings.removeAudio },
-                    set: { settings.removeAudio = !$0 }
-                ))
-                .padding(.top, 2)
+                    toggle("Mono audio", isOn: $delivery.monoAudio)
+                    toggle("Separate audio tracks", isOn: $delivery.separateAudioTracks)
+                        .help("Keep microphone and system audio as independent tracks. Added audio uses its own mixed track. An imported replacement soundtrack replaces the recorded tracks.")
+                    toggle("Include audio", isOn: Binding(
+                        get: { !settings.removeAudio },
+                        set: { settings.removeAudio = !$0 }
+                    ))
+                    .padding(.top, 2)
+                }
             }
         }
     }

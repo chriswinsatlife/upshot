@@ -7,8 +7,8 @@ nonisolated struct RecordingExportTiming: Sendable {
     let motionBlurLevel: RecordingMotionBlurLevel
     var motionBlurEnabled: Bool { motionBlurLevel != .off }
 
-    init(settings: VideoCompressionSettings, motionBlurLevel: RecordingMotionBlurLevel? = nil) {
-        framesPerSecond = settings.effectiveFrameRate.framesPerSecond
+    init(settings: VideoCompressionSettings, motionBlurLevel: RecordingMotionBlurLevel? = nil, frameRateOverride: Double? = nil) {
+        framesPerSecond = frameRateOverride ?? settings.effectiveFrameRate.framesPerSecond
         self.motionBlurLevel = motionBlurLevel ?? (settings.effectiveMotionBlurEnabled ? .high : .off)
     }
 

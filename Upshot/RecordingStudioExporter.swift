@@ -182,7 +182,11 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
         Self.logger.info("Export appearance zoom=\(configuration.appearance.zoomAnimationStyle.rawValue) shot=\(configuration.appearance.shot.rawValue) reframe=\(configuration.reframe != nil) keystrokeSize=\(configuration.appearance.keystrokes.size.rawValue) keystrokeStyle=\(configuration.appearance.keystrokes.style.rawValue) keystrokePosition=\(configuration.appearance.keystrokes.resolvedPosition(fallback: configuration.keystrokePlacement).rawValue) keystrokeFilter=\(configuration.appearance.keystrokes.filter.rawValue)")
-        let timing = RecordingExportTiming(settings: configuration.exportSettings, motionBlurLevel: configuration.deliveryOptions.motionBlurLevel)
+        let timing = RecordingExportTiming(
+            settings: configuration.exportSettings,
+            motionBlurLevel: configuration.deliveryOptions.motionBlurLevel,
+            frameRateOverride: configuration.deliveryOptions.format == .gif ? Double(configuration.deliveryOptions.gifFrameRate.rawValue) : nil
+        )
         let sourceAsset = AVURLAsset(url: configuration.screenURL)
         let sourceDuration = try await sourceAsset.load(.duration).seconds
         let clipTimeline = configuration.clipTimeline.normalized(to: sourceDuration)
