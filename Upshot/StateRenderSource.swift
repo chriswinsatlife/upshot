@@ -110,7 +110,7 @@ enum StateRenderSource {
             ("struct ShelfItem: Identifiable {", 22),
             ("final class CaptureShelf {", 35),
             ("enum TuckReason: Hashable {", 38),
-            ("let alert = NSAlert()", 728),
+            ("switch AppAlerts.screenshotSaveFailed(error: error).runModal() {", 728),
         ],
         "Upshot/CaptureShelfView.swift": [
             ("struct CaptureShelfView: View {", 3),
@@ -141,7 +141,6 @@ enum StateRenderSource {
             ("enum FailureAlert {", 4),
             ("enum Operation {", 5),
             ("AppAlerts.operationFailed(title: operation.title, error: error, detail: operation.detail)", 30),
-            ("AppAlerts.operationFailed(title: message, error: error, detail: detail).runModal()", 40),
         ],
         "Upshot/InterfaceStyleGallery.swift": [
             ("struct InterfaceStyleGallery: View {", 4),
@@ -166,7 +165,7 @@ enum StateRenderSource {
         ],
         "Upshot/MenuBarView.swift": [
             ("struct MenuBarView: View {", 5),
-            ("let alert = NSAlert()", 222),
+            ("AppAlerts.screenshotsFolderFailed(directory: directory, errorDescription: errorDescription).runModal()", 222),
         ],
         "Upshot/PinnedScreenshotPresenter.swift": [
             ("final class PinnedScreenshotPresenter {", 5),

@@ -34,9 +34,4 @@ enum FailureAlert {
         guard !(error is CancellationError) else { return }
         alert(for: operation, error: error).runModal()
     }
-
-    static func present(message: String, error: Error, detail: String? = nil) {
-        guard !(error is CancellationError) else { return }
-        AppAlerts.operationFailed(title: message, error: error, detail: detail).runModal()
-    }
 }

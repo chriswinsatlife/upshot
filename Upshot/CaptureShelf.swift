@@ -472,7 +472,7 @@ final class CaptureShelf {
                     self.update(id) { $0.savedURL = destination }
                     self.dismiss(id: id)
                 } catch {
-                    FailureAlert.present(message: "The capture could not be saved", error: error)
+                    FailureAlert.present(.saveCapture, error: error)
                 }
             }
         }
@@ -725,18 +725,9 @@ final class CaptureShelf {
     }
 
     private func presentSaveFailure(_ error: Error, id: ShelfItem.ID) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "The screenshot could not be saved"
-        alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "Choose Another Location…")
-        alert.addButton(withTitle: "Retry")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[2].keyEquivalent = "\u{1b}"
-        NSApp.activate(ignoringOtherApps: true)
-        switch alert.runModal() {
-        case .alertFirstButtonReturn: save(id: id, choosingLocation: true)
-        case .alertSecondButtonReturn: save(id: id)
+        switch AppAlerts.screenshotSaveFailed(error: error).runModal() {
+        case .chooseLocation: save(id: id, choosingLocation: true)
+        case .tryAgain: save(id: id)
         default: break
         }
     }
@@ -780,7 +771,7 @@ final class CaptureShelf {
             try VideoFileActions.copyToClipboard(from: deliverable)
             return true
         } catch {
-            presentRecordingFailure("The recording could not be copied", error: error)
+            FailureAlert.present(.copyRecording, error: error)
             return false
         }
     }
@@ -790,7 +781,7 @@ final class CaptureShelf {
             let deliverable = try await prepareDeliverable(from: url, itemID: itemID)
             return try await VideoFileActions.saveToDefaultLocation(from: deliverable)
         } catch {
-            presentRecordingFailure("The recording could not be saved", error: error)
+            FailureAlert.present(.saveRecording, error: error)
             return nil
         }
     }
@@ -803,10 +794,6 @@ final class CaptureShelf {
         update(itemID) { $0.activity = .preparing }
         defer { update(itemID) { $0.activity = nil } }
         return try await RecordingDeliverable.resolve(for: url)
-    }
-
-    private func presentRecordingFailure(_ message: String, error: Error) {
-        FailureAlert.present(message: message, error: error, detail: "Your recording is safe in its project.")
     }
 }
 

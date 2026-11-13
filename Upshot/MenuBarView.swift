@@ -219,12 +219,7 @@ struct MenuBarView: View {
     }
 
     private func showOpenScreenshotsFolderError(directory: URL, errorDescription: String?) {
-        let alert = NSAlert()
-        alert.messageText = "Could not open screenshots folder."
-        alert.informativeText = errorDescription ?? directory.path
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        AppAlerts.screenshotsFolderFailed(directory: directory, errorDescription: errorDescription).runModal()
     }
 
     private func historyMenuTitle(for item: ScreenshotHistoryItem) -> String {
