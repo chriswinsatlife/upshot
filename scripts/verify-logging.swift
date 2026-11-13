@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import MetricKit
 
@@ -16,9 +17,45 @@ struct LoggingVerification {
             precondition(text.contains("marker=\"\(marker)\""))
             precondition(text.contains("path=\"~/Library/Logs/Upshot/upshot.log\""))
             print("file_verification outcome=verified marker=\(marker)")
+        case "queue":
+            guard arguments.count == 2 else { throw VerificationFailure.argument }
+            let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
+            let store = AppLogStore(directory: directory, queueCapacity: 1024)
+            precondition(store.flush())
+            let descriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY)
+            precondition(descriptor >= 0 && flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+            var costs: [UInt64] = []
+            costs.reserveCapacity(20_000)
+            var acceptedCosts: [UInt64] = []
+            for index in 0..<20_000 {
+                let droppedBefore = store.droppedEventCount
+                let start = DispatchTime.now().uptimeNanoseconds
+                store.record(area: "verification", event: "blocked_writer_probe", fields: ["index": String(index)])
+                let cost = DispatchTime.now().uptimeNanoseconds - start
+                costs.append(cost)
+                if store.droppedEventCount == droppedBefore { acceptedCosts.append(cost) }
+            }
+            precondition(store.droppedEventCount > 0)
+            _ = flock(descriptor, LOCK_UN)
+            Darwin.close(descriptor)
+            precondition(store.flush())
+            let text = try String(contentsOf: store.fileURL, encoding: .utf8)
+            precondition(text.contains("event=log_events_dropped "))
+            let before = text
+            store.record(area: "verification", event: "unified_only_probe", fields: ["marker": "queue_review_unified_only"], persists: false)
+            precondition(store.flush())
+            let after = try String(contentsOf: store.fileURL, encoding: .utf8)
+            precondition(after == before)
+            costs.sort()
+            acceptedCosts.sort()
+            precondition(!acceptedCosts.isEmpty)
+            print("queue_verification outcome=verified events=20000 process_lock=held dropped=\(store.droppedEventCount) mean_ns=\(costs.reduce(0, +) / UInt64(costs.count)) p50_ns=\(costs[10000]) p95_ns=\(costs[19000]) p99_ns=\(costs[19800]) maximum_ns=\(costs.last ?? 0) accepted=\(acceptedCosts.count) accepted_mean_ns=\(acceptedCosts.reduce(0, +) / UInt64(acceptedCosts.count)) accepted_p50_ns=\(acceptedCosts[acceptedCosts.count / 2]) accepted_p99_ns=\(acceptedCosts[acceptedCosts.count * 99 / 100]) unified_only_file=absent")
         case "exception":
             AppLog.installExceptionHandler()
-            for index in 0..<225 { AppLog.event("verification", "breadcrumb_probe", fields: ["index": String(index)]) }
+            for index in 0..<225 {
+                AppLog.event("verification", "breadcrumb_probe", fields: ["index": String(index)])
+                precondition(AppLog.shared.flush())
+            }
             NSException(name: .invalidArgumentException, reason: "Upshot logging verification exception", userInfo: nil).raise()
         case "rotation":
             guard arguments.count == 2 else { throw VerificationFailure.argument }
@@ -27,7 +64,11 @@ struct LoggingVerification {
             DispatchQueue.concurrentPerform(iterations: 100) { index in
                 store.record(area: "verification", event: "rotation_probe", fields: ["index": String(index), "payload": String(repeating: "a", count: 64)])
             }
-            store.flush()
+            precondition(store.flush())
+            for index in 0..<100 {
+                store.record(area: "verification", event: "rotation_probe", fields: ["index": String(index), "payload": String(repeating: "a", count: 64)])
+                precondition(store.flush())
+            }
             let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("upshot.log") }
             precondition(urls.count == 4)
             var count = 0
@@ -62,6 +103,7 @@ struct LoggingVerification {
             let now = Date().addingTimeInterval(1)
             service.importCrashReports(from: reports, stateDirectory: state, now: now)
             service.importCrashReports(from: reports, stateDirectory: state, now: now.addingTimeInterval(1))
+            precondition(AppLog.shared.flush())
             let after = try String(contentsOf: AppLog.shared.fileURL, encoding: .utf8).components(separatedBy: "event=system_crash_report ").count
             precondition(after - before == 2)
             print("scan_verification outcome=verified ips=1 legacy=1 unrelated=rejected malformed=rejected second_scan=0")

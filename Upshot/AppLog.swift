@@ -2,6 +2,7 @@ import CryptoKit
 import Darwin
 import Foundation
 import OSLog
+import Synchronization
 
 nonisolated enum AppLog {
     static let subsystem = "co.chrisyork.upshot"
@@ -9,6 +10,10 @@ nonisolated enum AppLog {
 
     static func event(_ area: String, _ name: String, fields: [String: String] = [:]) {
         shared.record(area: area, event: name, fields: fields)
+    }
+
+    static func unifiedEvent(_ area: String, _ name: String, fields: [String: String] = [:]) {
+        shared.record(area: area, event: name, fields: fields, persists: false)
     }
 
     static func error(_ error: any Error) -> String {
@@ -51,33 +56,52 @@ nonisolated enum AppLog {
 }
 
 nonisolated final class AppLogStore: @unchecked Sendable {
+    struct Event: Sendable {
+        let timestamp: Date
+        let area: String
+        let name: String
+        let fields: [String: String]
+        let persists: Bool
+    }
+
     let fileURL: URL
     let sessionID = UUID().uuidString
-    let previousEvents: [String]
-    private let lock = NSRecursiveLock()
+    let processStart = Date()
+    private let bufferLock = NSLock()
+    private let writerQueue = DispatchQueue(label: "co.chrisyork.upshot.logging", qos: .utility)
+    private let dropped = Atomic<UInt64>(0)
+    private let unreportedDrops = Atomic<UInt64>(0)
+    private let queueCapacity: Int
+    private var pending: [Event] = []
+    private var breadcrumbs = [Event?](repeating: nil, count: 200)
+    private var breadcrumbPosition = 0
+    private var drainScheduled = false
     private let maximumBytes: Int
     private let backupCount: Int
     private var descriptor: Int32 = -1
     private var lockDescriptor: Int32 = -1
     private var fileBytes = 0
-    private var events: [String] = []
+    private var previousEvents: [String] = []
     private var loggers: [String: Logger] = [:]
     private let formatter: ISO8601DateFormatter
-    private var recordingCrash = false
 
-    init(directory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Upshot", isDirectory: true), maximumBytes: Int = 5 * 1024 * 1024, backupCount: Int = 3) {
+    init(directory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Upshot", isDirectory: true), maximumBytes: Int = 5 * 1024 * 1024, backupCount: Int = 3, queueCapacity: Int = 1024) {
         fileURL = directory.appendingPathComponent("upshot.log")
         self.maximumBytes = maximumBytes
         self.backupCount = backupCount
+        self.queueCapacity = queueCapacity
+        pending.reserveCapacity(queueCapacity)
         formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        previousEvents = Self.readPreviousEvents(fileURL: fileURL, backupCount: backupCount)
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            lockDescriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
-            openFile()
-        } catch {
-            reportFileFailure("file_log_unavailable", fields: ["error": AppLog.error(error)])
+        writerQueue.async { [self] in
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                previousEvents = Self.readPreviousEvents(fileURL: fileURL, backupCount: backupCount)
+                lockDescriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
+                openFile()
+            } catch {
+                reportFileFailure("file_log_unavailable", fields: ["error": AppLog.error(error)])
+            }
         }
     }
 
@@ -86,54 +110,85 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         if lockDescriptor >= 0 { Darwin.close(lockDescriptor) }
     }
 
-    func record(area: String, event: String, fields: [String: String] = [:]) {
-        lock.lock()
-        defer { lock.unlock() }
-        let line = format(area: area, event: event, fields: fields)
-        events.append(line)
-        if events.count > 200 { events.removeFirst(events.count - 200) }
-        emit(line, area: area, isFailure: fields["error"] != nil || fields["outcome"] == "failed" || event.contains("failed"))
+    var droppedEventCount: UInt64 { dropped.load(ordering: .relaxed) }
+
+    func record(area: String, event: String, fields: [String: String] = [:], persists: Bool = true) {
+        guard bufferLock.try() else { countDrop(); return }
+        guard pending.count < queueCapacity else {
+            bufferLock.unlock()
+            countDrop()
+            return
+        }
+        let input = Event(timestamp: Date(), area: area, name: event, fields: fields, persists: persists)
+        pending.append(input)
+        breadcrumbs[breadcrumbPosition] = input
+        breadcrumbPosition = (breadcrumbPosition + 1) % breadcrumbs.count
+        let schedule = !drainScheduled
+        drainScheduled = true
+        bufferLock.unlock()
+        if schedule { writerQueue.async { [self] in drain() } }
+    }
+
+    private func countDrop() {
+        dropped.wrappingAdd(1, ordering: .relaxed)
+        unreportedDrops.wrappingAdd(1, ordering: .relaxed)
+    }
+
+    private func drain() {
+        while true {
+            bufferLock.lock()
+            let batch = pending
+            pending = []
+            pending.reserveCapacity(queueCapacity)
+            if batch.isEmpty { drainScheduled = false }
+            bufferLock.unlock()
+            let lost = unreportedDrops.exchange(0, ordering: .relaxed)
+            if lost > 0 {
+                emit(Event(timestamp: Date(), area: "logging", name: "log_events_dropped", fields: ["count": String(lost), "total": String(droppedEventCount)], persists: true))
+            }
+            if batch.isEmpty { return }
+            for event in batch { emit(event) }
+        }
     }
 
     func recordCrash(event: String, fields: [String: String], previousSession: Bool = false) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !recordingCrash else { return }
-        recordingCrash = true
-        defer { recordingCrash = false }
-        let breadcrumbs: [String]
-        if previousSession, let processID = fields["crashed_pid"] {
-            breadcrumbs = previousEvents.filter { $0.contains("pid=\"\(processID)\"") }
-        } else {
-            breadcrumbs = previousSession ? previousEvents : events
+        writerQueue.sync {
+            bufferLock.lock()
+            let snapshot = (0..<breadcrumbs.count).compactMap { breadcrumbs[(breadcrumbPosition + $0) % breadcrumbs.count] }
+            bufferLock.unlock()
+            let trail = previousSession ? previousEvents : snapshot.map { format($0) }
+            let crashID = UUID().uuidString
+            var values = fields
+            values["crash_id"] = crashID
+            values["breadcrumb_count"] = String(trail.count)
+            values["breadcrumb_source"] = previousSession ? "previous_logged_process" : "current_process"
+            let crash = format(Event(timestamp: Date(), area: "crash", name: event, fields: values, persists: true))
+            let lines = [crash] + trail.enumerated().map { index, line in
+                format(Event(timestamp: Date(), area: "crash", name: "crash_breadcrumb", fields: ["crash_id": crashID, "index": String(index), "original": line], persists: true))
+            }
+            append(Data((lines.joined(separator: "\n") + "\n").utf8), synchronize: true)
+            logger(area: "crash").fault("\(crash, privacy: .public)")
         }
-        let crashID = UUID().uuidString
-        var crashFields = fields
-        crashFields["crash_id"] = crashID
-        crashFields["breadcrumb_count"] = String(breadcrumbs.count)
-        crashFields["breadcrumb_source"] = previousSession ? "previous_logged_process" : "current_process"
-        let crash = format(area: "crash", event: event, fields: crashFields)
-        let trail = breadcrumbs.enumerated().map { index, line in
-            format(area: "crash", event: "crash_breadcrumb", fields: ["crash_id": crashID, "index": String(index), "original": line])
-        }
-        let lines = [crash] + trail
-        let data = Data((lines.joined(separator: "\n") + "\n").utf8)
-        append(data, synchronize: true)
-        logger(area: "crash").fault("\(crash, privacy: .public)")
     }
 
-    func flush() {
-        lock.lock()
-        defer { lock.unlock() }
-        if descriptor >= 0 { _ = fsync(descriptor) }
+    @discardableResult
+    func flush(timeout: TimeInterval = 5) -> Bool {
+        let completion = DispatchSemaphore(value: 0)
+        writerQueue.async { [self] in
+            drain()
+            if descriptor >= 0 { _ = fsync(descriptor) }
+            completion.signal()
+        }
+        return completion.wait(timeout: .now() + timeout) == .success
     }
 
-    private func format(area: String, event: String, fields: [String: String]) -> String {
-        var values = fields
+    private func format(_ event: Event) -> String {
+        var values = event.fields
         values["session_id"] = sessionID
         values["pid"] = String(getpid())
+        values["process_start"] = String(processStart.timeIntervalSince1970)
         let encoded = values.keys.sorted().map { key in "\(token(key))=\(quote(AppLog.path(values[key] ?? "")))" }.joined(separator: " ")
-        return "\(formatter.string(from: Date())) area=\(token(area)) event=\(token(event)) \(encoded)"
+        return "\(formatter.string(from: event.timestamp)) area=\(token(event.area)) event=\(token(event.name)) \(encoded)"
     }
 
     private func token(_ value: String) -> String {
@@ -157,14 +212,14 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         return logger
     }
 
-    private func emit(_ line: String, area: String, isFailure: Bool) {
-        if isFailure {
-            logger(area: area).error("\(line, privacy: .public)")
+    private func emit(_ event: Event) {
+        let line = format(event)
+        if event.fields["error"] != nil || event.fields["outcome"] == "failed" || event.name.contains("failed") {
+            logger(area: event.area).error("\(line, privacy: .public)")
         } else {
-            logger(area: area).notice("\(line, privacy: .public)")
+            logger(area: event.area).notice("\(line, privacy: .public)")
         }
-        let data = Data((line + "\n").utf8)
-        append(data)
+        if event.persists { append(Data((line + "\n").utf8)) }
     }
 
     private func append(_ data: Data, synchronize: Bool = false) {
@@ -232,7 +287,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
     }
 
     private func reportFileFailure(_ event: String, fields: [String: String]) {
-        let line = format(area: "logging", event: event, fields: fields)
+        let line = format(Event(timestamp: Date(), area: "logging", name: event, fields: fields, persists: false))
         logger(area: "logging").error("\(line, privacy: .public)")
     }
 

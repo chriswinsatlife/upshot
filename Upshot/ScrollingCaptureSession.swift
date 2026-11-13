@@ -186,7 +186,7 @@ final class ScrollingCaptureSession {
         try Task.checkCancellation()
         height = result.height
         if result.addedRows > 0 {
-            AppLog.event("capture", "scrolling_capture_frame_verified", fields: ["addedRows": String(describing: result.addedRows), "height": String(describing: height), "kind": String(describing: result.kind.rawValue), "meanError": String(describing: result.meanError), "overlapRows": String(describing: result.overlapRows)])
+            AppLog.unifiedEvent("capture", "scrolling_capture_frame_verified", fields: ["addedRows": String(describing: result.addedRows), "height": String(describing: height), "kind": String(describing: result.kind.rawValue), "meanError": String(describing: result.meanError), "overlapRows": String(describing: result.overlapRows)])
         }
         if result.kind == .maximumLengthReached { reachMaximumLength() }
         return result
