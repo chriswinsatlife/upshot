@@ -47,4 +47,3 @@ enum AllInOneCaptureMode: String, CaseIterable, Identifiable {
         }
     }
 }
-
