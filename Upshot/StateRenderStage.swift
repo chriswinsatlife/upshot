@@ -213,20 +213,51 @@ final class StateRenderStage {
 enum StateRenderDesktop {
     static var image: CGImage?
     static let recordingRect = CGRect(x: 304, y: 244, width: 1120, height: 630)
+    private static var fixtureWindow: CGImage?
+    private static let fixtureWindowFraction = CGRect(x: 80.0 / 1280, y: 70.0 / 800, width: 1120.0 / 1280, height: 660.0 / 800)
+    private static let fixtureWindowCornerRadius: CGFloat = 16
 
     static func install(fixtureImage: NSImage) throws {
-        guard let source = fixtureImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+        guard let source = fixtureImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw StateRenderFailure(message: "The fixture desktop image could not be decoded")
+        }
+        let crop = CGRect(x: fixtureWindowFraction.minX * CGFloat(source.width), y: fixtureWindowFraction.minY * CGFloat(source.height),
+                          width: fixtureWindowFraction.width * CGFloat(source.width), height: fixtureWindowFraction.height * CGFloat(source.height)).integral
+        guard let window = source.cropping(to: crop) else { throw StateRenderFailure(message: "The fixture window could not be cropped") }
+        fixtureWindow = window
+    }
+
+    static func prepare(appearance: String) throws {
+        guard let window = fixtureWindow,
               let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: StateRenderDisplay.pixelWidth, height: StateRenderDisplay.pixelHeight,
                                       bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
             throw StateRenderFailure(message: "The fixture desktop image could not be created")
         }
+        let scale = StateRenderDisplay.scale
         let target = CGSize(width: StateRenderDisplay.pixelWidth, height: StateRenderDisplay.pixelHeight)
-        let ratio = max(target.width / CGFloat(source.width), target.height / CGFloat(source.height))
-        let size = CGSize(width: CGFloat(source.width) * ratio, height: CGFloat(source.height) * ratio)
+        let wallpaper = try StateRenderWallpaper.image(appearance: appearance)
+        let ratio = max(target.width / CGFloat(wallpaper.width), target.height / CGFloat(wallpaper.height))
+        let wallpaperSize = CGSize(width: CGFloat(wallpaper.width) * ratio, height: CGFloat(wallpaper.height) * ratio)
         context.interpolationQuality = .high
-        context.draw(source, in: CGRect(x: (target.width - size.width) / 2, y: (target.height - size.height) / 2, width: size.width, height: size.height))
+        context.draw(wallpaper, in: CGRect(x: (target.width - wallpaperSize.width) / 2, y: (target.height - wallpaperSize.height) / 2,
+                                           width: wallpaperSize.width, height: wallpaperSize.height))
+        let windowSize = CGSize(width: 1120 * scale, height: 660 * scale)
+        let windowRect = CGRect(x: (target.width - windowSize.width) / 2, y: (target.height - windowSize.height) / 2 - 40 * scale,
+                                width: windowSize.width, height: windowSize.height)
+        let path = CGPath(roundedRect: windowRect, cornerWidth: fixtureWindowCornerRadius * scale, cornerHeight: fixtureWindowCornerRadius * scale, transform: nil)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -18 * scale), blur: 30 * scale, color: NSColor.black.withAlphaComponent(0.4).cgColor)
+        context.addPath(path)
+        context.setFillColor(NSColor.white.cgColor)
+        context.fillPath()
+        context.restoreGState()
+        context.saveGState()
+        context.addPath(path)
+        context.clip()
+        context.draw(window, in: windowRect)
+        context.restoreGState()
         image = context.makeImage()
     }
 

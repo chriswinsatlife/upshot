@@ -48,28 +48,19 @@ struct StateRenderPanel {
     let frame: (_ fittingSize: CGSize) throws -> CGRect
 }
 
-enum StateRenderPopoverAnchor {
-    case toolbarTrailing
-    case footerTrailing
-    case inspectorLeading(y: CGFloat)
-    case inspectorTop(x: CGFloat, y: CGFloat)
+struct StateRenderPopoverAnchor {
+    let topLeftRect: CGRect
+    let edge: NSRectEdge
+
+    static let annotationShare = Self(topLeftRect: CGRect(x: 1019, y: 12, width: 28, height: 28), edge: .minY)
+    static let annotationBackground = Self(topLeftRect: CGRect(x: 1000, y: 360, width: 80, height: 24), edge: .minX)
+    static let annotationSaveStyle = Self(topLeftRect: CGRect(x: 812, y: 95, width: 56, height: 56), edge: .minY)
+    static let studioSaveLook = Self(topLeftRect: CGRect(x: 68, y: 100, width: 70, height: 60), edge: .minY)
+    static let studioExport = Self(topLeftRect: CGRect(x: 243, y: 545, width: 80, height: 24), edge: .maxY)
+    static let studioAudioExport = Self(topLeftRect: CGRect(x: 186, y: 98, width: 80, height: 26), edge: .minY)
 
     func rect(in bounds: CGRect) -> CGRect {
-        switch self {
-        case .toolbarTrailing: CGRect(x: bounds.maxX - 66, y: bounds.maxY - 46, width: 28, height: 28)
-        case .footerTrailing: CGRect(x: bounds.maxX - 112, y: 14, width: 80, height: 28)
-        case .inspectorLeading(let y): CGRect(x: bounds.maxX - 330, y: bounds.maxY - y, width: 24, height: 24)
-        case .inspectorTop(let x, let y): CGRect(x: x, y: bounds.maxY - y, width: 64, height: 56)
-        }
-    }
-
-    var edge: NSRectEdge {
-        switch self {
-        case .toolbarTrailing: .minY
-        case .footerTrailing: .maxY
-        case .inspectorLeading: .minX
-        case .inspectorTop: .minY
-        }
+        CGRect(x: topLeftRect.minX, y: bounds.maxY - topLeftRect.maxY, width: topLeftRect.width, height: topLeftRect.height)
     }
 }
 
@@ -95,14 +86,14 @@ enum StateRenderPlacement {
         if name == "design-gallery" { return (.window(.gallery), .frames) }
         if name.hasPrefix("quick-look-") { return (.window(.quickLook), scroll) }
         switch name {
-        case "background-picker": return (.popover(context: "annotation-border", anchor: .inspectorLeading(y: 330)), scroll)
-        case "annotation-new-style": return (.popover(context: "annotation-tool-arrow", anchor: .inspectorTop(x: 0, y: 200)), scroll)
-        case "studio-new-style": return (.popover(context: "studio-look", anchor: .inspectorTop(x: 0, y: 220)), scroll)
-        case "share-options": return (.popover(context: "annotation-tool-arrow", anchor: .toolbarTrailing), scroll)
-        case "studio-audio-export": return (.popover(context: "studio-audio", anchor: .inspectorTop(x: 0, y: 420)), scroll)
+        case "background-picker": return (.popover(context: "annotation-border", anchor: .annotationBackground), scroll)
+        case "annotation-new-style": return (.popover(context: "annotation-tool-arrow", anchor: .annotationSaveStyle), scroll)
+        case "studio-new-style": return (.popover(context: "studio-look", anchor: .studioSaveLook), scroll)
+        case "share-options": return (.popover(context: "annotation-tool-arrow", anchor: .annotationShare), scroll)
+        case "studio-audio-export": return (.popover(context: "studio-page-audio", anchor: .studioAudioExport), scroll)
         default: break
         }
-        if name.hasPrefix("studio-export-options-") { return (.popover(context: "studio-look", anchor: .footerTrailing), scroll) }
+        if name.hasPrefix("studio-export-options-") { return (.popover(context: "studio-look", anchor: .studioExport), scroll) }
         if name == "annotation-background" { return (.window(.annotate), .frames) }
         if name.hasPrefix("annotation-") { return (.window(.annotate), scroll) }
         if name.hasPrefix("studio-") { return (.window(.studio), scroll) }

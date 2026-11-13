@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 struct StateRenderFailure: LocalizedError {
@@ -253,6 +254,7 @@ enum StateRenderer {
     private static func capture(_ definition: StateRenderDefinition, appearance: String, onlyScrollFrame: Int?, output: URL) async throws -> [StateRenderEntry] {
         NSApp.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
         let stage = try StateRenderStage(appearance: appearance)
+        try StateRenderDesktop.prepare(appearance: appearance)
         defer { stage.tearDown() }
         try verifyWindows()
         try await build(definition, on: stage)
@@ -302,7 +304,7 @@ enum StateRenderer {
 
     private static func contactSheet(entries: [StateRenderEntry], output: URL) throws {
         let columns = 6
-        let cell = CGSize(width: 360, height: 270)
+        let cell = CGSize(width: 360, height: 280)
         let rows = (entries.count + columns - 1) / columns
         let size = CGSize(width: cell.width * CGFloat(columns), height: cell.height * CGFloat(rows))
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
@@ -314,7 +316,11 @@ enum StateRenderer {
         NSColor(calibratedWhite: 0.16, alpha: 1).setFill()
         NSRect(origin: .zero, size: size).fill()
         for (index, entry) in entries.enumerated() {
-            guard let image = NSImage(contentsOf: output.appendingPathComponent(entry.filename)) else { throw StateRenderFailure(message: "Contact sheet image missing: \(entry.filename)") }
+            guard let source = CGImageSourceCreateWithURL(output.appendingPathComponent(entry.filename) as CFURL, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 720] as CFDictionary) else {
+                throw StateRenderFailure(message: "Contact sheet image missing: \(entry.filename)")
+            }
+            let image = NSImage(cgImage: thumbnail, size: .zero)
             let origin = CGPoint(x: CGFloat(index % columns) * cell.width, y: size.height - CGFloat(index / columns + 1) * cell.height)
             let available = CGSize(width: cell.width - 24, height: cell.height - 52)
             let ratio = min(available.width / CGFloat(entry.pixelWidth), available.height / CGFloat(entry.pixelHeight))
