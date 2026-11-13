@@ -55,6 +55,7 @@ struct StoredBackground: Codable, Equatable {
     var border: StoredScreenshotBorder?
     var watermark: StoredWatermark?
     var colorAdjustments: AnnotationColorAdjustments?
+    var canvasExpansion: AnnotationCanvasExpansion?
 
     init(_ settings: AnnotationBackgroundSettings) {
         switch settings.style {
@@ -80,6 +81,7 @@ struct StoredBackground: Codable, Equatable {
         border = StoredScreenshotBorder(settings.border)
         watermark = StoredWatermark(settings.watermark)
         colorAdjustments = settings.colorAdjustments
+        canvasExpansion = settings.canvasExpansion
     }
 
     var settings: AnnotationBackgroundSettings {
@@ -117,6 +119,7 @@ struct StoredBackground: Codable, Equatable {
             output.watermark = watermark.settings
         }
         output.colorAdjustments = colorAdjustments ?? AnnotationColorAdjustments()
+        output.canvasExpansion = canvasExpansion ?? AnnotationCanvasExpansion()
         return output
     }
 }

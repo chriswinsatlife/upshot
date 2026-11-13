@@ -1,6 +1,12 @@
 import Foundation
 
 extension UpshotPreferences {
+    static let annotationAutomaticallyExpandCanvasKey = "annotationEditor.automaticallyExpandCanvas"
+
+    static var annotationAutomaticallyExpandCanvas: Bool {
+        UserDefaults.standard.object(forKey: annotationAutomaticallyExpandCanvasKey) as? Bool ?? true
+    }
+
     static let annotationObjectShadowsKey = "annotationEditor.objectShadows"
 
     static var annotationObjectShadows: Bool {

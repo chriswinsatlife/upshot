@@ -53,6 +53,10 @@ struct AnnotationEditorInspector: View {
                 }
 
                 InspectorSection("Canvas") {
+                    Toggle("Expand canvas automatically", isOn: Binding(
+                        get: { model.automaticallyExpandsCanvas },
+                        set: { model.setAutomaticallyExpandsCanvas($0) }
+                    ))
                     InspectorSegmented(
                         options: AnnotationBackgroundAspectRatio.allCases,
                         isSelected: { $0 == model.backgroundSettings.aspectRatio },

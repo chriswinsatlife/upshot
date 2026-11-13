@@ -67,7 +67,7 @@ struct AnnotationCanvas: View {
             let canvasFrame = viewport.frame
             let displayLayout = backgroundLayout.scaled(to: canvasFrame)
             let imageFrame = displayLayout.imageFrame
-            let boundaryFrame = model.backgroundSettings.usesCanvasLayout ? displayLayout.canvasFrame : imageFrame
+            let boundaryFrame = model.backgroundSettings.usesCanvasLayout || !model.backgroundSettings.canvasExpansion.isEmpty ? displayLayout.canvasFrame : imageFrame
             let allowedBounds = model.annotationBounds(for: imageFrame, boundaryFrame: boundaryFrame)
             let screenshotGeometry = AnnotationScreenshotFrameGeometry(
                 imageRect: imageFrame,

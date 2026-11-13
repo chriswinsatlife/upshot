@@ -63,6 +63,7 @@ final class AnnotationEditorModel {
     init() {
         engine.onChange = { [weak self] in
             self?.revision &+= 1
+            self?.updateCanvasExpansion()
         }
     }
 
@@ -279,7 +280,7 @@ final class AnnotationEditorModel {
     }
 
     private func updatePageLimits(boundaryFrame: CGRect) {
-        guard !boundaryFrame.isEmpty else {
+        guard !UpshotPreferences.annotationAutomaticallyExpandCanvas, !boundaryFrame.isEmpty else {
             engine.pageLimits = nil
             return
         }
@@ -304,7 +305,7 @@ final class AnnotationEditorModel {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
         updatePageLimits(boundaryFrame: boundaryFrame)
-        if engine.tool != .select, !boundaryFrame.contains(location) {
+        if !UpshotPreferences.annotationAutomaticallyExpandCanvas, engine.tool != .select, !boundaryFrame.contains(location) {
             engine.stopEditingText()
             selectedTool = engine.tool
             return
@@ -330,7 +331,7 @@ final class AnnotationEditorModel {
     }
 
     private func drawingLocation(_ location: CGPoint, in boundaryFrame: CGRect) -> CGPoint {
-        guard engine.tool != .select, !boundaryFrame.isEmpty else { return location }
+        guard !UpshotPreferences.annotationAutomaticallyExpandCanvas, engine.tool != .select, !boundaryFrame.isEmpty else { return location }
         return CGPoint(
             x: min(max(location.x, boundaryFrame.minX), boundaryFrame.maxX),
             y: min(max(location.y, boundaryFrame.minY), boundaryFrame.maxY)
@@ -338,7 +339,7 @@ final class AnnotationEditorModel {
     }
 
     func hoveredAnnotation(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) -> AnnoShape? {
-        guard boundaryFrame.contains(location) else { return nil }
+        guard UpshotPreferences.annotationAutomaticallyExpandCanvas || boundaryFrame.contains(location) else { return nil }
         updateViewport(imageFrame: imageFrame)
         return engine.hitShape(at: engine.screenToPage(Vec(location)))
     }
@@ -349,7 +350,7 @@ final class AnnotationEditorModel {
     }
 
     func containsInteractionPoint(_ location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) -> Bool {
-        boundaryFrame.contains(location)
+        UpshotPreferences.annotationAutomaticallyExpandCanvas || boundaryFrame.contains(location)
     }
 
 

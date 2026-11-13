@@ -71,6 +71,7 @@ struct AnnotationEditorWindow: View {
                 if didCopyLink { withAnimation(.morphQuickIfAllowed) { didCopyLink = false } }
             }
             .onChange(of: model.backgroundSettings) { _, _ in
+                model.updateCanvasExpansion()
                 closeGuard.refreshDocumentEdited()
                 if didCopyLink { withAnimation(.morphQuickIfAllowed) { didCopyLink = false } }
             }

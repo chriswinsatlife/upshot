@@ -1,7 +1,3 @@
-//
-//  AnnotationBackgroundLayout.swift
-//  Upshot
-//
 
 import CoreGraphics
 
@@ -12,6 +8,19 @@ nonisolated struct AnnotationBackgroundLayout {
     let padding: CGFloat
 
     static func make(contentSize: CGSize, settings: AnnotationBackgroundSettings) -> AnnotationBackgroundLayout {
+        let base = base(contentSize: contentSize, settings: settings)
+        let expansion = settings.canvasExpansion
+        guard !expansion.isEmpty, contentSize.width > 0, contentSize.height > 0 else { return base }
+        return AnnotationBackgroundLayout(
+            canvasSize: CGSize(width: base.canvasSize.width + expansion.left + expansion.right,
+                               height: base.canvasSize.height + expansion.top + expansion.bottom),
+            cardRect: base.cardRect.offsetBy(dx: expansion.left, dy: expansion.top),
+            imageRect: base.imageRect.offsetBy(dx: expansion.left, dy: expansion.top),
+            padding: base.padding
+        )
+    }
+
+    private static func base(contentSize: CGSize, settings: AnnotationBackgroundSettings) -> AnnotationBackgroundLayout {
         guard contentSize.width > 0, contentSize.height > 0 else {
             return AnnotationBackgroundLayout(
                 canvasSize: .zero,
@@ -44,13 +53,10 @@ nonisolated struct AnnotationBackgroundLayout {
         } else if settings.usesCanvasLayout {
             normalizedPadding = max(settings.padding, 0.18)
         } else {
-            // A border-only export should grow by exactly the outer ring, not
-            // inherit the transparent breathing room used by camera effects.
             normalizedPadding = 0
         }
         let padding = max(0, shortestEdge * normalizedPadding)
 
-        // Per-edge padding: stuck edges get zero padding
         let paddingTop: CGFloat = alignment.sticksToTop ? 0 : padding
         let paddingBottom: CGFloat = alignment.sticksToBottom ? 0 : padding
         let paddingLeading: CGFloat = alignment.sticksToLeading ? 0 : padding
@@ -65,7 +71,6 @@ nonisolated struct AnnotationBackgroundLayout {
             aspectRatio: settings.usesCanvasLayout ? settings.aspectRatio.value : nil
         )
 
-        // Available rect accounts for per-edge padding
         let availableRect = CGRect(
             x: paddingLeading,
             y: paddingTop,

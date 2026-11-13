@@ -17,6 +17,7 @@ struct AnnotationBackgroundSettings: Equatable {
     var progressiveBlur = AnnotationProgressiveBlurSettings()
     var watermark = AnnotationWatermarkSettings()
     var colorAdjustments = AnnotationColorAdjustments()
+    var canvasExpansion = AnnotationCanvasExpansion()
 
     var isEnabled: Bool {
         style != .none
@@ -43,6 +44,7 @@ struct AnnotationBackgroundSettings: Equatable {
             || border.isVisible
             || watermark.isVisible
             || !colorAdjustments.isDefault
+            || !canvasExpansion.isEmpty
     }
 }
 
