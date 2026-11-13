@@ -56,6 +56,7 @@ struct StateRenderManifest: Codable {
 enum StateRenderer {
     static var isRequested: Bool { UpshotStorage.isRenderingStates }
     static var scenario = ""
+    static var fixtureVideoURL: URL?
     static let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow))
     static var renderLevel: NSWindow.Level { NSWindow.Level(rawValue: desktopLevel - 1) }
 
@@ -94,6 +95,7 @@ enum StateRenderer {
             if let root = UpshotStorage.fixtureRoot { try? FileManager.default.removeItem(at: root) }
         }
         let fixtures = try await StateRenderFixtures.make()
+        fixtureVideoURL = fixtures.project.screenURL
         let definitions = StateRenderCatalog.states(fixtures: fixtures)
         guard Set(definitions.map(\.name)).count == definitions.count else {
             throw StateRenderFailure(message: "Duplicate state names")

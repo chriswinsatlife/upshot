@@ -494,7 +494,8 @@ private struct SetupVideoPlayer: NSViewRepresentable {
     private static let videoURL = URL(string: "https://static.fayazahmed.com/8130A265-enable-cloud-screendrop.mp4")!
 
     func makeNSView(context: Context) -> AVPlayerView {
-        let player = UpshotStorage.isRenderingStates ? AVPlayer() : AVPlayer(url: Self.videoURL)
+        let source = UpshotStorage.isRenderingStates ? StateRenderer.fixtureVideoURL : Self.videoURL
+        let player = source.map { AVPlayer(url: $0) } ?? AVPlayer()
         let playerView = AVPlayerView()
         playerView.player = player
         playerView.controlsStyle = .inline
