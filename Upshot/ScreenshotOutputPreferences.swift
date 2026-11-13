@@ -15,6 +15,7 @@ extension UpshotPreferences {
     static let screenshotFilenameTemplateKey = "screenshotFilenameTemplate"
     static let screenshotFilenameCounterKey = "screenshotFilenameCounter"
     static let screenshotAskForNameKey = "screenshotAskForName"
+    static let screenshotClipboardModeKey = "screenshotClipboardMode"
 
     static var screenshotConvertToSRGB: Bool {
         UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
@@ -67,5 +68,9 @@ extension UpshotPreferences {
 
     static var screenshotAskForName: Bool {
         UserDefaults.standard.bool(forKey: screenshotAskForNameKey)
+    }
+
+    static var screenshotClipboardMode: ScreenshotClipboardMode {
+        ScreenshotClipboardMode(rawValue: UserDefaults.standard.string(forKey: screenshotClipboardModeKey) ?? "") ?? .both
     }
 }

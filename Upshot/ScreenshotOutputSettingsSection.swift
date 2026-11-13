@@ -19,6 +19,7 @@ struct ScreenshotOutputSettingsSection: View {
     @AppStorage(UpshotPreferences.screenshotFilenameTemplateKey) private var filenameTemplate = ScreenshotFileNaming.defaultTemplate
     @AppStorage(UpshotPreferences.screenshotFilenameCounterKey) private var filenameCounter = 0
     @AppStorage(UpshotPreferences.screenshotAskForNameKey) private var askForName = false
+    @AppStorage(UpshotPreferences.screenshotClipboardModeKey) private var clipboardMode = ScreenshotClipboardMode.both.rawValue
 
     var body: some View {
         Section("Screenshot Output") {
@@ -34,6 +35,11 @@ struct ScreenshotOutputSettingsSection: View {
                 .toggleStyle(.ink)
             Toggle("Hide desktop icons while capturing", isOn: $hideDesktopIcons)
                 .toggleStyle(.ink)
+            Picker("Copy to clipboard as", selection: $clipboardMode) {
+                ForEach(ScreenshotClipboardMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
             SettingsButton("Toggle Desktop Icons") {
                 do {
                     try DesktopIconVisibilityService.toggleDesktopIcons()

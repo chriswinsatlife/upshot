@@ -1,13 +1,3 @@
-//
-//  AfterCaptureActions.swift
-//  Upshot
-//
-//  Configurable "what happens after a capture" pipeline, per capture type
-//  (screenshot vs recording), mirroring CleanShot's General > After capture
-//  matrix. Copy/Save reuse the existing auto-copy/auto-save preferences so
-//  behaviour is preserved and the rest of the app stays in sync.
-//
-
 import Foundation
 
 enum AfterCaptureType: String {
@@ -50,7 +40,6 @@ enum AfterCaptureAction: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The actions that apply to a given capture type, in display order.
     static func actions(for type: AfterCaptureType) -> [AfterCaptureAction] {
         switch type {
         case .screenshot:
@@ -60,8 +49,6 @@ enum AfterCaptureAction: String, CaseIterable, Identifiable {
         }
     }
 
-    /// UserDefaults key for this action/type. Screenshot copy/save reuse the
-    /// long-standing auto-copy/auto-save keys so nothing else needs migrating.
     func storageKey(for type: AfterCaptureType) -> String {
         switch (self, type) {
         case (.copy, .screenshot):
@@ -73,14 +60,16 @@ enum AfterCaptureAction: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Default when the user hasn't chosen yet. The overlay defaults on, and
-    /// recordings open in the studio so zooms/backgrounds are discoverable.
     var defaultValue: Bool {
         self == .showOverlay || self == .openVideoEditor
     }
 }
 
 enum AfterCaptureActions {
+    static func copyScreenshotToClipboard(from url: URL) throws {
+        try ScreenshotClipboardService.copy(from: url)
+    }
+
     static func isEnabled(_ action: AfterCaptureAction, for type: AfterCaptureType) -> Bool {
         let key = action.storageKey(for: type)
         if UserDefaults.standard.object(forKey: key) == nil {
