@@ -1,14 +1,3 @@
-//
-//  AnnotationToolDock.swift
-//  Upshot
-//
-//  The screenshot editor's tools, floating in one glass capsule over the
-//  bottom of the canvas, where the pointer already is. Tools are grouped by
-//  what they make - shapes, lines, marks, redactions - with hairlines
-//  between groups. The selected tool is inked; it jumps to the next tool
-//  rather than sliding, like every other selection in the app. Crop sits
-//  last, and the whole capsule morphs into the crop bar when it is pressed.
-//
 
 import SwiftUI
 
@@ -17,19 +6,16 @@ struct AnnotationToolDock: View {
     let onEditorAction: () -> Void
     var canCrop = true
     let onCrop: () -> Void
-    /// Shared with the crop bar, so the dock morphs into it and back.
     let glass: Namespace.ID
 
     static let height: CGFloat = 44
     static let bottomPadding: CGFloat = 14
-    /// Height the canvas keeps clear for the dock when fitting the image,
-    /// beyond its own fit inset.
     static let canvasReserve: CGFloat = 44
 
     private static let groups: [[AnnotationTool]] = [
         [.select],
         [.rectangle, .filledRectangle, .ellipse, .highlight],
-        [.arrow, .line, .freehand],
+        [.arrow, .line, .freehand, .highlighter],
         [.text, .numberedCircle],
         [.pixelate, .blur],
     ]
@@ -69,8 +55,6 @@ struct AnnotationToolDock: View {
         .padding(.horizontal, 5)
         .frame(height: Self.height)
         .glassEffect(.regular, in: .capsule)
-        // The crop bar's inked Crop button carries the same ID, so the dock
-        // folds into it, and grows back out of it.
         .glassEffectID(GlassCropBar.applyID, in: glass)
         .motion(.morphQuick, value: model.selectedTool)
     }
@@ -83,8 +67,6 @@ struct AnnotationToolDock: View {
             .accessibilityHidden(true)
     }
 
-    /// Finds text that looks sensitive and covers it in one go. Spins while
-    /// it scans; the result lands as a toast above the dock.
     private var autoRedactMenu: some View {
         Menu {
             Button("Pixelate Sensitive Text", systemImage: AnnotationTool.pixelate.systemImage) {
@@ -156,7 +138,6 @@ private struct AnnotationDockButton: View {
 }
 
 private extension AnnotationTool {
-    /// The single-key shortcut AnnotationKeyboard maps to this tool.
     var shortcutKey: String? {
         switch self {
         case .select: "H"
@@ -173,8 +154,6 @@ private extension AnnotationTool {
     }
 }
 
-/// A short-lived message floating above the dock, e.g. the result of an
-/// automatic redaction.
 struct AnnotationDockToast: View {
     let text: String
     var systemImage = "sparkles"

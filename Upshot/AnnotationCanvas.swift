@@ -218,6 +218,9 @@ struct AnnotationCanvas: View {
                 progressivelyBlurredSourceID = nil
                 settledScene = nil
             }
+            .task(id: model.baseImageURL) {
+                await model.recognizeHighlighterText()
+            }
             .task(id: blurPreviewKey) {
                 await updateProgressiveBlurPreview(
                     for: image,

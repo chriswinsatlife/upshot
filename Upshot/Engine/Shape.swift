@@ -32,6 +32,7 @@ enum GeoKind: String, CaseIterable, Codable {
 
 
 struct GeoProps: Codable, Equatable {
+    var isHighlighter: Bool?
     var geo: GeoKind = .rectangle
     var w: Double = 100
     var h: Double = 100
@@ -205,19 +206,20 @@ struct AnnoShape: Codable, Equatable, Identifiable {
 
     var tool: AnnotationTool {
         switch kind {
-        case let .geo(p):
-            switch (p.geo, p.fill) {
-            case (.rectangle, .none): .rectangle
-            case (.rectangle, .solid): .filledRectangle
-            case (.ellipse, _): .ellipse
+        case let .geo(properties):
+            if properties.isHighlighter == true { return .highlighter }
+            switch (properties.geo, properties.fill) {
+            case (.rectangle, .none): return .rectangle
+            case (.rectangle, .solid): return .filledRectangle
+            case (.ellipse, _): return .ellipse
             }
-        case .draw: .freehand
-        case let .arrow(p):
-            p.arrowheadStart == .none && p.arrowheadEnd == .none ? .line : .arrow
-        case .text: .text
-        case let .redaction(p): p.kind == .pixelate ? .pixelate : .blur
-        case .highlight: .highlight
-        case .numbered: .numberedCircle
+        case .draw: return .freehand
+        case let .arrow(properties):
+            return properties.arrowheadStart == .none && properties.arrowheadEnd == .none ? .line : .arrow
+        case .text: return .text
+        case let .redaction(properties): return properties.kind == .pixelate ? .pixelate : .blur
+        case .highlight: return .highlight
+        case .numbered: return .numberedCircle
         }
     }
 

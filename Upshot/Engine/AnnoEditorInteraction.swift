@@ -19,7 +19,7 @@ extension AnnoEditor {
             } else {
                 createText(at: pointer.pagePoint)
             }
-        case .rectangle, .filledRectangle, .ellipse, .highlight, .blur, .pixelate:
+        case .rectangle, .filledRectangle, .ellipse, .highlight, .blur, .pixelate, .highlighter:
             beginBoxShape(pointer)
         case .numberedCircle:
             createNumberedCircle(at: pointer.pagePoint)
@@ -113,10 +113,11 @@ extension AnnoEditor {
         markUndo()
         let kind: AnnoShapeKind
         switch tool {
-        case .rectangle, .filledRectangle, .ellipse:
+        case .rectangle, .filledRectangle, .ellipse, .highlighter:
             var props = GeoProps()
             props.geo = tool == .ellipse ? .ellipse : .rectangle
-            props.fill = tool == .filledRectangle ? .solid : .none
+            props.fill = tool == .filledRectangle || tool == .highlighter ? .solid : .none
+            props.isHighlighter = tool == .highlighter
             props.swatch = currentSwatch
             props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
             props.w = 1
@@ -133,7 +134,11 @@ extension AnnoEditor {
             kind = .redaction(props)
         }
 
-        let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, castsShadow: UpshotPreferences.annotationObjectShadows, kind: kind)
+        var shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, castsShadow: UpshotPreferences.annotationObjectShadows, kind: kind)
+        if tool == .highlighter {
+            shape.opacity = 0.35
+            highlighterDragRect = nil
+        }
         document.add(shape)
         setInteraction(.creatingGeo(id: shape.id, origin: pointer.pagePoint))
     }
@@ -231,6 +236,10 @@ extension AnnoEditor {
             }
 
         case let .creatingGeo(id, _):
+            if document.shape(id)?.geoProps?.isHighlighter == true {
+                commitSnappedHighlighter(id)
+                break
+            }
             if let props = document.shape(id)?.redactionProps {
                 NSLog("Annotation redaction committed style=%@ density=%.2f", props.kind.rawValue, props.density)
             }
@@ -344,6 +353,17 @@ extension AnnoEditor {
             h = side
         }
 
+        if document.shape(id)?.geoProps?.isHighlighter == true {
+            highlighterDragRect = CGRect(x: minX, y: minY, width: w, height: h)
+            let boxes = matchingTextBoxes(in: highlighterDragRect!)
+            if let first = boxes.first {
+                let bounds = boxes.dropFirst().reduce(first) { $0.union($1) }
+                minX = bounds.minX
+                minY = bounds.minY
+                w = bounds.width
+                h = bounds.height
+            }
+        }
         document.update(id) { shape in
             shape.x = minX
             shape.y = minY

@@ -108,6 +108,8 @@ final class AnnoEditor {
         }
     }
 
+    var normalizedTextBoxes: [CGRect] = []
+    var highlighterDragRect: CGRect?
     var currentSwatch: AnnotationSwatch = .red
     var currentStrokeWidth: Double = 4
     var currentRedactionKind: RedactionKind = .blur
