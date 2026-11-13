@@ -21,7 +21,7 @@ enum StateRenderAlertCatalog {
             AlertState(name: "editor-unsaved", source: "EditorCloseGuard", marker: "beginSheet",
                        alert: EditorCloseGuard.alert(offersDelete: false, projectName: "Release Overview")),
             AlertState(name: "editor-unsaved-project", source: "EditorCloseGuard", marker: "beginSheet",
-                       alert: EditorCloseGuard.alert(offersDelete: true, projectName: "Release Overview")),
+                       alert: EditorCloseGuard.alert(offersDelete: true, projectName: "Capture Walkthrough")),
             AlertState(name: "library-rename", source: "CaptureLibraryView", marker: ".alert(",
                        alert: AppAlerts.libraryRename, fieldText: "Release Overview"),
             AlertState(name: "library-trash", source: "CaptureLibraryView", marker: ".alert(",

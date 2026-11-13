@@ -171,6 +171,7 @@ enum StateRenderPlacement {
 enum StateRenderAlertContexts {
     static func context(for name: String) -> String? {
         let state = name.dropFirst("alert-".count)
+        if state == "editor-unsaved-project" { return "studio-look" }
         if state.hasPrefix("editor-unsaved") || state.hasPrefix("annotation-") || state.hasPrefix("style-") || state.hasPrefix("watermark-") {
             return "annotation-tool-arrow"
         }
