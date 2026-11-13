@@ -31,6 +31,19 @@ enum StateRenderCatalog {
                 }
             }
         }
+        for variant in ["default", "enabled"] {
+            add(variant == "default" ? "settings-annotate" : "settings-annotate-\(variant)", "SettingsAnnotatePane", "struct SettingsAnnotatePane", 800, 620) {
+                if variant == "enabled" {
+                    for key in [UpshotPreferences.annotationInverseArrowDirectionKey, UpshotPreferences.annotationObjectShadowsKey,
+                                UpshotPreferences.annotationAutomaticallyExpandCanvasKey, UpshotPreferences.annotationEditorAlwaysOnTopKey] {
+                        UpshotStorage.defaults.set(true, forKey: key)
+                    }
+                    UpshotStorage.defaults.set(UpshotPreferences.startingToolLastUsed, forKey: UpshotPreferences.annotationStartingToolKey)
+                    UpshotStorage.defaults.set(false, forKey: UpshotPreferences.lowResolutionEditorPreviewKey)
+                }
+                return AnyView(NavigationStack { SettingsAnnotatePane().navigationTitle("Annotate") })
+            }
+        }
         add("settings-shortcuts-expanded", "CaptureHotkeySettingsSection", "struct CaptureHotkeySettingsSection", 860, 4200) {
             AnyView(InterfaceFormPage { CaptureHotkeySettingsSection(actions: CaptureHotkeyAction.allCases) }.environment(SettingsPermissions()))
         }
@@ -53,7 +66,6 @@ enum StateRenderCatalog {
         let sections: [(String, String, () -> AnyView)] = [
             ("area-selection", "AreaSelectionSettingsSection", { AnyView(InterfaceFormPage { AreaSelectionSettingsSection() }) }),
             ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection() }) }),
-            ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(InterfaceFormPage { AnnotationEditorSettingsSection() }) }),
             ("capture-history", "CaptureHistorySettingsSection", { AnyView(InterfaceFormPage { CaptureHistorySettingsSection() }) }),
             ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
             ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),

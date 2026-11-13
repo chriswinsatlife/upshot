@@ -19,9 +19,6 @@ enum StateRenderSource {
             ("private struct AnnotationWallpaperPackInstallView: View {", 620),
             ("private struct AlignmentPositionPicker: View {", 676),
         ],
-        "Upshot/AnnotationEditorSettingsSection.swift": [
-            ("struct AnnotationEditorSettingsSection: View {", 3),
-        ],
         "Upshot/AnnotationEditorWindow.swift": [
             ("struct AnnotationEditorWindow: View {", 5),
             ("private struct AnnotationLoadFailureView: View {", 535),
@@ -309,6 +306,9 @@ enum StateRenderSource {
         "Upshot/ScrollingCaptureControlPanel.swift": [
             ("final class ScrollingCaptureControlPanel: NSObject, NSWindowDelegate {", 4),
             ("enum Mode {", 5),
+        ],
+        "Upshot/SettingsAnnotatePane.swift": [
+            ("struct SettingsAnnotatePane: View {", 3),
         ],
         "Upshot/SettingsCloudPane.swift": [
             ("struct CloudSettingsPane: View {", 6),
