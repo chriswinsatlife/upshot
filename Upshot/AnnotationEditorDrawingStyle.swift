@@ -27,7 +27,7 @@ extension AnnotationEditorModel {
     }
 
     func setObjectShadows(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: UpshotPreferences.annotationObjectShadowsKey)
+        UpshotStorage.defaults.set(enabled, forKey: UpshotPreferences.annotationObjectShadowsKey)
         engine.applyStyleToSelection { $0.castsShadow = enabled }
         engine.notifyChanged()
         NSLog("Annotation object shadows applied enabled=%@ selected=%ld", String(enabled), engine.selectedIds.count)
@@ -41,7 +41,7 @@ extension AnnotationEditorModel {
 
     func setDrawingSmoothing(_ value: Double) {
         let smoothing = min(1, max(0, value))
-        UserDefaults.standard.set(smoothing, forKey: UpshotPreferences.annotationDrawingSmoothingKey)
+        UpshotStorage.defaults.set(smoothing, forKey: UpshotPreferences.annotationDrawingSmoothingKey)
         engine.applyStyleToSelection { shape in
             guard case var .draw(props) = shape.kind else { return }
             props.smoothing = smoothing

@@ -72,9 +72,9 @@ enum AfterCaptureActions {
 
     static func isEnabled(_ action: AfterCaptureAction, for type: AfterCaptureType) -> Bool {
         let key = action.storageKey(for: type)
-        if UserDefaults.standard.object(forKey: key) == nil {
+        if UpshotStorage.defaults.object(forKey: key) == nil {
             return action.defaultValue
         }
-        return UserDefaults.standard.bool(forKey: key)
+        return UpshotStorage.defaults.bool(forKey: key)
     }
 }

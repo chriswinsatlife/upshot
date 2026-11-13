@@ -18,59 +18,59 @@ extension UpshotPreferences {
     static let screenshotClipboardModeKey = "screenshotClipboardMode"
 
     static var screenshotConvertToSRGB: Bool {
-        UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
+        UpshotStorage.defaults.bool(forKey: screenshotConvertToSRGBKey)
     }
 
     static var screenshotScaleToOneX: Bool {
-        UserDefaults.standard.bool(forKey: screenshotScaleToOneXKey)
+        UpshotStorage.defaults.bool(forKey: screenshotScaleToOneXKey)
     }
 
     static var screenshotBorder: Bool {
-        UserDefaults.standard.bool(forKey: screenshotBorderKey)
+        UpshotStorage.defaults.bool(forKey: screenshotBorderKey)
     }
 
     static var screenshotRetinaSuffix: Bool {
-        UserDefaults.standard.bool(forKey: screenshotRetinaSuffixKey)
+        UpshotStorage.defaults.bool(forKey: screenshotRetinaSuffixKey)
     }
 
     static var screenshotShowCursor: Bool {
-        UserDefaults.standard.bool(forKey: screenshotShowCursorKey)
+        UpshotStorage.defaults.bool(forKey: screenshotShowCursorKey)
     }
 
     static var screenshotApplyBackgroundPreset: Bool {
-        UserDefaults.standard.bool(forKey: screenshotApplyBackgroundPresetKey)
+        UpshotStorage.defaults.bool(forKey: screenshotApplyBackgroundPresetKey)
     }
 
     static var screenshotBackgroundPresetID: String {
-        UserDefaults.standard.string(forKey: screenshotBackgroundPresetIDKey) ?? ""
+        UpshotStorage.defaults.string(forKey: screenshotBackgroundPresetIDKey) ?? ""
     }
 
     static var screenshotWindowBackground: WindowScreenshotBackgroundMode {
-        WindowScreenshotBackgroundMode(rawValue: UserDefaults.standard.string(forKey: screenshotWindowBackgroundKey) ?? "") ?? .original
+        WindowScreenshotBackgroundMode(rawValue: UpshotStorage.defaults.string(forKey: screenshotWindowBackgroundKey) ?? "") ?? .original
     }
 
     static var screenshotWindowWallpaperPath: String {
-        UserDefaults.standard.string(forKey: screenshotWindowWallpaperPathKey) ?? ""
+        UpshotStorage.defaults.string(forKey: screenshotWindowWallpaperPathKey) ?? ""
     }
 
     static var screenshotWindowPadding: CGFloat {
-        let value = UserDefaults.standard.object(forKey: screenshotWindowPaddingKey) as? Double ?? 32
+        let value = UpshotStorage.defaults.object(forKey: screenshotWindowPaddingKey) as? Double ?? 32
         return value.isFinite ? min(256, max(0, value)) : 32
     }
 
     static var screenshotHideDesktopIcons: Bool {
-        UserDefaults.standard.bool(forKey: screenshotHideDesktopIconsKey)
+        UpshotStorage.defaults.bool(forKey: screenshotHideDesktopIconsKey)
     }
 
     static var screenshotFilenameTemplate: String {
-        UserDefaults.standard.string(forKey: screenshotFilenameTemplateKey) ?? ScreenshotFileNaming.defaultTemplate
+        UpshotStorage.defaults.string(forKey: screenshotFilenameTemplateKey) ?? ScreenshotFileNaming.defaultTemplate
     }
 
     static var screenshotAskForName: Bool {
-        UserDefaults.standard.bool(forKey: screenshotAskForNameKey)
+        UpshotStorage.defaults.bool(forKey: screenshotAskForNameKey)
     }
 
     static var screenshotClipboardMode: ScreenshotClipboardMode {
-        ScreenshotClipboardMode(rawValue: UserDefaults.standard.string(forKey: screenshotClipboardModeKey) ?? "") ?? .both
+        ScreenshotClipboardMode(rawValue: UpshotStorage.defaults.string(forKey: screenshotClipboardModeKey) ?? "") ?? .both
     }
 }

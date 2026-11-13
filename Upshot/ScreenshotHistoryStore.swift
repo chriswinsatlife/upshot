@@ -1,4 +1,3 @@
-
 import AppKit
 import AVFoundation
 @preconcurrency import CoreMedia
@@ -92,9 +91,7 @@ final class ScreenshotHistoryStore {
     static let shared = ScreenshotHistoryStore()
 
     static var applicationSupportDirectory: URL {
-        let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        return baseURL.appendingPathComponent("Upshot", isDirectory: true)
+        UpshotStorage.applicationSupportDirectory
     }
 
     static var historyDirectory: URL {

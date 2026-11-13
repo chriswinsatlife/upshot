@@ -1,4 +1,3 @@
-
 import AppKit
 import Darwin
 import Foundation
@@ -8,12 +7,7 @@ nonisolated enum AgentSocket {
     static let launchedByAgentArgument = "--launched-by-agent"
 
     static var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support", isDirectory: true)
-        return base
-            .appendingPathComponent("Upshot", isDirectory: true)
-            .appendingPathComponent(socketFileName)
+        UpshotStorage.applicationSupportDirectory.appendingPathComponent(socketFileName)
     }
 
     private static var socketFileName: String {

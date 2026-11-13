@@ -1,19 +1,7 @@
-//
-//  UnsplashBackgroundSection.swift
-//  Upshot
-//
-//  Unsplash in the shared background picker: Unsplash's Wallpapers topic
-//  until the user searches, then their results, a page at a time. Choosing a
-//  photo downloads it into the Wallpapers folder and applies it like any
-//  other wallpaper. Every photo carries its photographer's credit.
-//
-
 import AppKit
 import Observation
 import SwiftUI
 
-/// Results outlive the popover, so reopening it costs no requests: a new
-/// key starts at 50 an hour.
 @MainActor
 @Observable
 final class UnsplashBrowser {
@@ -25,9 +13,9 @@ final class UnsplashBrowser {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
     private(set) var downloadingID: String?
-    /// Bumped when the user saves a key, since UserDefaults isn't observed.
+
     private(set) var keyRevision = 0
-    /// The query the results are for; nil before the first load.
+
     private var loadedQuery: String?
     private var page = 0
     private var loadTask: Task<Void, Never>?
@@ -64,14 +52,13 @@ final class UnsplashBrowser {
     func saveKey(_ key: String) {
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        UserDefaults.standard.set(key, forKey: UnsplashClient.userKeyDefaultsKey)
+        UpshotStorage.defaults.set(key, forKey: UnsplashClient.userKeyDefaultsKey)
         keyRevision += 1
         loadedQuery = nil
         errorMessage = nil
         loadIfNeeded()
     }
 
-    /// The photo as a local file, or nil if it couldn't be downloaded.
     func download(_ photo: UnsplashPhoto) async -> URL? {
         guard downloadingID == nil else { return nil }
         downloadingID = photo.id
@@ -109,7 +96,7 @@ final class UnsplashBrowser {
 }
 
 struct UnsplashBackgroundSection: View {
-    /// The wallpaper showing now, to mark its photo.
+
     let selectedURL: URL?
     let onSelect: (URL) -> Void
 
@@ -199,7 +186,6 @@ struct UnsplashBackgroundSection: View {
         }
     }
 
-    /// Only for builds without a bundled key, such as one built from source.
     private var keyForm: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -234,8 +220,6 @@ struct UnsplashBackgroundSection: View {
     }
 }
 
-/// A result's thumbnail, with its photographer's name beneath as the link
-/// Unsplash asks for.
 private struct UnsplashPhotoTile: View {
     let photo: UnsplashPhoto
     let isSelected: Bool
@@ -251,8 +235,7 @@ private struct UnsplashPhotoTile: View {
                 isSelected: isSelected,
                 action: action
             ) {
-                // The placeholder sizes the tile; the photo only overlays
-                // it, so a loaded image can't widen its grid column.
+
                 Rectangle()
                     .fill(placeholder)
                     .overlay {

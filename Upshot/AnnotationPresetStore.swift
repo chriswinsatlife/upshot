@@ -1,10 +1,3 @@
-//
-//  AnnotationPresetStore.swift
-//  Upshot
-//
-//  Created by Codex on 01/05/26.
-//
-
 import AppKit
 import Foundation
 
@@ -12,7 +5,7 @@ enum AnnotationPresetStore {
     private static let key = "annotationStylePreset"
 
     static func load() -> AnnotationStylePreset {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard let data = UpshotStorage.defaults.data(forKey: key),
               let preset = try? JSONDecoder().decode(AnnotationStylePreset.self, from: data) else {
             return AnnotationStylePreset()
         }
@@ -22,11 +15,11 @@ enum AnnotationPresetStore {
 
     static func save(_ preset: AnnotationStylePreset) {
         guard let data = try? JSONEncoder().encode(preset) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+        UpshotStorage.defaults.set(data, forKey: key)
     }
 
     static func reset() {
-        UserDefaults.standard.removeObject(forKey: key)
+        UpshotStorage.defaults.removeObject(forKey: key)
     }
 }
 

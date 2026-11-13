@@ -12,7 +12,7 @@ enum ScreenshotFileNaming {
     static let tokens = ["{date}", "{time}", "{app}", "{type}", "{counter}"]
 
     static var nextCounter: Int {
-        let current = max(0, UserDefaults.standard.integer(forKey: UpshotPreferences.screenshotFilenameCounterKey))
+        let current = max(0, UpshotStorage.defaults.integer(forKey: UpshotPreferences.screenshotFilenameCounterKey))
         return current < Int.max ? current + 1 : 1
     }
 
@@ -26,7 +26,7 @@ enum ScreenshotFileNaming {
     ) -> String {
         let selectedCounter = counter ?? nextCounter
         if counter == nil {
-            UserDefaults.standard.set(selectedCounter, forKey: UpshotPreferences.screenshotFilenameCounterKey)
+            UpshotStorage.defaults.set(selectedCounter, forKey: UpshotPreferences.screenshotFilenameCounterKey)
         }
         let requestedTemplate = template ?? UpshotPreferences.screenshotFilenameTemplate
         let selectedTemplate = templateError(requestedTemplate) == nil ? requestedTemplate : defaultTemplate

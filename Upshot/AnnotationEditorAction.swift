@@ -39,7 +39,7 @@ enum AnnotationEditorAction {
         case let .setAutomaticallyExpandsCanvas(enabled):
             model.setAutomaticallyExpandsCanvas(enabled)
         case let .setAlwaysOnTop(enabled):
-            UserDefaults.standard.set(enabled, forKey: UpshotPreferences.annotationEditorAlwaysOnTopKey)
+            UpshotStorage.defaults.set(enabled, forKey: UpshotPreferences.annotationEditorAlwaysOnTopKey)
             NSLog("Annotation always on top preference changed enabled=%@", String(enabled))
         }
     }

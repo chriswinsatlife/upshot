@@ -1,16 +1,6 @@
-//
-//  CloudCredentialStore.swift
-//  Upshot
-//
-//  Keychain-backed storage for cloud upload configuration.
-//  Secrets (upload token) go in the Keychain.
-//  Non-secret config (worker URL) goes in UserDefaults.
-//
-
 import Foundation
 import Security
 
-/// Immutable snapshot of credentials used across actor boundaries.
 struct CloudCredentials: Sendable {
     let workerURL: String
     let uploadToken: String
@@ -24,22 +14,16 @@ struct CloudCredentials: Sendable {
 final class CloudCredentialStore {
     static let shared = CloudCredentialStore()
 
-    private let defaults = UserDefaults.standard
+    private let defaults = UpshotStorage.defaults
     private static let keychainService = "co.chrisyork.upshot"
-
-    // MARK: - Keys
 
     private enum Keys {
         static let uploadToken = "cloud_upload_token"
-        static let workerURL = "cloudWorkerURL"       // Matches existing key
+        static let workerURL = "cloudWorkerURL"
     }
-
-    // MARK: - Backing storage (observed)
 
     private(set) var _uploadToken: String = ""
     private(set) var _workerURL: String = ""
-
-    // MARK: - Public computed setters
 
     var uploadToken: String {
         get { _uploadToken }
@@ -57,13 +41,10 @@ final class CloudCredentialStore {
         }
     }
 
-    // MARK: - Convenience
-
     var isConfigured: Bool {
         !_workerURL.isEmpty && !_uploadToken.isEmpty
     }
 
-    /// Create an immutable snapshot for passing across actor boundaries.
     func snapshot() -> CloudCredentials {
         CloudCredentials(
             workerURL: _workerURL,
@@ -71,15 +52,13 @@ final class CloudCredentialStore {
         )
     }
 
-    // MARK: - Init
-
     private init() {
+        if UpshotStorage.isRenderingStates { return }
         _uploadToken = Self.getKeychainItem(key: Keys.uploadToken) ?? ""
         _workerURL = defaults.string(forKey: Keys.workerURL) ?? ""
 
-        // Migrate from old UserDefaults-based cloud token if present
         migrateFromLegacyDefaults()
-        // Clean up leftover S3 credentials from previous versions
+
         migrateFromLegacyS3Credentials()
     }
 
@@ -91,7 +70,6 @@ final class CloudCredentialStore {
         }
     }
 
-    /// Remove S3/R2 credential artifacts left over from pre-presigned-URL versions.
     private func migrateFromLegacyS3Credentials() {
         let legacyDefaultsKeys = [
             "cloud_s3_bucket",
@@ -112,9 +90,8 @@ final class CloudCredentialStore {
         }
     }
 
-    // MARK: - Keychain
-
     private static func setKeychainItem(key: String, value: String) {
+        guard !UpshotStorage.isRenderingStates else { return }
         let data = Data(value.utf8)
 
         let query: [String: Any] = [
@@ -131,6 +108,7 @@ final class CloudCredentialStore {
     }
 
     private static func getKeychainItem(key: String) -> String? {
+        guard !UpshotStorage.isRenderingStates else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
@@ -149,6 +127,7 @@ final class CloudCredentialStore {
     }
 
     private static func deleteKeychainItem(key: String) {
+        guard !UpshotStorage.isRenderingStates else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,

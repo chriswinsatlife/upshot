@@ -81,34 +81,34 @@ extension UpshotPreferences {
     static let pinnedScreenshotBorderKey = "pinnedScreenshotBorder"
 
     static var previewOverlaySize: QuickAccessOverlaySize {
-        QuickAccessOverlaySize(rawValue: UserDefaults.standard.string(forKey: previewOverlaySizeKey) ?? "") ?? .small
+        QuickAccessOverlaySize(rawValue: UpshotStorage.defaults.string(forKey: previewOverlaySizeKey) ?? "") ?? .small
     }
 
     static var previewAutoCloseAction: QuickAccessAutoCloseAction {
-        QuickAccessAutoCloseAction(rawValue: UserDefaults.standard.string(forKey: previewAutoCloseActionKey) ?? "") ?? .close
+        QuickAccessAutoCloseAction(rawValue: UpshotStorage.defaults.string(forKey: previewAutoCloseActionKey) ?? "") ?? .close
     }
 
     static var previewCloseAfterUploading: Bool {
-        UserDefaults.standard.bool(forKey: previewCloseAfterUploadingKey)
+        UpshotStorage.defaults.bool(forKey: previewCloseAfterUploadingKey)
     }
 
     static var previewSwipeTowardEdgeAction: QuickAccessSwipeAction {
-        QuickAccessSwipeAction(rawValue: UserDefaults.standard.string(forKey: previewSwipeTowardEdgeActionKey) ?? "") ?? .tuck
+        QuickAccessSwipeAction(rawValue: UpshotStorage.defaults.string(forKey: previewSwipeTowardEdgeActionKey) ?? "") ?? .tuck
     }
 
     static var previewSwipeAwayFromEdgeAction: QuickAccessSwipeAction {
-        QuickAccessSwipeAction(rawValue: UserDefaults.standard.string(forKey: previewSwipeAwayFromEdgeActionKey) ?? "") ?? .none
+        QuickAccessSwipeAction(rawValue: UpshotStorage.defaults.string(forKey: previewSwipeAwayFromEdgeActionKey) ?? "") ?? .none
     }
 
     static var pinnedScreenshotRoundedCorners: Bool {
-        UserDefaults.standard.object(forKey: pinnedScreenshotRoundedCornersKey) as? Bool ?? true
+        UpshotStorage.defaults.object(forKey: pinnedScreenshotRoundedCornersKey) as? Bool ?? true
     }
 
     static var pinnedScreenshotShadow: Bool {
-        UserDefaults.standard.object(forKey: pinnedScreenshotShadowKey) as? Bool ?? true
+        UpshotStorage.defaults.object(forKey: pinnedScreenshotShadowKey) as? Bool ?? true
     }
 
     static var pinnedScreenshotBorder: Bool {
-        UserDefaults.standard.object(forKey: pinnedScreenshotBorderKey) as? Bool ?? true
+        UpshotStorage.defaults.object(forKey: pinnedScreenshotBorderKey) as? Bool ?? true
     }
 }

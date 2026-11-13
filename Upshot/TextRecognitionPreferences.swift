@@ -4,7 +4,7 @@ extension UpshotPreferences {
     static let recognitionDetectCodesKey = "recognitionDetectCodes"
 
     static var recognitionDetectCodes: Bool {
-        UserDefaults.standard.bool(forKey: recognitionDetectCodesKey)
+        UpshotStorage.defaults.bool(forKey: recognitionDetectCodesKey)
     }
 
     static let recognitionLanguageKey = "recognitionLanguage"
@@ -12,15 +12,15 @@ extension UpshotPreferences {
     static let recognitionDetectLinksKey = "recognitionDetectLinks"
 
     static var recognitionLanguage: String {
-        UserDefaults.standard.string(forKey: recognitionLanguageKey) ?? ""
+        UpshotStorage.defaults.string(forKey: recognitionLanguageKey) ?? ""
     }
 
     static var recognitionKeepLineBreaks: Bool {
-        UserDefaults.standard.object(forKey: recognitionKeepLineBreaksKey) as? Bool ?? true
+        UpshotStorage.defaults.object(forKey: recognitionKeepLineBreaksKey) as? Bool ?? true
     }
 
     static var recognitionDetectLinks: Bool {
-        UserDefaults.standard.object(forKey: recognitionDetectLinksKey) as? Bool ?? true
+        UpshotStorage.defaults.object(forKey: recognitionDetectLinksKey) as? Bool ?? true
     }
 }
 

@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 enum RecordingExportPreferences {
@@ -7,15 +6,15 @@ enum RecordingExportPreferences {
 
     static var lastSettings: VideoCompressionSettings {
         get {
-            guard let data = UserDefaults.standard.data(forKey: settingsKey),
+            guard let data = UpshotStorage.defaults.data(forKey: settingsKey),
                   var decoded = try? JSONDecoder().decode(
                     VideoCompressionSettings.self,
                     from: data
                   ) else {
                 return VideoCompressionSettings()
             }
-            if !UserDefaults.standard.bool(forKey: hevcDefaultKey) {
-                UserDefaults.standard.set(true, forKey: hevcDefaultKey)
+            if !UpshotStorage.defaults.bool(forKey: hevcDefaultKey) {
+                UpshotStorage.defaults.set(true, forKey: hevcDefaultKey)
                 if decoded.codec == .h264 {
                     decoded.codec = .hevc
                     lastSettings = decoded
@@ -25,7 +24,7 @@ enum RecordingExportPreferences {
         }
         set {
             guard let data = try? JSONEncoder().encode(newValue) else { return }
-            UserDefaults.standard.set(data, forKey: settingsKey)
+            UpshotStorage.defaults.set(data, forKey: settingsKey)
         }
     }
 }

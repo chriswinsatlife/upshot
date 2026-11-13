@@ -17,7 +17,7 @@ extension AnnotationEditorModel {
     }
 
     func setAutomaticallyExpandsCanvas(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: UpshotPreferences.annotationAutomaticallyExpandCanvasKey)
+        UpshotStorage.defaults.set(enabled, forKey: UpshotPreferences.annotationAutomaticallyExpandCanvasKey)
         if enabled { engine.pageLimits = nil }
         updateCanvasExpansion()
         engine.notifyChanged()

@@ -1,4 +1,3 @@
-
 import AppKit
 import ImageIO
 import UniformTypeIdentifiers
@@ -46,47 +45,47 @@ enum UpshotPreferences {
     private static let defaultCompressionQuality = 0.8
 
     static var autoSave: Bool {
-        UserDefaults.standard.bool(forKey: autoSaveKey)
+        UpshotStorage.defaults.bool(forKey: autoSaveKey)
     }
 
     static var saveButtonUsesConfiguredFolder: Bool {
-        if UserDefaults.standard.object(forKey: saveButtonUsesFolderKey) == nil {
+        if UpshotStorage.defaults.object(forKey: saveButtonUsesFolderKey) == nil {
             return autoSave
         }
-        return UserDefaults.standard.bool(forKey: saveButtonUsesFolderKey)
+        return UpshotStorage.defaults.bool(forKey: saveButtonUsesFolderKey)
     }
-    
+
     static var autoCopy: Bool {
-        UserDefaults.standard.bool(forKey: autoCopyKey)
+        UpshotStorage.defaults.bool(forKey: autoCopyKey)
     }
-    
+
     static var autoCompress: Bool {
-        UserDefaults.standard.bool(forKey: autoCompressKey)
+        UpshotStorage.defaults.bool(forKey: autoCompressKey)
     }
 
     static var exportFormat: ScreenshotExportFormat {
-        if let rawValue = UserDefaults.standard.string(forKey: exportFormatKey),
+        if let rawValue = UpshotStorage.defaults.string(forKey: exportFormatKey),
            let format = ScreenshotExportFormat(rawValue: rawValue) {
             return format
         }
 
         return autoCompress ? .jpeg : .png
     }
-    
+
     static var compressionQuality: Double {
-        let value = UserDefaults.standard.object(forKey: compressionQualityKey) as? Double ?? defaultCompressionQuality
+        let value = UpshotStorage.defaults.object(forKey: compressionQualityKey) as? Double ?? defaultCompressionQuality
         return min(max(value, 0.1), 1)
     }
-    
+
     static var exportDirectory: URL {
-        if let path = UserDefaults.standard.string(forKey: exportDirectoryPathKey),
+        if let path = UpshotStorage.defaults.string(forKey: exportDirectoryPathKey),
            !path.isEmpty {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
-        
+
         return defaultExportDirectory
     }
-    
+
     static var defaultExportDirectory: URL {
         let picturesDirectory = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
         return (picturesDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures"))
@@ -94,35 +93,35 @@ enum UpshotPreferences {
     }
 
     static var recordingCameraDeviceID: String {
-        get { UserDefaults.standard.string(forKey: recordingCameraDeviceIDKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: recordingCameraDeviceIDKey) }
+        get { UpshotStorage.defaults.string(forKey: recordingCameraDeviceIDKey) ?? "" }
+        set { UpshotStorage.defaults.set(newValue, forKey: recordingCameraDeviceIDKey) }
     }
 
     static var recordingMicrophoneDeviceID: String {
-        get { UserDefaults.standard.string(forKey: recordingMicrophoneDeviceIDKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: recordingMicrophoneDeviceIDKey) }
+        get { UpshotStorage.defaults.string(forKey: recordingMicrophoneDeviceIDKey) ?? "" }
+        set { UpshotStorage.defaults.set(newValue, forKey: recordingMicrophoneDeviceIDKey) }
     }
 
     static var recordingSystemAudio: Bool {
-        get { UserDefaults.standard.bool(forKey: recordingSystemAudioKey) }
-        set { UserDefaults.standard.set(newValue, forKey: recordingSystemAudioKey) }
+        get { UpshotStorage.defaults.bool(forKey: recordingSystemAudioKey) }
+        set { UpshotStorage.defaults.set(newValue, forKey: recordingSystemAudioKey) }
     }
 
     static var recordingStartDelaySeconds: Int {
-        max(0, UserDefaults.standard.integer(forKey: recordingStartDelaySecondsKey))
+        max(0, UpshotStorage.defaults.integer(forKey: recordingStartDelaySecondsKey))
     }
 
     static var recordingAreaAspect: RecordingAreaAspect? {
         get {
-            UserDefaults.standard.string(forKey: recordingAreaAspectKey)
+            UpshotStorage.defaults.string(forKey: recordingAreaAspectKey)
                 .flatMap(RecordingAreaAspect.init(storageValue:))
         }
-        set { UserDefaults.standard.set(newValue?.storageValue ?? "", forKey: recordingAreaAspectKey) }
+        set { UpshotStorage.defaults.set(newValue?.storageValue ?? "", forKey: recordingAreaAspectKey) }
     }
 
     static var recordingAreaLastSelection: (displayID: CGDirectDisplayID, rect: CGRect)? {
         get {
-            let parts = (UserDefaults.standard.string(forKey: recordingAreaLastSelectionKey) ?? "")
+            let parts = (UpshotStorage.defaults.string(forKey: recordingAreaLastSelectionKey) ?? "")
                 .split(separator: ",")
                 .compactMap { Double($0) }
             guard parts.count == 5, parts[3] > 0, parts[4] > 0 else { return nil }
@@ -130,70 +129,70 @@ enum UpshotPreferences {
         }
         set {
             guard let newValue else {
-                UserDefaults.standard.removeObject(forKey: recordingAreaLastSelectionKey)
+                UpshotStorage.defaults.removeObject(forKey: recordingAreaLastSelectionKey)
                 return
             }
             let rect = newValue.rect
             let value = [Double(newValue.displayID), rect.minX, rect.minY, rect.width, rect.height]
                 .map { String($0) }
                 .joined(separator: ",")
-            UserDefaults.standard.set(value, forKey: recordingAreaLastSelectionKey)
+            UpshotStorage.defaults.set(value, forKey: recordingAreaLastSelectionKey)
         }
     }
 
     static var recordingTeleprompterEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: recordingTeleprompterEnabledKey) }
-        set { UserDefaults.standard.set(newValue, forKey: recordingTeleprompterEnabledKey) }
+        get { UpshotStorage.defaults.bool(forKey: recordingTeleprompterEnabledKey) }
+        set { UpshotStorage.defaults.set(newValue, forKey: recordingTeleprompterEnabledKey) }
     }
 
     static var recordingTeleprompterScript: String {
-        get { UserDefaults.standard.string(forKey: recordingTeleprompterScriptKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: recordingTeleprompterScriptKey) }
+        get { UpshotStorage.defaults.string(forKey: recordingTeleprompterScriptKey) ?? "" }
+        set { UpshotStorage.defaults.set(newValue, forKey: recordingTeleprompterScriptKey) }
     }
 
     static let teleprompterLineCountRange = 2...5
 
     static var recordingTeleprompterLineCount: Int {
         get {
-            let stored = UserDefaults.standard.integer(forKey: recordingTeleprompterLineCountKey)
+            let stored = UpshotStorage.defaults.integer(forKey: recordingTeleprompterLineCountKey)
             guard stored != 0 else { return 3 }
             return min(max(stored, teleprompterLineCountRange.lowerBound), teleprompterLineCountRange.upperBound)
         }
-        set { UserDefaults.standard.set(newValue, forKey: recordingTeleprompterLineCountKey) }
+        set { UpshotStorage.defaults.set(newValue, forKey: recordingTeleprompterLineCountKey) }
     }
 
     static var playSounds: Bool {
-        if UserDefaults.standard.object(forKey: playSoundsKey) == nil {
+        if UpshotStorage.defaults.object(forKey: playSoundsKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: playSoundsKey)
+        return UpshotStorage.defaults.bool(forKey: playSoundsKey)
     }
 
     static var showMenuBarIcon: Bool {
-        if UserDefaults.standard.object(forKey: showMenuBarIconKey) == nil {
+        if UpshotStorage.defaults.object(forKey: showMenuBarIconKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: showMenuBarIconKey)
+        return UpshotStorage.defaults.bool(forKey: showMenuBarIconKey)
     }
 
     static var hideDockIcon: Bool {
-        UserDefaults.standard.bool(forKey: hideDockIconKey)
+        UpshotStorage.defaults.bool(forKey: hideDockIconKey)
     }
 
     static var includeAppWindowsInCaptures: Bool {
-        UserDefaults.standard.bool(forKey: includeAppWindowsInCapturesKey)
+        UpshotStorage.defaults.bool(forKey: includeAppWindowsInCapturesKey)
     }
 
     static var captureWindowShadow: Bool {
-        UserDefaults.standard.bool(forKey: captureWindowShadowKey)
+        UpshotStorage.defaults.bool(forKey: captureWindowShadowKey)
     }
 
     static var captureDelaySeconds: Int {
-        max(0, UserDefaults.standard.integer(forKey: captureDelaySecondsKey))
+        max(0, UpshotStorage.defaults.integer(forKey: captureDelaySecondsKey))
     }
 
     static var previewPosition: PreviewOverlayPosition {
-        guard let raw = UserDefaults.standard.string(forKey: previewPositionKey),
+        guard let raw = UpshotStorage.defaults.string(forKey: previewPositionKey),
               let position = PreviewOverlayPosition(rawValue: raw) else {
             return .right
         }
@@ -201,53 +200,52 @@ enum UpshotPreferences {
     }
 
     static var previewAutoCloseSeconds: Int {
-        max(0, UserDefaults.standard.integer(forKey: previewAutoCloseSecondsKey))
+        max(0, UpshotStorage.defaults.integer(forKey: previewAutoCloseSecondsKey))
     }
 
     static var previewCloseAfterDragging: Bool {
-        if UserDefaults.standard.object(forKey: previewCloseAfterDraggingKey) == nil {
+        if UpshotStorage.defaults.object(forKey: previewCloseAfterDraggingKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: previewCloseAfterDraggingKey)
+        return UpshotStorage.defaults.bool(forKey: previewCloseAfterDraggingKey)
     }
 
     static var lowResolutionEditorPreview: Bool {
-        if UserDefaults.standard.object(forKey: lowResolutionEditorPreviewKey) == nil {
+        if UpshotStorage.defaults.object(forKey: lowResolutionEditorPreviewKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: lowResolutionEditorPreviewKey)
+        return UpshotStorage.defaults.bool(forKey: lowResolutionEditorPreviewKey)
     }
-    
+
     static var revealExportInFinder: Bool {
-        if UserDefaults.standard.object(forKey: revealExportInFinderKey) == nil {
+        if UpshotStorage.defaults.object(forKey: revealExportInFinderKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: revealExportInFinderKey)
+        return UpshotStorage.defaults.bool(forKey: revealExportInFinderKey)
     }
 
     static var agentServerEnabled: Bool {
-        if UserDefaults.standard.object(forKey: agentServerEnabledKey) == nil {
+        if UpshotStorage.defaults.object(forKey: agentServerEnabledKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: agentServerEnabledKey)
+        return UpshotStorage.defaults.bool(forKey: agentServerEnabledKey)
     }
 
     static var trimFullscreenMenuBar: Bool {
-        if UserDefaults.standard.object(forKey: trimFullscreenMenuBarKey) == nil {
+        if UpshotStorage.defaults.object(forKey: trimFullscreenMenuBarKey) == nil {
             return true
         }
-        return UserDefaults.standard.bool(forKey: trimFullscreenMenuBarKey)
+        return UpshotStorage.defaults.bool(forKey: trimFullscreenMenuBarKey)
     }
 
-    
     static var cloudWorkerURL: String {
         CloudCredentialStore.shared.workerURL
     }
-    
+
     static var cloudUploadToken: String {
         CloudCredentialStore.shared.uploadToken
     }
-    
+
     static var isCloudConfigured: Bool {
         CloudCredentialStore.shared.isConfigured
     }
@@ -328,7 +326,7 @@ enum ScreenshotFileActions {
             at: destinationDirectory,
             withIntermediateDirectories: true
         )
-        
+
         let destinationURL = uniqueDestinationURL(
             for: exportFileName(for: url),
             in: destinationDirectory
@@ -336,13 +334,13 @@ enum ScreenshotFileActions {
         try save(from: url, to: destinationURL)
         return destinationURL
     }
-    
+
     static func save(from sourceURL: URL, to destinationURL: URL) throws {
         if UpshotPreferences.exportFormat == .png {
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)
             }
-            
+
             try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
         } else {
             try exportImage(from: sourceURL, to: destinationURL, contentType: UpshotPreferences.exportFormat.contentType)
@@ -371,30 +369,30 @@ enum ScreenshotFileActions {
             try FileManager.default.moveItem(at: stagingURL, to: destinationURL)
         }
     }
-    
+
     static func exportFileName(for sourceURL: URL) -> String {
         return sourceURL
             .deletingPathExtension()
             .appendingPathExtension(UpshotPreferences.exportFormat.fileExtension)
             .lastPathComponent
     }
-    
+
     static var exportContentType: UTType {
         UpshotPreferences.exportFormat.contentType
     }
-    
+
     private static func exportImage(from sourceURL: URL, to destinationURL: URL, contentType: UTType) throws {
         if FileManager.default.fileExists(atPath: destinationURL.path) {
             try FileManager.default.removeItem(at: destinationURL)
         }
-        
+
         guard let source = CGImageSourceCreateWithURL(
             sourceURL as CFURL,
             [kCGImageSourceShouldCache: false] as CFDictionary
         ) else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        
+
         guard let destination = CGImageDestinationCreateWithURL(
             destinationURL as CFURL,
             contentType.identifier as CFString,
@@ -403,13 +401,13 @@ enum ScreenshotFileActions {
         ) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        
+
         let options: [CFString: Any] = contentType == .png ? [:] : [
             kCGImageDestinationLossyCompressionQuality: UpshotPreferences.compressionQuality
         ]
-        
+
         CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
-        
+
         guard CGImageDestinationFinalize(destination) else {
             throw CocoaError(.fileWriteUnknown)
         }
@@ -437,34 +435,33 @@ enum ScreenshotFileActions {
         if type.conforms(to: .heic) { return .heic }
         return type
     }
-    
+
     private static func uniqueDestinationURL(for fileName: String, in directory: URL) -> URL {
         let originalURL = directory.appendingPathComponent(fileName)
-        
+
         guard FileManager.default.fileExists(atPath: originalURL.path) else {
             return originalURL
         }
-        
+
         let baseName = originalURL.deletingPathExtension().lastPathComponent
         let pathExtension = originalURL.pathExtension
-        
+
         for index in 1...10_000 {
             let numberedName = "\(baseName) \(index)"
             let candidateURL = directory
                 .appendingPathComponent(numberedName)
                 .appendingPathExtension(pathExtension)
-            
+
             if !FileManager.default.fileExists(atPath: candidateURL.path) {
                 return candidateURL
             }
         }
-        
+
         return directory
             .appendingPathComponent("\(baseName) \(UUID().uuidString)")
             .appendingPathExtension(pathExtension)
     }
 }
-
 
 extension UpshotPreferences {
     static let libraryAnalyzeCapturesKey = "libraryAnalyzeCaptures"
@@ -473,18 +470,18 @@ extension UpshotPreferences {
     private static let libraryAutoSortSinceKey = "libraryAutoSortSince"
 
     static var libraryAnalyzeCaptures: Bool {
-        UserDefaults.standard.object(forKey: libraryAnalyzeCapturesKey) as? Bool ?? true
+        UpshotStorage.defaults.object(forKey: libraryAnalyzeCapturesKey) as? Bool ?? true
     }
 
     static var librarySortExisting: Bool {
-        UserDefaults.standard.bool(forKey: librarySortExistingKey)
+        UpshotStorage.defaults.bool(forKey: librarySortExistingKey)
     }
 
     static var libraryAutoSortSince: Date {
-        let stored = UserDefaults.standard.double(forKey: libraryAutoSortSinceKey)
+        let stored = UpshotStorage.defaults.double(forKey: libraryAutoSortSinceKey)
         if stored > 0 { return Date(timeIntervalSinceReferenceDate: stored) }
         let now = Date()
-        UserDefaults.standard.set(now.timeIntervalSinceReferenceDate, forKey: libraryAutoSortSinceKey)
+        UpshotStorage.defaults.set(now.timeIntervalSinceReferenceDate, forKey: libraryAutoSortSinceKey)
         return now
     }
 }

@@ -1,12 +1,3 @@
-//
-//  OverlayCardLayoutStore.swift
-//  Upshot
-//
-//  Observable, UserDefaults-backed store for the preview card layout. Both the
-//  live overlay (`PreviewCardView`) and the settings editor read/write the same
-//  shared instance, so edits apply to the floating card immediately.
-//
-
 import Foundation
 import Observation
 
@@ -27,11 +18,9 @@ final class OverlayCardLayoutStore {
         layout = .default
     }
 
-    // MARK: - Persistence
-
     private static func load() -> OverlayCardLayout {
         guard
-            let data = UserDefaults.standard.data(forKey: UpshotPreferences.overlayCardLayoutKey),
+            let data = UpshotStorage.defaults.data(forKey: UpshotPreferences.overlayCardLayoutKey),
             let decoded = try? JSONDecoder().decode(OverlayCardLayout.self, from: data)
         else {
             return .default
@@ -41,6 +30,6 @@ final class OverlayCardLayoutStore {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(layout) else { return }
-        UserDefaults.standard.set(data, forKey: UpshotPreferences.overlayCardLayoutKey)
+        UpshotStorage.defaults.set(data, forKey: UpshotPreferences.overlayCardLayoutKey)
     }
 }

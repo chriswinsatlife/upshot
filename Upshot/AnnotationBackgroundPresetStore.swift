@@ -1,4 +1,3 @@
-
 import Foundation
 import Observation
 
@@ -106,7 +105,7 @@ final class AnnotationBackgroundPresetStore {
         return presets.first { $0.id == activePresetID && !$0.hasMissingWallpaper }
     }
 
-    private init(defaults: UserDefaults = .standard) {
+    private init(defaults: UserDefaults = UpshotStorage.defaults) {
         self.defaults = defaults
 
         let loadedLibrary = Self.loadLibrary(from: defaults)

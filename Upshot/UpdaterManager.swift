@@ -1,38 +1,27 @@
-//
-//  UpdaterManager.swift
-//  Upshot
-//
-
 import AppKit
 import Combine
 import Foundation
 import Sparkle
 
-/// Manages Sparkle auto-update lifecycle.
-///
-/// Sparkle's `SPUStandardUpdaterController` must be created early, before
-/// `applicationDidFinishLaunching` returns, so the automatic update check
-/// schedule starts correctly.
 @MainActor
 final class UpdaterManager: NSObject, ObservableObject {
     static let shared = UpdaterManager()
 
-    private let controller: SPUStandardUpdaterController
+    private let controller: SPUStandardUpdaterController?
     private let availability = UpdateAvailabilityDelegate()
     private var lastInformationCheck: Date?
 
     @Published var canCheckForUpdates = false
-    /// The version of a newer release that hasn't been downloaded yet. The
-    /// Library shows a download button while this is set.
+
     @Published private(set) var availableUpdateVersion: String?
 
     var automaticallyChecksForUpdates: Bool {
-        get { controller.updater.automaticallyChecksForUpdates }
-        set { controller.updater.automaticallyChecksForUpdates = newValue }
+        get { controller?.updater.automaticallyChecksForUpdates ?? true }
+        set { controller?.updater.automaticallyChecksForUpdates = newValue }
     }
 
     private override init() {
-        controller = SPUStandardUpdaterController(
+        controller = UpshotStorage.isRenderingStates ? nil : SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: availability,
             userDriverDelegate: nil
@@ -40,11 +29,12 @@ final class UpdaterManager: NSObject, ObservableObject {
         super.init()
         availability.onChange = { [weak self] version in self?.availableUpdateVersion = version }
 
-        controller.updater.publisher(for: \.canCheckForUpdates)
+        controller?.updater.publisher(for: \.canCheckForUpdates)
             .assign(to: &$canCheckForUpdates)
     }
 
     func start() {
+        guard let controller else { return }
         #if DEBUG
         return
         #else
@@ -53,9 +43,8 @@ final class UpdaterManager: NSObject, ObservableObject {
         #endif
     }
 
-    /// Looks for a newer release without showing any Sparkle UI, so the
-    /// Library can offer it. At most once an hour.
     func checkForUpdateInformation() {
+        guard let controller else { return }
         #if DEBUG
         return
         #else
@@ -67,6 +56,7 @@ final class UpdaterManager: NSObject, ObservableObject {
     }
 
     func checkForUpdates() {
+        guard let controller else { return }
         #if DEBUG
         return
         #else
@@ -77,8 +67,6 @@ final class UpdaterManager: NSObject, ObservableObject {
     }
 }
 
-/// Tracks whether a newer release is waiting: set when Sparkle finds one,
-/// cleared when none is found or once it has been downloaded.
 private final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
     @MainActor var onChange: ((String?) -> Void)?
 

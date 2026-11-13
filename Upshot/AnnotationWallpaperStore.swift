@@ -1,8 +1,3 @@
-//
-//  AnnotationWallpaperStore.swift
-//  Upshot
-//
-
 import Foundation
 import Observation
 
@@ -58,9 +53,6 @@ final class AnnotationWallpaperStore {
         Task { await reload() }
     }
 
-    /// Refreshes the recent + installed wallpaper lists. The filesystem
-    /// enumeration runs off the main actor so large pack directories never
-    /// stall the UI; only the resulting state assignment happens on-main.
     func reload() async {
         let wallpapersDirectory = Self.wallpapersDirectory
         let packDirectories = AnnotationWallpaperPack.builtIn.map { pack in
@@ -98,7 +90,7 @@ final class AnnotationWallpaperStore {
         let standardizedURL = URL(fileURLWithPath: standardizedPath)
         guard Self.isSupportedImageFile(standardizedURL) else { return }
 
-        var paths = UserDefaults.standard.stringArray(forKey: Self.recentWallpaperPathsKey) ?? []
+        var paths = UpshotStorage.defaults.stringArray(forKey: Self.recentWallpaperPathsKey) ?? []
         guard !paths.contains(standardizedPath) else { return }
         paths.insert(standardizedPath, at: 0)
 
@@ -110,7 +102,7 @@ final class AnnotationWallpaperStore {
             .prefix(Self.maxRecentWallpaperCount)
         let recentPaths = Array(filteredPaths)
 
-        UserDefaults.standard.set(recentPaths, forKey: Self.recentWallpaperPathsKey)
+        UpshotStorage.defaults.set(recentPaths, forKey: Self.recentWallpaperPathsKey)
         recentWallpapers = recentPaths.map { AnnotationCustomWallpaper(url: URL(fileURLWithPath: $0)) }
         Task { await reload() }
     }
@@ -139,8 +131,6 @@ final class AnnotationWallpaperStore {
         installingPackIDs.remove(pack.id)
     }
 
-    // MARK: - Off-main filesystem work
-
     nonisolated private struct WallpaperURLSnapshot: Sendable {
         let recent: [URL]
         let installed: [String: [URL]]
@@ -160,14 +150,14 @@ final class AnnotationWallpaperStore {
     }
 
     nonisolated private static func loadRecentWallpaperURLs() -> [URL] {
-        let paths = UserDefaults.standard.stringArray(forKey: recentWallpaperPathsKey) ?? []
+        let paths = UpshotStorage.defaults.stringArray(forKey: recentWallpaperPathsKey) ?? []
         let availablePaths = paths.filter { path in
             let url = URL(fileURLWithPath: path)
             return isSupportedImageFile(url)
         }
 
         if availablePaths != paths {
-            UserDefaults.standard.set(availablePaths, forKey: recentWallpaperPathsKey)
+            UpshotStorage.defaults.set(availablePaths, forKey: recentWallpaperPathsKey)
         }
 
         return availablePaths.map { URL(fileURLWithPath: $0) }
@@ -184,9 +174,6 @@ final class AnnotationWallpaperStore {
             throw AnnotationWallpaperStoreError.downloadFailed(httpResponse.statusCode)
         }
 
-        // This function is `nonisolated`, so the synchronous extraction and
-        // large-file moves below run on the global executor rather than the
-        // main actor - the UI never stalls while `ditto` unpacks the archive.
         try installDownloadedArchive(
             downloadedURL: downloadedURL,
             wallpapersDirectory: wallpapersDirectory,
@@ -235,8 +222,6 @@ final class AnnotationWallpaperStore {
 
         try process.run()
 
-        // Drain the pipe before waiting so a chatty `ditto` cannot fill the
-        // fixed-size pipe buffer and deadlock against `waitUntilExit()`.
         let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 

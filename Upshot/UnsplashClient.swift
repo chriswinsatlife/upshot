@@ -1,17 +1,3 @@
-//
-//  UnsplashClient.swift
-//  Upshot
-//
-//  Searches Unsplash for frame backgrounds, straight from the app: public
-//  endpoints only need an Access Key, so there is no server in between.
-//  Release builds carry the project's key in a git-ignored Secrets.plist;
-//  a build without one asks for the user's own key, kept in UserDefaults.
-//
-//  Unsplash's API guidelines, which this follows: images load from the URLs
-//  the API returns, a photo's download endpoint is pinged when it is used,
-//  and the photographer and Unsplash are credited with UTM-tagged links.
-//
-
 import Foundation
 
 nonisolated struct UnsplashPhoto: Decodable, Identifiable, Hashable, Sendable {
@@ -40,7 +26,7 @@ nonisolated struct UnsplashPhoto: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let width: Int
     let height: Int
-    /// The photo's average color, shown while its thumbnail loads.
+
     let color: String?
     let altDescription: String?
     let urls: URLs
@@ -52,10 +38,8 @@ nonisolated struct UnsplashPhoto: Decodable, Identifiable, Hashable, Sendable {
         case altDescription = "alt_description"
     }
 
-    /// The photographer's profile, tagged as the guidelines ask.
     var photographerURL: URL { UnsplashClient.referral(user.links.html) }
 
-    /// Large enough for a Retina canvas without pulling the original.
     var backgroundURL: URL {
         var components = URLComponents(url: urls.raw, resolvingAgainstBaseURL: false)
         var items = components?.queryItems ?? []
@@ -108,9 +92,9 @@ nonisolated enum UnsplashClient {
         return trimmed.isEmpty ? nil : trimmed
     }()
 
-    /// The user's own key wins over the bundled one.
     static var accessKey: String? {
-        let userKey = UserDefaults.standard.string(forKey: userKeyDefaultsKey)?
+        guard !UpshotStorage.isRenderingStates else { return nil }
+        let userKey = UpshotStorage.defaults.string(forKey: userKeyDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let userKey, !userKey.isEmpty { return userKey }
         return bundledKey
@@ -127,8 +111,6 @@ nonisolated enum UnsplashClient {
         return components.url ?? url
     }
 
-    /// Landscape photos for `query`, or Unsplash's Wallpapers topic when it
-    /// is empty.
     static func photos(query: String, page: Int) async throws -> Page {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let common = [
@@ -156,9 +138,6 @@ nonisolated enum UnsplashClient {
         return Page(photos: response.results, hasMore: page < response.totalPages)
     }
 
-    /// Downloads the photo into `directory`, named for its photographer so
-    /// the background row credits them, and reports the download to
-    /// Unsplash. A photo downloaded before is reused without either.
     static func download(_ photo: UnsplashPhoto, to directory: URL) async throws -> URL {
         let name = photo.user.name
             .components(separatedBy: CharacterSet(charactersIn: "/:\\"))
@@ -173,8 +152,6 @@ nonisolated enum UnsplashClient {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try FileManager.default.moveItem(at: downloadedURL, to: destination)
 
-        // Counts the download for the photographer. Failing it must not
-        // take away a background the user already has.
         _ = try? await request(photo.links.downloadLocation)
         return destination
     }

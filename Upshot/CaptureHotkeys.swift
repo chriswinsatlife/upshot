@@ -1,4 +1,3 @@
-
 import AppKit
 import Carbon.HIToolbox
 import Foundation
@@ -404,7 +403,7 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
 }
 
 enum CaptureHotkeyPreferences {
-    static func shortcut(for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> HotkeyShortcut? {
+    static func shortcut(for action: CaptureHotkeyAction, defaults: UserDefaults = UpshotStorage.defaults) -> HotkeyShortcut? {
         if defaults.string(forKey: action.preferencesKey) == "disabled" { return nil }
         guard let data = defaults.data(forKey: action.preferencesKey),
               let shortcut = try? JSONDecoder().decode(HotkeyShortcut.self, from: data),
@@ -412,7 +411,7 @@ enum CaptureHotkeyPreferences {
         return shortcut
     }
 
-    static func saveShortcut(_ shortcut: HotkeyShortcut?, for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) {
+    static func saveShortcut(_ shortcut: HotkeyShortcut?, for action: CaptureHotkeyAction, defaults: UserDefaults = UpshotStorage.defaults) {
         if shortcut == action.defaultShortcut {
             defaults.removeObject(forKey: action.preferencesKey)
         } else if let shortcut, let data = try? JSONEncoder().encode(shortcut) {
@@ -422,13 +421,13 @@ enum CaptureHotkeyPreferences {
         }
     }
 
-    static func shortcuts(for actions: [CaptureHotkeyAction] = CaptureHotkeyAction.allCases, defaults: UserDefaults = .standard) -> [CaptureHotkeyAction: HotkeyShortcut] {
+    static func shortcuts(for actions: [CaptureHotkeyAction] = CaptureHotkeyAction.allCases, defaults: UserDefaults = UpshotStorage.defaults) -> [CaptureHotkeyAction: HotkeyShortcut] {
         Dictionary(uniqueKeysWithValues: actions.compactMap { action in
             shortcut(for: action, defaults: defaults).map { (action, $0) }
         })
     }
 
-    static func conflictingAction(for shortcut: HotkeyShortcut, excluding action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> CaptureHotkeyAction? {
+    static func conflictingAction(for shortcut: HotkeyShortcut, excluding action: CaptureHotkeyAction, defaults: UserDefaults = UpshotStorage.defaults) -> CaptureHotkeyAction? {
         CaptureHotkeyAction.allCases.first { $0 != action && self.shortcut(for: $0, defaults: defaults) == shortcut }
     }
 }

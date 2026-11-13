@@ -1,24 +1,3 @@
-//
-//  RecordingExportBenchmark.swift
-//  Upshot
-//
-//  Debug-only headless export timing. Launch the binary with
-//  `-benchmarkExport <path to .upshotrec>` and it renders that
-//  project's Studio export, prints the wall time to stdout, deletes the
-//  output (unless `-benchmarkKeepOutput YES`), and exits - no windows,
-//  hotkeys, or updater. The exporter's own StudioExport log lines carry
-//  the per-stage breakdown.
-//
-//  The project's saved export settings apply unless overridden with
-//  `-benchmarkCodec`, `-benchmarkFPS`, `-benchmarkMotionBlur`, or
-//  `-benchmarkResolution`, using the settings' raw values ("HEVC",
-//  "30 fps", "YES", "1080p").
-//
-//  `-benchmarkMatteCache <path to .upshotrec>` instead builds that
-//  project's cutout matte cache, as Studio does in the background, and
-//  prints how long it took.
-//
-
 #if DEBUG
 import AppKit
 import Foundation
@@ -26,10 +5,8 @@ import Foundation
 enum RecordingExportBenchmark {
     static let argumentKey = "benchmarkExport"
 
-    /// Returns true when this launch is a benchmark run; the caller must
-    /// then skip normal startup.
     static func runIfRequested() -> Bool {
-        if let path = UserDefaults.standard.string(forKey: "benchmarkMatteCache") {
+        if let path = UpshotStorage.defaults.string(forKey: "benchmarkMatteCache") {
             let session = RecordingSession(directoryURL: URL(fileURLWithPath: path).standardizedFileURL)
             Task {
                 let started = CFAbsoluteTimeGetCurrent()
@@ -40,7 +17,7 @@ enum RecordingExportBenchmark {
             }
             return true
         }
-        guard let path = UserDefaults.standard.string(forKey: argumentKey) else { return false }
+        guard let path = UpshotStorage.defaults.string(forKey: argumentKey) else { return false }
         let session = RecordingSession(directoryURL: URL(fileURLWithPath: path).standardizedFileURL)
         Task {
             do {
@@ -49,7 +26,7 @@ enum RecordingExportBenchmark {
                 let started = CFAbsoluteTimeGetCurrent()
                 let outputURL = try await RecordingStudioExporter().export(configuration) { _ in }
                 let elapsed = CFAbsoluteTimeGetCurrent() - started
-                let keepsOutput = UserDefaults.standard.bool(forKey: "benchmarkKeepOutput")
+                let keepsOutput = UpshotStorage.defaults.bool(forKey: "benchmarkKeepOutput")
                 if !keepsOutput { try? FileManager.default.removeItem(at: outputURL) }
                 let settings = configuration.exportSettings
                 print(
@@ -70,7 +47,7 @@ enum RecordingExportBenchmark {
     }
 
     private static func applyOverrides(to settings: inout VideoCompressionSettings) {
-        let defaults = UserDefaults.standard
+        let defaults = UpshotStorage.defaults
         if let codec = defaults.string(forKey: "benchmarkCodec").flatMap(VideoCompressionCodec.init(rawValue:)) {
             settings.codec = codec
         }

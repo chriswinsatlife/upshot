@@ -70,10 +70,10 @@ final class AutomationConfiguration {
     func snapshot() throws -> AutomationConfigurationDocument {
         var document = AutomationConfigurationDocument()
         for (key, definition) in AutomationPreferenceDefinition.catalog {
-            if definition.storesJSONData, let data = UserDefaults.standard.data(forKey: key),
+            if definition.storesJSONData, let data = UpshotStorage.defaults.data(forKey: key),
                let string = String(data: data, encoding: .utf8) {
                 document.preferences[key] = .string(string)
-            } else if let object = UserDefaults.standard.object(forKey: key),
+            } else if let object = UpshotStorage.defaults.object(forKey: key),
                let data = try? JSONSerialization.data(withJSONObject: object, options: [.fragmentsAllowed]),
                let value = try? JSONValue.decoder.decode(JSONValue.self, from: data) {
                 document.preferences[key] = value
@@ -110,21 +110,21 @@ final class AutomationConfiguration {
         try HotkeyManager.shared.replaceShortcuts(shortcuts)
         for (key, value) in document.preferences {
             switch value {
-            case .bool(let flag): UserDefaults.standard.set(flag, forKey: key)
-            case .number(let number): UserDefaults.standard.set(number, forKey: key)
+            case .bool(let flag): UpshotStorage.defaults.set(flag, forKey: key)
+            case .number(let number): UpshotStorage.defaults.set(number, forKey: key)
             case .string(let string):
                 if definitions[key]?.storesJSONData == true {
-                    UserDefaults.standard.set(Data(string.utf8), forKey: key)
+                    UpshotStorage.defaults.set(Data(string.utf8), forKey: key)
                 } else {
                     let value = [UpshotPreferences.exportDirectoryPathKey, UpshotPreferences.screenshotWindowWallpaperPathKey].contains(key)
                         ? (string as NSString).expandingTildeInPath : string
-                    UserDefaults.standard.set(value, forKey: key)
+                    UpshotStorage.defaults.set(value, forKey: key)
                 }
             case .array(let values):
                 if definitions[key]?.arrayKind == .rectangle {
-                    UserDefaults.standard.set(values.compactMap(\.doubleValue), forKey: key)
+                    UpshotStorage.defaults.set(values.compactMap(\.doubleValue), forKey: key)
                 } else {
-                    UserDefaults.standard.set(values.compactMap(\.stringValue), forKey: key)
+                    UpshotStorage.defaults.set(values.compactMap(\.stringValue), forKey: key)
                 }
             default: break
             }

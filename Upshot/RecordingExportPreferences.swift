@@ -3,7 +3,7 @@ import Foundation
 extension UpshotPreferences {
     static var recordingExtendedExportDefaults: RecordingExportDeliveryOptions {
         get {
-            guard let data = UserDefaults.standard.data(forKey: "recordingExtendedExportDefaults"),
+            guard let data = UpshotStorage.defaults.data(forKey: "recordingExtendedExportDefaults"),
                   let options = try? JSONDecoder().decode(RecordingExportDeliveryOptions.self, from: data) else {
                 return RecordingExportDeliveryOptions()
             }
@@ -11,7 +11,7 @@ extension UpshotPreferences {
         }
         set {
             guard let data = try? JSONEncoder().encode(newValue) else { return }
-            UserDefaults.standard.set(data, forKey: "recordingExtendedExportDefaults")
+            UpshotStorage.defaults.set(data, forKey: "recordingExtendedExportDefaults")
         }
     }
 }
@@ -87,7 +87,7 @@ nonisolated enum RecordingExportOptionStore {
 
 extension UpshotPreferences {
     static var recordingCapturesTypedKeys: Bool {
-        get { UserDefaults.standard.bool(forKey: "recordingCapturesTypedKeys") }
-        set { UserDefaults.standard.set(newValue, forKey: "recordingCapturesTypedKeys") }
+        get { UpshotStorage.defaults.bool(forKey: "recordingCapturesTypedKeys") }
+        set { UpshotStorage.defaults.set(newValue, forKey: "recordingCapturesTypedKeys") }
     }
 }

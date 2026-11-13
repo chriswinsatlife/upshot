@@ -1,7 +1,5 @@
-
 import AppKit
 import SwiftUI
-
 
 enum AnnotationEditorFocusedField: Hashable {
     case watermarkText
@@ -15,12 +13,12 @@ private enum AnnotationInspectorSectionState {
     static let expandedSectionsKey = "annotationInspector.expandedAdvancedSections"
 
     static func loadExpandedSections() -> Set<AnnotationInspectorAdvancedSection> {
-        let rawValues = UserDefaults.standard.stringArray(forKey: expandedSectionsKey) ?? []
+        let rawValues = UpshotStorage.defaults.stringArray(forKey: expandedSectionsKey) ?? []
         return Set(rawValues.compactMap(AnnotationInspectorAdvancedSection.init(rawValue:)))
     }
 
     static func saveExpandedSections(_ sections: Set<AnnotationInspectorAdvancedSection>) {
-        UserDefaults.standard.set(sections.map(\.rawValue), forKey: expandedSectionsKey)
+        UpshotStorage.defaults.set(sections.map(\.rawValue), forKey: expandedSectionsKey)
     }
 }
 
@@ -278,7 +276,6 @@ struct AnnotationEditorInspector: View {
         .transition(.blurPop)
     }
 
-
     @ViewBuilder
     private var styleControls: some View {
         if model.selectionCount > 1 {
@@ -352,7 +349,6 @@ struct AnnotationEditorInspector: View {
         }
     }
 }
-
 
 private enum AnnotationInspectorSummary {
     static func border(_ settings: AnnotationScreenshotBorderSettings) -> String? {

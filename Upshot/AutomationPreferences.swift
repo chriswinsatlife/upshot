@@ -2,9 +2,7 @@ import Foundation
 
 extension UpshotPreferences {
     static var configurationFileURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/upshot", isDirectory: true)
-            .appendingPathComponent("config.toml")
+        UpshotStorage.configurationFileURL
     }
 }
 

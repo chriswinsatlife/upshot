@@ -1,13 +1,6 @@
-//
-//  RecordingStudioStylePresetStore.swift
-//  Upshot
-//
-
 import Foundation
 import Observation
 
-/// A named, reusable snapshot of the Studio's background, layout (padding,
-/// corner radius, shadow), cursor size, and camera bubble settings.
 struct RecordingStudioStylePreset: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
@@ -70,7 +63,7 @@ final class RecordingStudioStylePresetStore {
         return presets.first { $0.id == activePresetID && !$0.hasMissingWallpaper }
     }
 
-    private init(defaults: UserDefaults = .standard) {
+    private init(defaults: UserDefaults = UpshotStorage.defaults) {
         self.defaults = defaults
 
         let loadedLibrary = Self.loadLibrary(from: defaults)
@@ -96,8 +89,6 @@ final class RecordingStudioStylePresetStore {
         return presets.first { Self.namesMatch($0.name, candidate) }
     }
 
-    /// Creates a new preset. Duplicate names are rejected so saving from the
-    /// naming popover can never overwrite an existing recipe.
     @discardableResult
     func savePreset(named rawName: String, style: RecordingStudioStyle) -> RecordingStudioStylePreset? {
         let name = Self.normalizedName(rawName)
