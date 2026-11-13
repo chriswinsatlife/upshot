@@ -266,9 +266,9 @@ enum StateRenderCatalog {
                 return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier") })
             }
         }
-        for variant in ["manual-ready", "automatic-ready", "running", "finishing"] {
-            add("scrolling-capture-\(variant)", "ScrollingCaptureControlPanel", "final class ScrollingCaptureControlPanel", 380, 195) {
-                AnyView(StateRenderAppKitView { ScrollingCaptureControlPanel.renderContent(running: variant == "running", automatic: variant == "automatic-ready", finishing: variant == "finishing") })
+        for renderState in ScrollingCaptureControlPanel.RenderState.allCases {
+            add("scrolling-capture-\(renderState.rawValue)", "ScrollingCaptureControlPanel", "final class ScrollingCaptureControlPanel", 640, 230) {
+                AnyView(Image(nsImage: fixtures.image).resizable().aspectRatio(contentMode: .fill).overlay { ScrollingCaptureControlPanel.renderView(renderState) }.clipped())
             }
         }
         for variant in ["picker", "picker-teleprompter", "recording", "paused", "starting", "finishing", "picker-visible-windows", "picker-area", "picker-area-empty", "picker-area-teleprompter", "flyout", "flyout-hover-gif"] {

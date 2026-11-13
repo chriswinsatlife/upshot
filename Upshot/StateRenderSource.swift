@@ -310,8 +310,16 @@ enum StateRenderSource {
             ("struct ScreenshotOutputSettingsSection: View {", 5),
         ],
         "Upshot/ScrollingCaptureControlPanel.swift": [
-            ("final class ScrollingCaptureControlPanel: NSObject, NSWindowDelegate {", 4),
-            ("enum Mode {", 5),
+            ("final class ScrollingCaptureControlPanel {", 5),
+            ("enum Mode {", 6),
+            ("private final class ScrollingCaptureControlWindow: NSPanel {", 139),
+            ("struct ScrollingCaptureControlState: Equatable {", 150),
+            ("struct ScrollingCaptureControlStatus: Equatable {", 164),
+            ("struct ScrollingCaptureControlActions {", 208),
+            ("struct ScrollingCaptureControlsView: View {", 217),
+            ("private struct ScrollingCaptureToolbar: View {", 233),
+            ("private struct ScrollingCaptureHeightReadout: View {", 260),
+            ("enum RenderState: String, CaseIterable {", 286),
         ],
         "Upshot/SettingsAnnotatePane.swift": [
             ("struct SettingsAnnotatePane: View {", 3),
