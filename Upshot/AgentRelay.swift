@@ -1,14 +1,3 @@
-//
-//  AgentRelay.swift
-//  Upshot
-//
-//  `Upshot --mcp`: the process an agent (Claude Code, Codex, ...)
-//  launches as its MCP server. It never starts the UI. It connects to the
-//  running app over a Unix socket - opening Upshot in the background
-//  first if needed - and copies newline-delimited JSON-RPC between the
-//  agent's stdio and that socket. Everything else happens in the app, so
-//  edits land in the same models the Studio windows draw.
-//
 
 import AppKit
 import Darwin
@@ -16,8 +5,6 @@ import Foundation
 
 nonisolated enum AgentSocket {
     static let relayArgument = "--mcp"
-    /// Passed when the relay opens the app, so it starts quietly in the menu
-    /// bar instead of opening the Library over whatever the user is doing.
     static let launchedByAgentArgument = "--launched-by-agent"
 
     static var url: URL {
@@ -29,8 +16,6 @@ nonisolated enum AgentSocket {
             .appendingPathComponent(socketFileName)
     }
 
-    /// The Dev build shares the Upshot folder with the release app, so
-    /// each bundle gets its own socket and both can run at once.
     private static var socketFileName: String {
         let bundleID = Bundle.main.bundleIdentifier ?? ""
         guard bundleID != "co.chrisyork.upshot",
@@ -54,9 +39,8 @@ nonisolated enum AgentSocket {
         return address
     }
 
-    /// A connected socket, or nil when nothing is listening.
-    static func connect() -> Int32? {
-        guard var address = address(for: url.path) else { return nil }
+    static func connect(to targetURL: URL? = nil) -> Int32? {
+        guard var address = address(for: (targetURL ?? url).path) else { return nil }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         var on: Int32 = 1
@@ -80,7 +64,7 @@ nonisolated enum AgentSocket {
             var remaining = buffer.count
             while remaining > 0 {
                 let written = write(fd, pointer, remaining)
-                if written < 0 {
+                if written <= 0 {
                     if errno == EINTR { continue }
                     return false
                 }
@@ -109,8 +93,6 @@ nonisolated enum AgentRelay {
         exit(0)
     }
 
-    /// Answers a request the app never saw, so the agent gets a reason
-    /// instead of waiting forever.
     private static func replyUnavailable(to line: String, reason: String) {
         guard let message = try? JSONValue.decoder.decode(JSONValue.self, from: Data(line.utf8)),
               let id = message["id"], message["method"] != nil else {
@@ -134,8 +116,6 @@ nonisolated enum AgentRelay {
         }
     }
 
-    /// The socket to the app, reopened (relaunching Upshot if it quit)
-    /// the next time the agent sends something after the app goes away.
     private final class Connection: @unchecked Sendable {
         private let lock = NSLock()
         private var fd: Int32 = -1
@@ -170,8 +150,6 @@ nonisolated enum AgentRelay {
             }
         }
 
-        /// Copies whole lines from the app to stdout. A line cut off by the
-        /// app quitting is thrown away rather than glued to the next one.
         private func pump(from fd: Int32) {
             var pending = Data()
             var chunk = [UInt8](repeating: 0, count: 64 * 1024)
@@ -198,8 +176,6 @@ nonisolated enum AgentRelay {
             if !alreadyRunning {
                 launchApp()
             }
-            // A running app with no socket has the agent server switched
-            // off; give it a moment in case it is still starting up.
             let deadline = Date().addingTimeInterval(alreadyRunning ? 2 : 30)
             while Date() < deadline {
                 Thread.sleep(forTimeInterval: 0.2)

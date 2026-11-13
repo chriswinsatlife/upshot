@@ -1,13 +1,3 @@
-//
-//  AgentServer.swift
-//  Upshot
-//
-//  The app side of the agent (MCP) server. Listens on a Unix socket only
-//  this user can open, speaks JSON-RPC 2.0 framed as one message per line,
-//  and hands tool calls to `AgentTools` on the main actor, where the Studio
-//  models live. Each request runs in its own task so a long export never
-//  blocks a status check, and `notifications/cancelled` cancels it.
-//
 
 import Darwin
 import Foundation
@@ -29,7 +19,6 @@ final class AgentServer {
 
     var isRunning: Bool { listenFD >= 0 }
 
-    /// Starts or stops listening to match the setting.
     func updateForPreference() {
         if UpshotPreferences.agentServerEnabled {
             start()
@@ -45,7 +34,6 @@ final class AgentServer {
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        // A socket file left by a crash refuses the bind; nobody is behind it.
         unlink(url.path)
 
         guard var address = AgentSocket.address(for: url.path) else {
@@ -54,7 +42,6 @@ final class AgentServer {
         }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return }
-        // Created owner-only, so no other account on this Mac can connect.
         let previousMask = umask(0o077)
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -96,8 +83,6 @@ final class AgentServer {
         while true {
             let client = accept(listenFD, nil, nil)
             guard client >= 0 else { return }
-            // Same-user check on top of the file mode, in case the socket's
-            // directory permissions were ever loosened.
             var uid: uid_t = 0
             var gid: gid_t = 0
             guard getpeereid(client, &uid, &gid) == 0, uid == getuid() else {
@@ -125,8 +110,6 @@ final class AgentServer {
     }
 }
 
-/// One client's socket: reads lines off the main thread and writes
-/// replies in order on its own queue.
 nonisolated final class AgentConnection: @unchecked Sendable {
     private let fd: Int32
     private let queue = DispatchQueue(label: "co.chrisyork.upshot.agent-connection")
@@ -154,8 +137,6 @@ nonisolated final class AgentConnection: @unchecked Sendable {
         guard let data = try? message.encodedLine() else { return }
         queue.async { [weak self] in
             guard let self, !self.isClosed else { return }
-            // The socket is non-blocking for reads; flip it for the
-            // duration of a write so a large image reply goes out whole.
             let flags = fcntl(self.fd, F_GETFL)
             _ = fcntl(self.fd, F_SETFL, flags & ~O_NONBLOCK)
             let ok = AgentSocket.writeAll(data, to: self.fd)
@@ -201,7 +182,6 @@ nonisolated final class AgentConnection: @unchecked Sendable {
     }
 }
 
-/// The JSON-RPC conversation with one client.
 @MainActor
 final class AgentSession {
     private let connection: AgentConnection
@@ -218,7 +198,6 @@ final class AgentSession {
 
     func handle(_ message: JSONValue) {
         guard let method = message["method"]?.stringValue else {
-            // A response to something we never send; nothing to do.
             return
         }
         let params = message["params"] ?? [:]
@@ -232,6 +211,13 @@ final class AgentSession {
             reply(id, result: initializeResult(params))
         case "ping":
             reply(id, result: [:])
+        case "upshot/actions":
+            let actions = CaptureHotkeyAction.allCases.map { action -> JSONValue in
+                ["route": .string(action.route), "title": .string(action.title)]
+            }
+            reply(id, result: ["actions": .array(actions)])
+        case "upshot/perform":
+            performAutomation(id: id, params: params)
         case "tools/list":
             reply(id, result: ["tools": .array(AgentTools.definitions)])
         case "resources/list":
@@ -244,6 +230,27 @@ final class AgentSession {
             callTool(id: id, params: params)
         default:
             connection.send(Self.errorResponse(id: id, code: -32601, message: "Method not found: \(method)"))
+        }
+    }
+
+    private func performAutomation(id: JSONValue, params: JSONValue) {
+        tasks[id] = Task { [weak self] in
+            do {
+                guard let route = params["route"]?.stringValue,
+                      let values = params["parameters"]?.objectValue else {
+                    throw AutomationError.message("An action route and parameters object are required.")
+                }
+                var parameters: [String: String] = [:]
+                for (key, value) in values {
+                    guard let value = value.stringValue else { throw AutomationError.message("Action parameters must be strings.") }
+                    parameters[key] = value
+                }
+                let result = try await AutomationURLRouter.perform(route: route, parameters: parameters)
+                self?.reply(id, result: result)
+            } catch {
+                self?.connection.send(Self.errorResponse(id: id, code: -32001, message: error.localizedDescription))
+            }
+            self?.tasks.removeValue(forKey: id)
         }
     }
 
@@ -291,8 +298,6 @@ final class AgentSession {
             } catch is CancellationError {
                 result = Self.toolError("Cancelled.")
             } catch {
-                // Tool failures go back as results, not protocol errors, so
-                // the model reads the reason and can correct itself.
                 result = Self.toolError(error.localizedDescription)
             }
             guard !Task.isCancelled else { return }

@@ -7,6 +7,7 @@ import Carbon
 @main
 enum UpshotMain {
     static func main() {
+        if AutomationCommandLine.isRequested { AutomationCommandLine.run() }
         if AgentRelay.isRequested {
             AgentRelay.run()
         }
