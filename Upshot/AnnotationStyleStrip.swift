@@ -11,7 +11,7 @@ struct AnnotationStyleStrip: View {
     @State private var isNameEditorPresented = false
     @State private var draftName = ""
     @State private var presetPendingDeletion: AnnotationBackgroundPreset?
-    @State private var transferAlert: PresetTransferAlert?
+    @State private var transferAlert: AppAlert?
     @FocusState private var isNameFieldFocused: Bool
 
     private static let tileWidth: CGFloat = 72
@@ -34,30 +34,17 @@ struct AnnotationStyleStrip: View {
             .task(id: model.sourceURL) {
                 thumbnail = await Self.thumbnail(for: model.sourceURL)
             }
-            .alert(
-                "Delete Style?",
-                isPresented: Binding(
-                    get: { presetPendingDeletion != nil },
-                    set: { if !$0 { presetPendingDeletion = nil } }
-                ),
-                presenting: presetPendingDeletion
-            ) { preset in
-                Button("Delete", role: .destructive) {
-                    presetStore.deletePreset(id: preset.id)
-                    if model.appliedBackgroundPresetID == preset.id {
-                        model.appliedBackgroundPresetID = nil
-                    }
-                    presetPendingDeletion = nil
+            .appAlert(
+                item: $presetPendingDeletion,
+                alert: { AppAlerts.styleDeletion(styleName: $0.name, owner: .screenshot, wallpaperIsMissing: $0.hasMissingWallpaper) }
+            ) { action, preset in
+                guard action == .delete else { return }
+                presetStore.deletePreset(id: preset.id)
+                if model.appliedBackgroundPresetID == preset.id {
+                    model.appliedBackgroundPresetID = nil
                 }
-                Button("Cancel", role: .cancel) {
-                    presetPendingDeletion = nil
-                }
-            } message: { preset in
-                Text("“\(preset.name)” will be removed from your styles. This screenshot won’t change.")
             }
-            .alert(item: $transferAlert) { alert in
-                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
-            }
+            .appAlert(item: $transferAlert, alert: { $0 })
         } header: {
             HStack(spacing: Space.s) {
                 InterfaceSectionHeader("Styles")
@@ -323,7 +310,7 @@ struct AnnotationStyleStrip: View {
                     }
                 }
 
-                transferAlert = Self.importAlert(
+                transferAlert = AppAlerts.styleImported(
                     importedCount: importedPresets.count,
                     omittedWallpaperCount: omittedWallpaperCount,
                     failures: failures
@@ -355,55 +342,15 @@ struct AnnotationStyleStrip: View {
                         let data = try transferFile.encodedData()
                         try data.write(to: url, options: .atomic)
                         let omittedWallpaper = transferFile.presets.first?.omitted.contains(.wallpaper) == true
-                        transferAlert = PresetTransferAlert(
-                            title: "Style Exported",
-                            message: omittedWallpaper
-                                ? "The local wallpaper was not included. The imported style will use no background."
-                                : "“\(preset.name)” is ready to share."
-                        )
+                        transferAlert = AppAlerts.styleExported(styleName: preset.name, omittedWallpaper: omittedWallpaper)
                     } catch {
-                        transferAlert = PresetTransferAlert(
-                            title: "Export Failed",
-                            message: error.localizedDescription
-                        )
+                        transferAlert = AppAlerts.styleExportFailed(error: error)
                     }
                 }
             }
         } catch {
-            transferAlert = PresetTransferAlert(
-                title: "Export Failed",
-                message: error.localizedDescription
-            )
+            transferAlert = AppAlerts.styleExportFailed(error: error)
         }
-    }
-
-    private static func importAlert(
-        importedCount: Int,
-        omittedWallpaperCount: Int,
-        failures: [String]
-    ) -> PresetTransferAlert {
-        guard importedCount > 0 else {
-            return PresetTransferAlert(
-                title: "Import Failed",
-                message: failures.joined(separator: "\n")
-            )
-        }
-
-        let presetNoun = importedCount == 1 ? "style" : "styles"
-        var messages = ["Imported \(importedCount) \(presetNoun)."]
-        if omittedWallpaperCount > 0 {
-            let wallpaperNoun = omittedWallpaperCount == 1 ? "wallpaper was" : "wallpapers were"
-            messages.append(
-                "\(omittedWallpaperCount) local \(wallpaperNoun) not included and will use no background."
-            )
-        }
-        if !failures.isEmpty {
-            messages.append("Some files could not be imported:\n\(failures.joined(separator: "\n"))")
-        }
-        return PresetTransferAlert(
-            title: importedCount == 1 ? "Style Imported" : "Styles Imported",
-            message: messages.joined(separator: "\n\n")
-        )
     }
 
     private static func safeFilename(for presetName: String) -> String {
@@ -412,12 +359,6 @@ struct AnnotationStyleStrip: View {
         let sanitized = components.filter { !$0.isEmpty }.joined(separator: "-")
         return sanitized.isEmpty ? "Screenshot Style" : sanitized
     }
-}
-
-private struct PresetTransferAlert: Identifiable {
-    let id = UUID()
-    let title: String
-    let message: String
 }
 
 struct AnnotationStylePreview: View {

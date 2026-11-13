@@ -18,14 +18,7 @@ struct AnnotationWatermarkSourceControls: View {
                 .buttonStyle(.interfaceAction)
                 .help(settings.imageData == nil ? "Choose a watermark image" : "Replace the watermark image")
         }
-        .alert("Watermark Image Failed", isPresented: Binding(
-            get: { importError != nil },
-            set: { if !$0 { importError = nil } }
-        )) {
-            Button("OK") { importError = nil }
-        } message: {
-            Text(importError ?? "")
-        }
+        .appAlert(item: $importError, alert: { AppAlerts.watermarkImageFailed(message: $0) })
     }
 
     private func chooseImage() {
