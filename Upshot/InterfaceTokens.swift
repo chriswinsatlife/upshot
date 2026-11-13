@@ -183,6 +183,7 @@ enum InterfaceMetrics {
     static let sidebarRowHorizontalPadding: CGFloat = 8
     static let sidebarIconTileSize: CGFloat = 18
     static let sidebarIconGlyphPointSize: CGFloat = 10
+    static let sidebarLineIconPointSize: CGFloat = 14
     static let sidebarIconToLabelSpacing: CGFloat = 2.5
     static let sidebarGroupSpacing: CGFloat = 14
     static let searchFieldHeight: CGFloat = 28

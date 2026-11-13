@@ -37,13 +37,13 @@ struct CaptureLibrarySidebarView: View {
             InterfaceSidebar {
                 InterfaceSidebarGroupHeader("Library")
                 ForEach(CaptureLibraryFilter.allCases) { filter in
-                    row(filter.title, icon: .symbol(filter.symbol, tint: filter.sidebarTint), count: model.count(for: filter), scope: .kind(filter))
+                    row(filter.title, icon: .line(filter.symbol), count: model.count(for: filter), scope: .kind(filter))
                 }
                 if showsCategories, !model.categoryFacets.isEmpty {
                     CaptureLibrarySidebarGroupToggle(title: "Categories", isExpanded: $categoriesExpanded)
                     if categoriesExpanded {
                         ForEach(model.categoryFacets, id: \.category) { facet in
-                            row(facet.category.title, icon: .symbol(facet.category.symbol, tint: facet.category.sidebarTint), count: facet.count, scope: .category(facet.category))
+                            row(facet.category.title, icon: .line(facet.category.symbol), count: facet.count, scope: .category(facet.category))
                         }
                     }
                 }
@@ -134,13 +134,13 @@ private struct CaptureLibrarySidebarFooter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             if let updateVersion {
-                InterfaceSidebarRow("Update to \(updateVersion)", systemImage: "arrow.down", tint: InterfaceSidebarTint.blue, isSelected: false) {
+                InterfaceSidebarRow("Update to \(updateVersion)", icon: .line("arrow.down.circle"), isSelected: false) {
                     UpdaterManager.shared.checkForUpdates()
                 }
                 .help("Download Upshot \(updateVersion)")
                 .transition(.opacity)
             }
-            InterfaceSidebarRow("Settings", systemImage: "gearshape", tint: InterfaceSidebarTint.gray, isSelected: false) {
+            InterfaceSidebarRow("Settings", icon: .line("gearshape"), isSelected: false) {
                 SettingsWindowController.show(tab: .general)
             }
             .help("Settings (⌘,)")
@@ -148,36 +148,6 @@ private struct CaptureLibrarySidebarFooter: View {
         .padding(.horizontal, Space.ml)
         .padding(.bottom, Space.ml)
         .animation(.morphIfAllowed, value: updateVersion)
-    }
-}
-
-extension CaptureLibraryFilter {
-    var sidebarTint: Color {
-        switch self {
-        case .all: InterfaceSidebarTint.indigo
-        case .screenshots: InterfaceSidebarTint.blue
-        case .recordings: InterfaceSidebarTint.red
-        }
-    }
-}
-
-extension CaptureCategory {
-    var sidebarTint: Color {
-        switch self {
-        case .code: InterfaceSidebarTint.gray
-        case .design: InterfaceSidebarTint.pink
-        case .website: InterfaceSidebarTint.blue
-        case .document: InterfaceSidebarTint.indigo
-        case .chat: InterfaceSidebarTint.green
-        case .email: InterfaceSidebarTint.blue
-        case .data: InterfaceSidebarTint.teal
-        case .error: InterfaceSidebarTint.red
-        case .receipt: InterfaceSidebarTint.orange
-        case .social: InterfaceSidebarTint.purple
-        case .media: InterfaceSidebarTint.yellow
-        case .settings: InterfaceSidebarTint.gray
-        case .other: InterfaceSidebarTint.gray
-        }
     }
 }
 

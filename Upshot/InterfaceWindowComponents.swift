@@ -686,6 +686,7 @@ struct InterfaceSidebarGroupHeader: View {
 
 enum InterfaceSidebarIcon {
     case symbol(String, tint: Color)
+    case line(String)
     case image(NSImage)
 }
 
@@ -710,6 +711,10 @@ struct InterfaceSidebarIconTile: View {
                             .symbolVariant(.fill)
                             .foregroundStyle(Color.white)
                     }
+            case .line(let systemImage):
+                Image(systemName: systemImage)
+                    .font(.system(size: InterfaceMetrics.sidebarLineIconPointSize, weight: .regular))
+                    .foregroundStyle(Palette.secondaryLabel)
             case .image(let image):
                 Image(nsImage: image)
                     .resizable()
