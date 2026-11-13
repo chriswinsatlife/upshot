@@ -22,7 +22,8 @@ extension AnnotationEditorModel {
 
     var objectShadowsEnabled: Bool {
         _ = revision
-        return engine.selectedShapes.first?.castsShadow ?? UpshotPreferences.annotationObjectShadows
+        if let shape = engine.selectedShapes.first { return shape.castsShadow ?? false }
+        return UpshotPreferences.annotationObjectShadows
     }
 
     func setObjectShadows(_ enabled: Bool) {
@@ -34,7 +35,8 @@ extension AnnotationEditorModel {
 
     var drawingSmoothing: Double {
         _ = revision
-        return engine.selectedShapes.first?.drawProps?.smoothing ?? UpshotPreferences.annotationDrawingSmoothing
+        if let properties = engine.selectedShapes.first?.drawProps { return properties.smoothing ?? 0.62 }
+        return UpshotPreferences.annotationDrawingSmoothing
     }
 
     func setDrawingSmoothing(_ value: Double) {

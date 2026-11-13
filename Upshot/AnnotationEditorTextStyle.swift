@@ -16,7 +16,10 @@ extension AnnotationEditorModel {
     }
 
     var selectedTextStyle: AnnotationTextStyle {
-        get { selectedTextShape?.textProps?.style ?? engine.currentTextStyle }
+        get {
+            if let properties = selectedTextShape?.textProps { return properties.style ?? .plain }
+            return engine.currentTextStyle
+        }
         set {
             engine.currentTextStyle = newValue
             updateSelectedText { $0.style = newValue }
