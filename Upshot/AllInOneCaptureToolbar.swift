@@ -52,7 +52,7 @@ struct AllInOneCaptureToolbar: View {
     }
 
     private func button(_ mode: AllInOneCaptureMode) -> some View {
-        InterfaceToolbarButton(mode.title, systemImage: mode.symbol, isSelected: isSelected(mode), tint: mode.isCaptureAction && isSelected(mode) ? Palette.accent : nil) {
+        InterfaceToolbarButton(mode.title, systemImage: mode.symbol, isSelected: isSelected(mode)) {
             selector.chooseMode(mode)
         }
         .disabled(mode.isCaptureAction && !selector.canArmCaptureActions)
@@ -70,7 +70,7 @@ struct AllInOneCaptureToolbar: View {
 
     @ViewBuilder
     private var sizeFields: some View {
-        if let size = selector.selectionPixelSize {
+        if selector.showsSelectionSize, let size = selector.selectionPixelSize {
             InterfaceSizeFieldsPill(
                 width: Binding(get: { Int(size.width) }, set: { selector.setSelectionPixelSize(width: $0) }),
                 height: Binding(get: { Int(size.height) }, set: { selector.setSelectionPixelSize(height: $0) }),
@@ -85,7 +85,6 @@ struct AllInOneCaptureToolbar: View {
                 }
                 .pickerStyle(.inline)
             }
-            .disabled(!selector.canEditSelectionSize)
             .onSubmit { selector.restoreKeyboardFocus() }
             .transition(.opacity)
         }

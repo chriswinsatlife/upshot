@@ -115,6 +115,10 @@ final class AreaCaptureSelection {
         isAllInOne && [.area, .fullscreen, .window, .element, .previousArea].contains(mode)
     }
 
+    var showsSelectionSize: Bool {
+        isAllInOne && (mode == .area || mode == .scrolling)
+    }
+
     var canEditSelectionSize: Bool {
         isAllInOne && start == nil && (mode == .area || mode == .scrolling)
     }
@@ -825,7 +829,7 @@ final class AreaCaptureSelectionView: NSView {
         }
         if snapshot.frame.contains(selector.pointer) {
             let point = CGPoint(x: selector.pointer.x - snapshot.frame.minX, y: selector.pointer.y - snapshot.frame.minY)
-            AreaSelectionMagnifier.draw(in: context, bounds: bounds, point: point,
+            AreaSelectionMagnifier.draw(in: context, bounds: bounds, point: point, selection: selected,
                                         image: selector.magnifierImage(for: snapshot), samplePosition: selector.magnifierSamplePosition(for: snapshot), readout: selector.readout(for: snapshot),
                                         showsCrosshair: UpshotPreferences.areaSelectionCrosshair,
                                         showsMagnifier: UpshotPreferences.areaSelectionMagnifier)
@@ -839,7 +843,8 @@ private final class AreaCaptureInstructionHostingView: NSHostingView<AreaCapture
 
 extension AreaCaptureSelection {
     static func renderView(image: CGImage, mode: AllInOneCaptureMode, allInOne: Bool, crosshair: Bool, size: CGSize = CGSize(width: 1000, height: 625),
-                           aspect: RecordingAreaAspect? = nil, status: String? = nil) -> NSView {
+                           aspect: RecordingAreaAspect? = nil, status: String? = nil,
+                           pointer: CGPoint? = nil, selection: CGRect? = nil) -> NSView {
         precondition(UpshotStorage.isRenderingStates)
         let selector = AreaCaptureSelection.shared
         let snapshot = AreaCaptureSnapshot(displayID: 0, frame: CGRect(origin: .zero, size: size), image: image)
@@ -852,8 +857,8 @@ extension AreaCaptureSelection {
         selector.aspect = aspect
         selector.status = status
         selector.start = nil
-        selector.pointer = CGPoint(x: size.width * 0.65, y: size.height * 0.592)
-        let selection = CGRect(x: size.width * 0.12, y: size.height * 0.28, width: size.width * 0.62, height: size.height * 0.528)
+        selector.pointer = pointer ?? CGPoint(x: size.width * 0.65, y: size.height * 0.592)
+        let selection = selection ?? CGRect(x: size.width * 0.12, y: size.height * 0.28, width: size.width * 0.62, height: size.height * 0.528)
         selector.highlightedRect = crosshair || mode == .text ? nil : aspect.map { RecordingAreaGeometry.reshaped(selection, to: $0.ratio, in: snapshot.frame) } ?? selection
         return AreaCaptureSelectionView(snapshot: snapshot, frozen: true, selector: selector)
     }
