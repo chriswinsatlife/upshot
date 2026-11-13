@@ -19,7 +19,7 @@ struct InterfaceStyleGallery: View {
 
             InterfaceStyleGalleryFloatingRegion(backdrop: backdrop)
         }
-        .padding(Space.xxxl + 4)
+        .padding(Space.xxxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.interfacePresentedControlState, .normal)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -93,28 +93,25 @@ private struct InterfaceStyleGallerySidebarColumn: View {
         VStack(alignment: .leading, spacing: Space.m) {
             InterfaceStyleGalleryComponentTitle(title: "Sidebar")
             HStack(alignment: .top, spacing: Space.l) {
-                VStack(alignment: .leading, spacing: Space.m) {
-                    InterfaceSidebarSearchField(prompt: "Search Settings", text: .constant(""))
-                    VStack(alignment: .leading, spacing: 1) {
-                        InterfaceSidebarRow("General", systemImage: "gearshape", tint: InterfaceSidebarTint.gray, isSelected: true) {}
-                        InterfaceSidebarRow("Screenshots", systemImage: "camera", tint: InterfaceSidebarTint.blue, isSelected: false) {}
-                            .interfacePresentedControlState(.hover)
-                        InterfaceSidebarRow("Screen Recordings", systemImage: "video", tint: InterfaceSidebarTint.red, isSelected: false) {}
-                            .interfacePresentedControlState(.pressed)
-                        InterfaceSidebarRow("Overlay", systemImage: "square.stack", tint: InterfaceSidebarTint.teal, isSelected: false) {}
-                        InterfaceSidebarRow("MCP", systemImage: "point.3.filled.connected.trianglepath.dotted", tint: InterfaceSidebarTint.purple, isSelected: false) {}
-                            .interfacePresentedControlState(.disabled)
-                        InterfaceSidebarRow("Cloud", systemImage: "icloud", tint: InterfaceSidebarTint.blue, isSelected: false) {}
-                        InterfaceSidebarGroupHeader("Library")
-                        InterfaceSidebarRow("All Captures", systemImage: "square.stack.3d.up", tint: InterfaceSidebarTint.indigo, count: 15, isSelected: false) {}
-                        InterfaceSidebarRow("Screenshots", systemImage: "photo", tint: InterfaceSidebarTint.blue, count: 12, isSelected: false) {}
-                        InterfaceSidebarRow("Recordings", systemImage: "video", tint: InterfaceSidebarTint.red, count: 3, isSelected: false) {}
-                        InterfaceSidebarGroupHeader("Apps")
-                        InterfaceSidebarRow("Upshot", icon: .image(NSImage(named: NSImage.applicationIconName) ?? NSImage()), count: 4, isSelected: false) {}
-                    }
+                InterfaceSidebar(searchPrompt: "Search Settings", searchText: .constant("")) {
+                    InterfaceSidebarRow("General", systemImage: "gearshape", tint: InterfaceSidebarTint.gray, isSelected: true) {}
+                    InterfaceSidebarRow("Screenshots", systemImage: "camera", tint: InterfaceSidebarTint.blue, isSelected: false) {}
+                        .interfacePresentedControlState(.hover)
+                    InterfaceSidebarRow("Screen Recordings", systemImage: "video", tint: InterfaceSidebarTint.red, isSelected: false) {}
+                        .interfacePresentedControlState(.pressed)
+                    InterfaceSidebarRow("Overlay", systemImage: "square.stack", tint: InterfaceSidebarTint.teal, isSelected: false) {}
+                    InterfaceSidebarRow("MCP", systemImage: "point.3.filled.connected.trianglepath.dotted", tint: InterfaceSidebarTint.purple, isSelected: false) {}
+                        .interfacePresentedControlState(.disabled)
+                    InterfaceSidebarRow("Cloud", systemImage: "icloud", tint: InterfaceSidebarTint.blue, isSelected: false) {}
+                    InterfaceSidebarGroupHeader("Library")
+                    InterfaceSidebarRow("All Captures", systemImage: "square.stack.3d.up", tint: InterfaceSidebarTint.indigo, count: 15, isSelected: false) {}
+                    InterfaceSidebarRow("Screenshots", systemImage: "photo", tint: InterfaceSidebarTint.blue, count: 12, isSelected: false) {}
+                    InterfaceSidebarRow("Recordings", systemImage: "video", tint: InterfaceSidebarTint.red, count: 3, isSelected: false) {}
+                    InterfaceSidebarGroupHeader("Apps")
+                    InterfaceSidebarRow("Upshot", icon: .image(NSImage(named: NSImage.applicationIconName) ?? NSImage()), count: 4, isSelected: false) {}
                 }
-                .padding(Space.m + 2)
-                .frame(width: InterfaceMetrics.sidebarWidth)
+                .padding(.vertical, Space.ml)
+                .frame(width: InterfaceMetrics.sidebarWidth, height: 430)
                 .background(Palette.workspace, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
                 VStack(alignment: .leading, spacing: Space.s) {
@@ -149,7 +146,7 @@ private struct InterfaceStyleGalleryStateList: View {
                     .font(.dsCaption)
             }
         }
-        .padding(.top, InterfaceMetrics.searchFieldHeight + Space.m + 2)
+        .padding(.top, InterfaceMetrics.searchFieldHeight + Space.m + Space.ml)
     }
 }
 
@@ -423,7 +420,7 @@ private struct InterfaceStyleGalleryCardRow: View {
                                     .font(.dsCaption)
                                     .foregroundStyle(Palette.secondaryLabel)
                             }
-                            .padding(InterfaceMetrics.cardPadding - 2)
+                            .padding(InterfaceMetrics.cardPadding)
                         }
                     }
                     .interfacePresentedControlState(state == .selected ? nil : state)
