@@ -1,4 +1,3 @@
-
 import AppKit
 import SwiftUI
 
@@ -10,9 +9,8 @@ struct StudioActionFooter: View {
     @State private var isShareOptionsPresented = false
     @State private var exportFlash: String?
     @State private var shareFlash: String?
-    @State private var lastJob: Job = .export
+    @State private var lastJob: Job?
     @State private var expiredFailure: String?
-    @Namespace private var glass
 
     private enum Job {
         case export
@@ -20,7 +18,7 @@ struct StudioActionFooter: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             if showsStatus {
                 status
                     .id(statusKey)
@@ -28,45 +26,24 @@ struct StudioActionFooter: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
-                HStack(spacing: GlassMetrics.gap) {
-                    if model.canShareToCloud {
-                        shareCapsule
-                        if let link = finishedShareLink, !isShareRunning, !isExportRunning {
-                            GlassIconButton(
-                                systemImage: "link",
-                                help: "Copy Link Again",
-                                size: GlassMetrics.actionHeight
-                            ) {
-                                copy(link)
-                                flashShare("Copied")
-                            }
-                            .glassEffectID("copyLink", in: glass)
-                        }
-                    }
-
-                    exportCapsule
-
-                    if let url = finishedExportURL, !isExportRunning, !isShareRunning {
-                        GlassIconButton(
-                            systemImage: "folder",
-                            help: "Show in Finder",
-                            size: GlassMetrics.actionHeight
-                        ) {
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        }
-                        .glassEffectID("reveal", in: glass)
-                    }
+            Group {
+                if let running = runningJob {
+                    progressRow(running)
+                        .transition(AnyTransition(.blurReplace))
+                } else {
+                    actionRow
+                        .transition(AnyTransition(.blurReplace))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, InspectorMetrics.horizontalPadding)
-        .padding(.top, 10)
-        .padding(.bottom, 16)
-        .motion(.morph, value: layoutKey)
+        .padding(.top, Space.ml)
+        .padding(.bottom, Space.xl)
+        .motion(.morphQuick, value: layoutKey)
         .motion(.morphQuick, value: statusKey)
         .task(id: statusKey) {
-            guard case .failed(let message) = currentStatus else { return }
+            guard case .failed(_, let message) = currentStatus else { return }
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
             expiredFailure = message
@@ -83,25 +60,52 @@ struct StudioActionFooter: View {
         }
     }
 
+    private var actionRow: some View {
+        HStack(spacing: Space.m) {
+            Spacer(minLength: 0)
 
-    private var exportCapsule: some View {
-        GlassActionCapsule(
-            title: "Export",
-            systemImage: "arrow.down.circle",
-            progress: exportProgress,
-            flash: exportFlash,
-            isProminent: true,
-            isCollapsed: isShareRunning
-        ) {
-            if isExportRunning {
-                model.cancelExport()
+            if model.canShareToCloud, let link = finishedShareLink {
+                Button {
+                    copy(link)
+                    flashShare("Copied")
+                } label: {
+                    Label("Copy Link Again", systemImage: "link")
+                        .labelStyle(.iconOnly)
+                }
+                .help("Copy Link Again")
+            }
+
+            if let url = finishedExportURL {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                        .labelStyle(.iconOnly)
+                }
+                .help("Show in Finder")
+            }
+
+            if model.canShareToCloud {
+                shareButton
+            }
+
+            exportButton
+        }
+        .buttonStyle(.interfaceAction)
+    }
+
+    private var exportButton: some View {
+        Button {
+            isExportOptionsPresented = true
+        } label: {
+            if let exportFlash {
+                Label(exportFlash, systemImage: "checkmark")
             } else {
-                isExportOptionsPresented = true
+                Label("Export", systemImage: "square.and.arrow.down")
             }
         }
-        .disabled(!model.isLoaded || isShareRunning)
+        .disabled(!model.isLoaded)
         .keyboardShortcut("e", modifiers: .command)
-        .glassEffectID("export", in: glass)
         .popover(isPresented: $isExportOptionsPresented, arrowEdge: .top) {
             RecordingExportOptionsPopover(
                 initialSettings: model.exportSettings,
@@ -111,23 +115,17 @@ struct StudioActionFooter: View {
         }
     }
 
-    private var shareCapsule: some View {
-        GlassActionCapsule(
-            title: "Share",
-            systemImage: "link",
-            progress: shareProgress?.progress,
-            stage: shareProgress?.stage,
-            flash: shareFlash,
-            isCollapsed: isExportRunning
-        ) {
-            if isShareRunning {
-                model.cancelShare()
+    private var shareButton: some View {
+        Button {
+            isShareOptionsPresented = true
+        } label: {
+            if let shareFlash {
+                Label(shareFlash, systemImage: "checkmark")
             } else {
-                isShareOptionsPresented = true
+                Label("Share", systemImage: "link")
             }
         }
-        .disabled(!model.isLoaded || isExportRunning)
-        .glassEffectID("share", in: glass)
+        .disabled(!model.isLoaded)
         .popover(isPresented: $isShareOptionsPresented, arrowEdge: .top) {
             CloudUploadOptionsPopover(
                 suggestedTitle: model.projectDisplayName,
@@ -136,45 +134,76 @@ struct StudioActionFooter: View {
         }
     }
 
+    private func progressRow(_ running: RunningJob) -> some View {
+        HStack(spacing: Space.m) {
+            Text(running.stage)
+                .font(.dsCaption)
+                .foregroundStyle(Palette.secondaryLabel)
+                .lineLimit(1)
+                .fixedSize()
+            ProgressView(value: min(max(running.progress, 0), 1))
+                .progressViewStyle(.linear)
+                .controlSize(.small)
+                .tint(Palette.accent)
+                .accessibilityLabel(running.stage)
+            Text(running.progress, format: .percent.precision(.fractionLength(0)))
+                .font(.dsNumeric)
+                .foregroundStyle(Palette.secondaryLabel)
+                .contentTransition(.numericText())
+                .fixedSize()
+            Button("Cancel") {
+                switch running.job {
+                case .export: model.cancelExport()
+                case .share: model.cancelShare()
+                }
+            }
+            .buttonStyle(.interfaceAction)
+            .keyboardShortcut(running.job == .export ? KeyboardShortcut("e", modifiers: .command) : nil)
+            .help(running.job == .export ? "Cancel Export" : "Cancel Share")
+        }
+    }
 
     @ViewBuilder
     private var status: some View {
         switch currentStatus {
         case .summary(let text):
-            statusLine(text, systemImage: nil, tint: nil)
+            Text(text)
+                .font(.dsCaption)
+                .foregroundStyle(Palette.secondaryLabel)
+                .lineLimit(1)
         case .exported(let url):
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } label: {
-                statusLine("Saved \(url.lastPathComponent)", systemImage: "checkmark.circle.fill", tint: nil)
+                completedLine("Saved \(url.lastPathComponent)")
             }
             .buttonStyle(.plain)
             .help("Show \(url.lastPathComponent) in Finder")
         case .shared(let link):
             if let url = URL(string: link) {
                 Link(destination: url) {
-                    statusLine(Self.displayLink(link), systemImage: "checkmark.circle.fill", tint: nil)
+                    completedLine(Self.displayLink(link))
                 }
                 .help("Open the share link in your browser")
             } else {
-                statusLine("Link copied", systemImage: "checkmark.circle.fill", tint: nil)
+                completedLine("Link copied")
             }
-        case .failed(let message):
-            statusLine(message, systemImage: "exclamationmark.triangle.fill", tint: .orange)
-                .help(message)
+        case .failed(let title, let message):
+            InterfaceRow(title, detail: message, systemImage: "exclamationmark.triangle", detailIsCritical: true) {
+                EmptyView()
+            }
+            .help(message)
         }
     }
 
-    private func statusLine(_ text: String, systemImage: String?, tint: Color?) -> some View {
-        HStack(spacing: 5) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(tint ?? .secondary)
-            }
+    private func completedLine(_ text: String) -> some View {
+        HStack(spacing: Space.xs) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: IconSize.actionButton, weight: .semibold))
+                .foregroundStyle(Palette.success)
             Text(text)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+                .font(.dsCaption)
+                .foregroundStyle(Palette.secondaryLabel)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -184,23 +213,50 @@ struct StudioActionFooter: View {
         case summary(String)
         case exported(URL)
         case shared(String)
-        case failed(String)
+        case failed(title: String, message: String)
+    }
+
+    private struct RunningJob {
+        let job: Job
+        let stage: String
+        let progress: Double
+    }
+
+    private var runningJob: RunningJob? {
+        if case .exporting(let progress) = model.exportState {
+            return RunningJob(job: .export, stage: "Exporting", progress: progress)
+        }
+        switch model.shareState {
+        case .rendering(let progress):
+            return RunningJob(job: .share, stage: "Rendering", progress: progress)
+        case .uploading:
+            let progress = model.shareItemID.flatMap { CloudUploader.shared.uploadProgress[$0] } ?? 0
+            return RunningJob(job: .share, stage: "Uploading", progress: progress)
+        default:
+            return nil
+        }
+    }
+
+    private var reportedJob: Job {
+        if let lastJob { return lastJob }
+        if model.exportState == .idle, model.shareState != .idle { return .share }
+        return .export
     }
 
     private var currentStatus: Status {
-        if isExportRunning || isShareRunning {
+        if runningJob != nil {
             return .summary(settingsSummary)
         }
-        switch lastJob {
+        switch reportedJob {
         case .export:
             if case .finished(let url) = model.exportState { return .exported(url) }
-            if case .failed(let message) = model.exportState, expiredFailure != "Export failed: \(message)" {
-                return .failed("Export failed: \(message)")
+            if case .failed(let message) = model.exportState, expiredFailure != message {
+                return .failed(title: "Export failed", message: message)
             }
         case .share:
             if case .finished(let link) = model.shareState { return .shared(link) }
-            if case .failed(let message) = model.shareState, expiredFailure != "Share failed: \(message)" {
-                return .failed("Share failed: \(message)")
+            if case .failed(let message) = model.shareState, expiredFailure != message {
+                return .failed(title: "Share failed", message: message)
             }
         }
         return .summary(settingsSummary)
@@ -211,13 +267,13 @@ struct StudioActionFooter: View {
         case .summary(let text): "summary-\(text)"
         case .exported(let url): "exported-\(url.path)"
         case .shared(let link): "shared-\(link)"
-        case .failed(let message): "failed-\(message)"
+        case .failed(let title, let message): "failed-\(title)-\(message)"
         }
     }
 
     private var layoutKey: String {
         [
-            isExportRunning, isShareRunning,
+            runningJob != nil,
             exportFlash != nil, shareFlash != nil,
             finishedExportURL != nil, finishedShareLink != nil
         ]
@@ -233,33 +289,6 @@ struct StudioActionFooter: View {
             resolution,
             settings.effectiveFrameRate.rawValue
         ].joined(separator: " · ")
-    }
-
-
-    private var isExportRunning: Bool {
-        if case .exporting = model.exportState { return true }
-        return false
-    }
-
-    private var isShareRunning: Bool {
-        model.shareState.isBusy
-    }
-
-    private var exportProgress: Double? {
-        if case .exporting(let progress) = model.exportState { return progress }
-        return nil
-    }
-
-    private var shareProgress: (stage: String, progress: Double)? {
-        switch model.shareState {
-        case .rendering(let progress):
-            return ("Rendering", progress)
-        case .uploading:
-            let progress = model.shareItemID.flatMap { CloudUploader.shared.uploadProgress[$0] } ?? 0
-            return ("Uploading", progress)
-        default:
-            return nil
-        }
     }
 
     private var finishedExportURL: URL? {

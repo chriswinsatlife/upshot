@@ -113,10 +113,12 @@ enum StateRenderSource {
             ("struct CaptureTextFeedbackView: View {", 155),
         ],
         "Upshot/CloudUploadOptions.swift": [
-            ("struct CloudUploadOptions: Sendable {", 3),
-            ("enum CloudUploadPreferences {", 13),
-            ("struct CloudUploadOptionsPopover: View {", 27),
-            ("struct CloudUploadButton<Label: View>: View {", 69),
+            ("struct CloudUploadOptions: Sendable {", 4),
+            ("enum CloudUploadPreferences {", 14),
+            ("struct CloudUploadOptionsPopover: View {", 28),
+            ("private struct CloudUploadOptionsInitialFocusClearance: NSViewRepresentable {", 62),
+            ("private final class CloudUploadOptionsInitialFocusClearanceView: NSView {", 70),
+            ("struct CloudUploadButton<Label: View>: View {", 98),
         ],
         "Upshot/EditorCloseGuard.swift": [
             ("final class EditorCloseGuard: NSObject, NSWindowDelegate {", 15),
@@ -176,7 +178,7 @@ enum StateRenderSource {
         "Upshot/RecordingExportOptions.swift": [
             ("enum RecordingExportPreferences {", 3),
             ("struct RecordingExportOptionsPopover: View {", 32),
-            ("struct RecordingExportButton<Label: View>: View {", 162),
+            ("struct RecordingExportButton<Label: View>: View {", 178),
         ],
         "Upshot/RecordingExportSettingsSection.swift": [
             ("struct RecordingExportSettingsSection: View {", 3),
@@ -209,6 +211,13 @@ enum StateRenderSource {
             ("private struct RecordingSourceTargetOverlay: View {", 282),
             ("private struct RecordingSourceTargetCard: View {", 355),
         ],
+        "Upshot/RecordingStudioActions.swift": [
+            ("struct StudioActionFooter: View {", 4),
+            ("private enum Job {", 15),
+            ("private enum Status {", 212),
+            ("private struct RunningJob {", 219),
+            ("struct StudioProgressRing: View {", 333),
+        ],
         "Upshot/RecordingStudioInspector.swift": [
             ("private enum StudioTranscriptTab: Hashable {", 15),
             ("private enum StudioInspectorPage: Hashable {", 20),
@@ -219,9 +228,9 @@ enum StateRenderSource {
             ("private struct StudioTranscriptWordView: View {", 1531),
             ("private struct TranscriptFlowLayout: Layout {", 1571),
             ("struct StudioAudioExportOptions: View {", 1611),
-            ("private struct StudioCursorStylePicker: View {", 1643),
-            ("private struct Preview {", 1647),
-            ("private struct PreviewKey: Hashable {", 1653),
+            ("private struct StudioCursorStylePicker: View {", 1640),
+            ("private struct Preview {", 1644),
+            ("private struct PreviewKey: Hashable {", 1650),
         ],
         "Upshot/RecordingStudioLook.swift": [
             ("struct RecordingStudioStyleStrip: View {", 5),

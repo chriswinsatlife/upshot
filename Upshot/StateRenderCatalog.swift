@@ -179,6 +179,23 @@ enum StateRenderCatalog {
         add("share-options", "CloudUploadOptions", "struct CloudUploadOptionsPopover", 360, 220) {
             AnyView(CloudUploadOptionsPopover(suggestedTitle: "Release Overview", onConfirm: { _ in }))
         }
+        for variant in ["sharing", "exported"] {
+            add("studio-\(variant)", "RecordingStudioActions", "struct StudioActionFooter", 1440, 1000) {
+                let model = try await fixtures.studioModel()
+                CloudCredentialStore.shared.workerURL = "https://share.example.com"
+                CloudCredentialStore.shared.uploadToken = "render-state"
+                if variant == "sharing" {
+                    model.shareState = .rendering(progress: 0.64)
+                } else {
+                    model.exportState = .finished(fixtures.screenshots[0].deletingLastPathComponent().appendingPathComponent("Capture Walkthrough.mov"))
+                }
+                return AnyView(RecordingStudioContent(model: model).onDisappear {
+                    CloudCredentialStore.shared.workerURL = ""
+                    CloudCredentialStore.shared.uploadToken = ""
+                    model.teardown()
+                })
+            }
+        }
         for variant in ["one-card", "several-cards", "hover", "tucked", "compressing", "preparing", "link-copied", "upload-failed", "compressed", "action-failed", "video"] {
             add("quick-access-\(variant)", "CaptureShelfView", "struct CaptureShelfView", 380, variant == "several-cards" ? 670 : 400) {
                 var cards = try fixtures.screenshots.prefix(variant == "several-cards" ? 4 : 1).map { url in
