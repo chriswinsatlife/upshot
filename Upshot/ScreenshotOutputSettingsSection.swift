@@ -14,6 +14,8 @@ struct ScreenshotOutputSettingsSection: View {
     @AppStorage(UpshotPreferences.screenshotWindowBackgroundKey) private var windowBackground = WindowScreenshotBackgroundMode.original.rawValue
     @AppStorage(UpshotPreferences.screenshotWindowWallpaperPathKey) private var windowWallpaperPath = ""
     @AppStorage(UpshotPreferences.screenshotWindowPaddingKey) private var windowPadding = 32.0
+    @AppStorage(UpshotPreferences.screenshotHideDesktopIconsKey) private var hideDesktopIcons = false
+    @State private var desktopIconError: String?
 
     var body: some View {
         Section("Screenshot Output") {
@@ -27,6 +29,19 @@ struct ScreenshotOutputSettingsSection: View {
                 .toggleStyle(.ink)
             Toggle("Show cursor in screenshots", isOn: $showCursor)
                 .toggleStyle(.ink)
+            Toggle("Hide desktop icons while capturing", isOn: $hideDesktopIcons)
+                .toggleStyle(.ink)
+            SettingsButton("Toggle Desktop Icons") {
+                do {
+                    try DesktopIconVisibilityService.toggleDesktopIcons()
+                    desktopIconError = nil
+                } catch {
+                    desktopIconError = error.localizedDescription
+                }
+            }
+            if let desktopIconError {
+                Text(desktopIconError).font(.caption).foregroundStyle(.red)
+            }
         }
 
         Section("Screenshot Background") {
