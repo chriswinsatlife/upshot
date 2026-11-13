@@ -370,11 +370,6 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
 
     var defaultShortcut: HotkeyShortcut? {
         switch self {
-        case .fullscreen: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_1))
-        case .window: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_2))
-        case .area: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_3))
-        case .screenRecording: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_4))
-        case .textCapture: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_5))
         case .allInOne: HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_5))
         default: nil
         }
