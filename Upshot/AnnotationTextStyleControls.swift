@@ -1,205 +1,64 @@
-
 import AppKit
 import SwiftUI
 
 struct AnnotationTextStyleControls: View {
     @Bindable var model: AnnotationEditorModel
-    @State private var fontSizeText = ""
-    @FocusState private var isFontSizeFieldFocused: Bool
+
+    private static let maximumFontSize = 999
 
     var body: some View {
-        VStack(spacing: InspectorMetrics.rowSpacing) {
-            Picker("Style", selection: $model.selectedTextStyle) {
-                ForEach(AnnotationTextStyle.allCases) { style in
-                    Text(style.title).tag(style)
-                }
-            }
-            fontFamilyMenu
-                .frame(minWidth: 0, maxWidth: .infinity)
-
-            AnnotationSwatchStrip(selectedSwatch: model.selectedSwatch) { swatch in
-                model.setSwatch(swatch)
-            }
-
-            HStack(spacing: 6) {
-                fontSizeStepper
-
-                Spacer()
-
-                InspectorSegmented(
-                    options: TextStyleSegment.allCases,
-                    isSelected: { segment in
-                        switch segment {
-                        case .bold: model.selectedTextIsBold
-                        case .italic: model.selectedTextIsItalic
-                        case .underline: model.selectedTextIsUnderline
-                        }
-                    },
-                    onTap: { segment in
-                        switch segment {
-                        case .bold: model.selectedTextIsBold.toggle()
-                        case .italic: model.selectedTextIsItalic.toggle()
-                        case .underline: model.selectedTextIsUnderline.toggle()
-                        }
-                    },
-                    label: { segment in
-                        Text(segment.title)
-                            .font(segment.font)
-                            .underline(segment == .underline)
-                    }
-                )
-                .frame(width: 90)
-            }
-
-            InspectorSegmented(
-                options: TextAlignmentSegment.allCases,
-                isSelected: { $0 == TextAlignmentSegment(model.selectedTextAlignment) },
-                onTap: { model.selectedTextAlignment = $0.nsTextAlignment },
-                label: { segment in
-                    Image(systemName: segment.systemImage)
-                        .font(.system(size: 11, weight: .semibold))
-                }
-            )
-        }
-        .frame(maxWidth: .infinity)
-        .onAppear(perform: syncFontSizeText)
-        .onDisappear(perform: commitFontSizeText)
-        .onChange(of: model.selectedTextFontSize) { _, _ in
-            guard !isFontSizeFieldFocused else { return }
-            syncFontSizeText()
-        }
-        .onChange(of: model.selectionCount) { _, _ in
-            guard !isFontSizeFieldFocused else { return }
-            syncFontSizeText()
-        }
-        .onChange(of: isFontSizeFieldFocused) { _, isFocused in
-            if isFocused {
-                syncFontSizeText()
-            } else {
-                commitFontSizeText()
+        InterfacePickerRow("Style", selection: $model.selectedTextStyle) {
+            ForEach(AnnotationTextStyle.allCases) { style in
+                Text(style.title).tag(style)
             }
         }
-    }
 
-    private var fontFamilyMenu: some View {
-        Menu {
+        InterfacePickerRow("Font", selection: $model.selectedTextFontFamily) {
             ForEach(AnnoFontFamily.allCases) { family in
-                Button {
-                    model.selectedTextFontFamily = family
-                } label: {
-                    if model.selectedTextFontFamily == family {
-                        Label(family.title, systemImage: "checkmark")
-                    } else {
-                        Text(family.title)
-                    }
-                }
+                Text(family.title).tag(family)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Text(model.selectedTextFontFamily.title)
-                    .font(.inspectorValue)
-                    .foregroundStyle(.primary.opacity(0.85))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
 
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+        AnnotationSwatchRow(title: "Color", selectedSwatch: model.selectedSwatch) { swatch in
+            model.setSwatch(swatch)
+        }
+
+        InterfaceRow("Size") {
+            InterfaceValueWithUnitField(
+                "Size",
+                value: fontSizeBinding,
+                unit: "pt",
+                range: minimumFontSize...Self.maximumFontSize
+            )
+            Stepper("Size", value: fontSizeBinding, in: minimumFontSize...Self.maximumFontSize)
+                .labelsHidden()
+        }
+
+        InterfaceToggleRow("Bold", isOn: $model.selectedTextIsBold)
+        InterfaceToggleRow("Italic", isOn: $model.selectedTextIsItalic)
+        InterfaceToggleRow("Underline", isOn: $model.selectedTextIsUnderline)
+
+        InterfacePickerRow("Alignment", selection: Binding(
+            get: { TextAlignmentSegment(model.selectedTextAlignment) },
+            set: { model.selectedTextAlignment = $0.nsTextAlignment }
+        )) {
+            ForEach(TextAlignmentSegment.allCases, id: \.self) { segment in
+                Label(segment.title, systemImage: segment.systemImage).tag(segment)
             }
-            .padding(.horizontal, 8)
-            .inspectorField()
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .help("Font family")
     }
 
-    private var fontSizeStepper: some View {
-        HStack(spacing: 0) {
-            Button {
-                adjustFontSize(by: -1)
-            } label: {
-                Image(systemName: "minus")
-                    .font(.system(size: 10, weight: .medium))
-                    .frame(width: 24, height: InspectorMetrics.controlHeight)
-                    .contentShape(Rectangle())
+    private var minimumFontSize: Int {
+        Int(AnnotationTextMetrics.minimumFontSize)
+    }
+
+    private var fontSizeBinding: Binding<Int> {
+        Binding(
+            get: { Int(model.selectedTextFontSize.rounded()) },
+            set: { size in
+                model.selectedTextFontSize = CGFloat(max(size, minimumFontSize))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
-            Divider().frame(height: 13)
-
-            TextField("", text: $fontSizeText)
-                .focused($isFontSizeFieldFocused)
-                .onSubmit(commitFontSizeText)
-                .textFieldStyle(.plain)
-                .multilineTextAlignment(.center)
-                .font(.inspectorNumeric)
-                .frame(width: 30)
-
-            Divider().frame(height: 13)
-
-            Button {
-                adjustFontSize(by: 1)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .medium))
-                    .frame(width: 24, height: InspectorMetrics.controlHeight)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-        }
-        .inspectorField()
-    }
-
-    private func syncFontSizeText() {
-        fontSizeText = String(Int(model.selectedTextFontSize.rounded()))
-    }
-
-    private func commitFontSizeText() {
-        let trimmedText = fontSizeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let size = Double(trimmedText) else {
-            syncFontSizeText()
-            return
-        }
-
-        let clampedSize = max(size.rounded(), Double(AnnotationTextMetrics.minimumFontSize))
-        model.selectedTextFontSize = CGFloat(clampedSize)
-        fontSizeText = String(Int(clampedSize))
-    }
-
-    private func adjustFontSize(by delta: CGFloat) {
-        commitFontSizeText()
-        let size = max(model.selectedTextFontSize + delta, AnnotationTextMetrics.minimumFontSize)
-        model.selectedTextFontSize = size
-        syncFontSizeText()
-    }
-}
-
-private enum TextStyleSegment: CaseIterable, Hashable {
-    case bold
-    case italic
-    case underline
-
-    var title: String {
-        switch self {
-        case .bold: "B"
-        case .italic: "I"
-        case .underline: "U"
-        }
-    }
-
-    var font: Font {
-        switch self {
-        case .bold:
-            .system(size: 12, weight: .bold)
-        case .italic:
-            .system(size: 12, weight: .regular, design: .serif).italic()
-        case .underline:
-            .system(size: 12, weight: .regular)
-        }
+        )
     }
 }
 
@@ -228,6 +87,15 @@ private enum TextAlignmentSegment: CaseIterable, Hashable {
         case .center: .center
         case .right: .right
         case .justified: .justified
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .left: "Left"
+        case .center: "Center"
+        case .right: "Right"
+        case .justified: "Justified"
         }
     }
 

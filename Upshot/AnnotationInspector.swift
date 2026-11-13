@@ -29,94 +29,86 @@ struct AnnotationEditorInspector: View {
     let focusedField: FocusState<AnnotationEditorFocusedField?>.Binding
     let onEditorAction: () -> Void
     let onPickWallpaper: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
+
+    static let columnMinimumWidth: CGFloat = 300
+    static let columnIdealWidth: CGFloat = 320
+
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var expandedAdvancedSections: Set<AnnotationInspectorAdvancedSection> = AnnotationInspectorSectionState.loadExpandedSections()
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 0) {
-                AnnotationStyleStrip(
-                    model: model,
-                    presetStore: backgroundPresetStore,
-                    onEditorAction: onEditorAction
+        InterfaceFormPage {
+            AnnotationStyleStrip(
+                model: model,
+                presetStore: backgroundPresetStore,
+                onEditorAction: onEditorAction
+            )
+
+            if model.hasInspectorStyleControls {
+                InterfaceSection("Annotation", detail: selectionDetail) {
+                    styleControls
+                }
+            }
+
+            InterfaceSection("Canvas") {
+                InterfaceToggleRow("Expand automatically", isOn: Binding(
+                    get: { model.automaticallyExpandsCanvas },
+                    set: { model.setAutomaticallyExpandsCanvas($0) }
+                ))
+                InterfacePickerRow("Aspect ratio", selection: Binding(
+                    get: { model.backgroundSettings.aspectRatio },
+                    set: { ratio in
+                        onEditorAction()
+                        model.backgroundSettings.aspectRatio = ratio
+                    }
+                )) {
+                    ForEach(AnnotationBackgroundAspectRatio.allCases) { ratio in
+                        Text(ratio.title).tag(ratio)
+                    }
+                }
+                .disabled(!model.backgroundSettings.usesCanvasLayout)
+            }
+
+            Section {
+                AnnotationFrameInspector(
+                    settings: Binding(
+                        get: { model.backgroundSettings },
+                        set: { model.backgroundSettings = $0 }
+                    ),
+                    wallpaperStore: wallpaperStore,
+                    onEditorAction: onEditorAction,
+                    onPickWallpaper: onPickWallpaper,
+                    onPreview: { model.previewBackground($0, isHovering: $1) },
+                    onEndPreview: { model.previewBackground = nil }
                 )
-
-                if model.hasInspectorStyleControls {
-                    InspectorSection("Annotation") {
-                        styleControls
-                    }
-
-                    InspectorGroupBreak()
-                }
-
-                InspectorSection("Canvas") {
-                    Toggle("Expand canvas automatically", isOn: Binding(
-                        get: { model.automaticallyExpandsCanvas },
-                        set: { model.setAutomaticallyExpandsCanvas($0) }
-                    ))
-                    InspectorSegmented(
-                        options: AnnotationBackgroundAspectRatio.allCases,
-                        isSelected: { $0 == model.backgroundSettings.aspectRatio },
-                        onTap: { ratio in
-                            onEditorAction()
-                            model.backgroundSettings.aspectRatio = ratio
-                        },
-                        label: { ratio in
-                            Text(ratio.title)
-                                .font(.inspectorSegment)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                    )
-                    .disabled(!model.backgroundSettings.usesCanvasLayout)
-                    .opacity(model.backgroundSettings.usesCanvasLayout ? 1 : 0.4)
-                }
-
-                InspectorSection(
-                    "Frame",
-                    accessory: {
-                        if !usesDefaultFrame {
-                            sectionResetButton("Reset padding, corners, shadow and alignment") {
-                                let defaults = AnnotationBackgroundSettings()
-                                model.backgroundSettings.padding = defaults.padding
-                                model.backgroundSettings.cornerRadius = defaults.cornerRadius
-                                model.backgroundSettings.shadow = defaults.shadow
-                                model.backgroundSettings.shadowStyle = defaults.shadowStyle
-                                model.backgroundSettings.alignment = defaults.alignment
-                            }
+            } header: {
+                sectionHeader("Frame") {
+                    if !usesDefaultFrame {
+                        resetButton("Reset padding, corners, shadow, and alignment") {
+                            let defaults = AnnotationBackgroundSettings()
+                            model.backgroundSettings.padding = defaults.padding
+                            model.backgroundSettings.cornerRadius = defaults.cornerRadius
+                            model.backgroundSettings.shadow = defaults.shadow
+                            model.backgroundSettings.shadowStyle = defaults.shadowStyle
+                            model.backgroundSettings.alignment = defaults.alignment
                         }
                     }
-                ) {
-                    AnnotationFrameInspector(
-                        settings: Binding(
-                            get: { model.backgroundSettings },
-                            set: { model.backgroundSettings = $0 }
-                        ),
-                        wallpaperStore: wallpaperStore,
-                        onEditorAction: onEditorAction,
-                        onPickWallpaper: onPickWallpaper,
-                        onPreview: { model.previewBackground($0, isHovering: $1) },
-                        onEndPreview: { model.previewBackground = nil }
-                    )
                 }
+            }
 
-                InspectorSection(
+            Section {
+                featureRow(
                     "Border",
-                    summary: AnnotationInspectorSummary.border(model.backgroundSettings.border),
                     isOn: featureBinding(\.border.isEnabled),
-                    toggleTitle: "Enable border",
-                    accessory: {
-                        if model.backgroundSettings.border != AnnotationScreenshotBorderSettings(),
-                           model.backgroundSettings.border.isEnabled {
-                            sectionResetButton("Reset border") {
-                                var border = AnnotationScreenshotBorderSettings()
-                                border.isEnabled = true
-                                model.backgroundSettings.border = border
-                            }
-                        }
-                    }
+                    showsReset: model.backgroundSettings.border.isEnabled
+                        && model.backgroundSettings.border != AnnotationScreenshotBorderSettings(),
+                    resetHelp: "Reset border"
                 ) {
+                    var border = AnnotationScreenshotBorderSettings()
+                    border.isEnabled = true
+                    model.backgroundSettings.border = border
+                }
+                if model.backgroundSettings.border.isEnabled {
                     AnnotationScreenshotBorderInspector(
                         settings: Binding(
                             get: { model.backgroundSettings.border },
@@ -125,25 +117,30 @@ struct AnnotationEditorInspector: View {
                         onEditorAction: onEditorAction
                     )
                 }
+            }
 
-                InspectorGroupBreak()
-
-                InspectorSection(
+            Section {
+                let isCameraExpanded = expansionBinding(for: .camera)
+                InterfaceRow(
                     "Camera",
-                    summary: AnnotationInspectorSummary.camera(model.backgroundSettings.camera),
-                    isExpanded: expansionBinding(for: .camera),
-                    accessory: {
-                        if !model.backgroundSettings.camera.isDefault {
-                            InspectorResetButton(help: "Reset camera") {
-                                onEditorAction()
-                                withAnimation(.canvasMove) {
-                                    model.backgroundSettings.camera = AnnotationCameraSettings()
-                                }
-                            }
-                            .transition(.blurPop)
+                    detail: isCameraExpanded.wrappedValue
+                        ? nil
+                        : AnnotationInspectorSummary.camera(model.backgroundSettings.camera)
+                ) {
+                    if !model.backgroundSettings.camera.isDefault {
+                        resetButton("Reset camera") {
+                            model.backgroundSettings.camera = AnnotationCameraSettings()
                         }
                     }
-                ) {
+                    AnnotationInspectorDisclosureButton(title: "Camera", isExpanded: isCameraExpanded)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(accessibilityReduceMotion ? nil : .fold) {
+                        isCameraExpanded.wrappedValue.toggle()
+                    }
+                }
+                if isCameraExpanded.wrappedValue {
                     AnnotationCameraInspector(
                         settings: Binding(
                             get: { model.backgroundSettings.camera },
@@ -152,23 +149,21 @@ struct AnnotationEditorInspector: View {
                         onEditorAction: onEditorAction
                     )
                 }
+            }
 
-                InspectorSection(
-                    "Progressive Blur",
-                    summary: AnnotationInspectorSummary.progressiveBlur(model.backgroundSettings.progressiveBlur),
+            Section {
+                featureRow(
+                    "Progressive blur",
                     isOn: featureBinding(\.progressiveBlur.isEnabled),
-                    toggleTitle: "Enable progressive blur",
-                    accessory: {
-                        if model.backgroundSettings.progressiveBlur != AnnotationProgressiveBlurSettings(),
-                           model.backgroundSettings.progressiveBlur.isEnabled {
-                            sectionResetButton("Reset progressive blur") {
-                                var blur = AnnotationProgressiveBlurSettings()
-                                blur.isEnabled = true
-                                model.backgroundSettings.progressiveBlur = blur
-                            }
-                        }
-                    }
+                    showsReset: model.backgroundSettings.progressiveBlur.isEnabled
+                        && model.backgroundSettings.progressiveBlur != AnnotationProgressiveBlurSettings(),
+                    resetHelp: "Reset progressive blur"
                 ) {
+                    var blur = AnnotationProgressiveBlurSettings()
+                    blur.isEnabled = true
+                    model.backgroundSettings.progressiveBlur = blur
+                }
+                if model.backgroundSettings.progressiveBlur.isEnabled {
                     AnnotationProgressiveBlurInspector(
                         settings: Binding(
                             get: { model.backgroundSettings.progressiveBlur },
@@ -177,27 +172,26 @@ struct AnnotationEditorInspector: View {
                         onEditorAction: onEditorAction
                     )
                 }
+            }
 
-                InspectorGroupBreak()
+            AnnotationColorAdjustmentInspector(
+                settings: $model.backgroundSettings.colorAdjustments,
+                onEditorAction: onEditorAction
+            )
 
-                AnnotationColorAdjustmentInspector(settings: $model.backgroundSettings.colorAdjustments)
-
-                InspectorSection(
+            Section {
+                featureRow(
                     "Watermark",
-                    summary: AnnotationInspectorSummary.watermark(model.backgroundSettings.watermark),
                     isOn: featureBinding(\.watermark.isEnabled),
-                    toggleTitle: "Enable watermark",
-                    accessory: {
-                        if model.backgroundSettings.watermark != AnnotationWatermarkSettings(),
-                           model.backgroundSettings.watermark.isEnabled {
-                            sectionResetButton("Reset watermark") {
-                                var watermark = AnnotationWatermarkSettings()
-                                watermark.isEnabled = true
-                                model.backgroundSettings.watermark = watermark
-                            }
-                        }
-                    }
+                    showsReset: model.backgroundSettings.watermark.isEnabled
+                        && model.backgroundSettings.watermark != AnnotationWatermarkSettings(),
+                    resetHelp: "Reset watermark"
                 ) {
+                    var watermark = AnnotationWatermarkSettings()
+                    watermark.isEnabled = true
+                    model.backgroundSettings.watermark = watermark
+                }
+                if model.backgroundSettings.watermark.isEnabled {
                     AnnotationWatermarkInspector(
                         settings: Binding(
                             get: { model.backgroundSettings.watermark },
@@ -208,22 +202,22 @@ struct AnnotationEditorInspector: View {
                     )
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .scrollContentBackground(.hidden)
-        .scrollEdgeEffectSoftIfAvailable()
-        .background(sidebarBackground)
         .inspectorColumnWidth(
-            min: InspectorMetrics.columnMinWidth,
-            ideal: InspectorMetrics.columnIdealWidth,
+            min: Self.columnMinimumWidth,
+            ideal: Self.columnIdealWidth,
             max: InspectorMetrics.columnMaxWidth
         )
         .frame(
-            minWidth: InspectorMetrics.columnMinWidth,
+            minWidth: Self.columnMinimumWidth,
             maxWidth: .infinity,
             maxHeight: .infinity,
             alignment: .topLeading
         )
+    }
+
+    private var selectionDetail: String? {
+        model.selectionCount > 1 ? "\(model.selectionCount) selected" : nil
     }
 
     private var usesDefaultFrame: Bool {
@@ -236,8 +230,34 @@ struct AnnotationEditorInspector: View {
             && settings.alignment == defaults.alignment
     }
 
-    private var sidebarBackground: Color {
-        colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : .white
+    private func sectionHeader<Accessory: View>(_ title: String, @ViewBuilder accessory: () -> Accessory) -> some View {
+        HStack(spacing: Space.s) {
+            InterfaceSectionHeader(title)
+            Spacer(minLength: 0)
+            accessory()
+        }
+    }
+
+    private func featureRow(
+        _ title: String,
+        isOn: Binding<Bool>,
+        showsReset: Bool,
+        resetHelp: String,
+        reset: @escaping () -> Void
+    ) -> some View {
+        InterfaceRow(title) {
+            if showsReset {
+                resetButton(resetHelp, reset: reset)
+            }
+            InspectorToggle(title, isOn: isOn)
+        }
+    }
+
+    private func resetButton(_ help: String, reset: @escaping () -> Void) -> some View {
+        InterfaceResetButton(help: help) {
+            onEditorAction()
+            withAnimation(accessibilityReduceMotion ? nil : .canvasMove) { reset() }
+        }
     }
 
     private func expansionBinding(
@@ -268,24 +288,10 @@ struct AnnotationEditorInspector: View {
         )
     }
 
-    private func sectionResetButton(_ help: String, reset: @escaping () -> Void) -> some View {
-        InspectorResetButton(help: help) {
-            onEditorAction()
-            withAnimation(.canvasMove) { reset() }
-        }
-        .transition(.blurPop)
-    }
-
     @ViewBuilder
     private var styleControls: some View {
-        if model.selectionCount > 1 {
-            Text("\(model.selectionCount) annotations selected")
-                .font(.inspectorLabel)
-                .foregroundStyle(.secondary)
-        }
-
         if model.isColorStyleAvailable {
-            Toggle("Object shadow", isOn: Binding(
+            InterfaceToggleRow("Object shadow", isOn: Binding(
                 get: { model.objectShadowsEnabled },
                 set: { model.setObjectShadows($0) }
             ))
@@ -295,25 +301,21 @@ struct AnnotationEditorInspector: View {
             AnnotationTextStyleControls(model: model)
         } else {
             if model.isColorStyleAvailable {
-                InspectorRow("Color") {
-                    AnnotationSwatchStrip(selectedSwatch: model.selectedSwatch) { swatch in
-                        onEditorAction()
-                        model.setSwatch(swatch)
-                    }
+                AnnotationSwatchRow(title: "Color", selectedSwatch: model.selectedSwatch) { swatch in
+                    onEditorAction()
+                    model.setSwatch(swatch)
                 }
             }
 
             if model.isStrokeStyleAvailable {
-                InspectorRow("Stroke") {
-                    AnnotationStrokePicker(strokeWidth: model.strokeWidth) { strokeWidth in
-                        onEditorAction()
-                        model.setStrokeWidth(strokeWidth)
-                    }
+                AnnotationStrokePicker(strokeWidth: model.strokeWidth) { strokeWidth in
+                    onEditorAction()
+                    model.setStrokeWidth(strokeWidth)
                 }
             }
 
             if model.inspectedTool == .freehand {
-                InspectorSlider(
+                AnnotationInspectorSliderRow(
                     "Smoothing",
                     value: Binding(
                         get: { CGFloat(model.drawingSmoothing) },
@@ -325,7 +327,7 @@ struct AnnotationEditorInspector: View {
             }
 
             if model.isRedactionStyleAvailable {
-                Picker("Style", selection: Binding(
+                InterfacePickerRow("Style", selection: Binding(
                     get: { model.redactionKind },
                     set: { model.setRedactionKind($0) }
                 )) {
@@ -333,7 +335,7 @@ struct AnnotationEditorInspector: View {
                         Text(kind.title).tag(kind)
                     }
                 }
-                InspectorSlider(
+                AnnotationInspectorSliderRow(
                     "Strength",
                     value: Binding(
                         get: { model.redactionDensity },
@@ -351,12 +353,6 @@ struct AnnotationEditorInspector: View {
 }
 
 private enum AnnotationInspectorSummary {
-    static func border(_ settings: AnnotationScreenshotBorderSettings) -> String? {
-        guard settings.isEnabled else { return nil }
-        let thickness = InspectorValueFormat.percent(fractionDigits: 1).displayString(for: settings.thickness)
-        return "\(settings.color.title) · \(thickness)"
-    }
-
     static func camera(_ settings: AnnotationCameraSettings) -> String? {
         guard !settings.isDefault else { return nil }
         var parts: [String] = []
@@ -374,19 +370,33 @@ private enum AnnotationInspectorSummary {
             parts.append("Panned")
         }
         if parts.isEmpty {
-            parts.append("FOV \(InspectorValueFormat.degrees().displayString(for: settings.fieldOfViewDegrees))")
+            parts.append("Field of view \(InspectorValueFormat.degrees().displayString(for: settings.fieldOfViewDegrees))")
         }
         return parts.joined(separator: " · ")
     }
+}
 
-    static func progressiveBlur(_ settings: AnnotationProgressiveBlurSettings) -> String? {
-        guard settings.isEnabled else { return nil }
-        return "\(settings.mode.title) · \(Int(settings.strength.rounded()))"
-    }
+private struct AnnotationInspectorDisclosureButton: View {
+    let title: String
+    @Binding var isExpanded: Bool
 
-    static func watermark(_ settings: AnnotationWatermarkSettings) -> String? {
-        let text = settings.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard settings.isEnabled, !text.isEmpty else { return nil }
-        return "“\(text)”"
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
+    var body: some View {
+        Button {
+            withAnimation(accessibilityReduceMotion ? nil : .fold) {
+                isExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: IconSize.disclosureChevron, weight: .bold))
+                .foregroundStyle(Palette.secondaryLabel)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: InterfaceMetrics.resetButtonSize, height: InterfaceMetrics.resetButtonSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+        .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     }
 }

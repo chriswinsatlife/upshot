@@ -7,13 +7,16 @@ struct AnnotationWatermarkSourceControls: View {
     @State private var importError: String?
 
     var body: some View {
-        HStack {
-            Button(settings.imageData == nil ? "Choose Image…" : "Replace Image…", action: chooseImage)
+        InterfaceRow("Image") {
             if settings.imageData != nil {
                 Button("Use Text") {
                     settings.imageData = nil
                 }
+                .buttonStyle(.interfaceAction)
             }
+            Button(settings.imageData == nil ? "Choose…" : "Replace…", action: chooseImage)
+                .buttonStyle(.interfaceAction)
+                .help(settings.imageData == nil ? "Choose a watermark image" : "Replace the watermark image")
         }
         .alert("Watermark Image Failed", isPresented: Binding(
             get: { importError != nil },

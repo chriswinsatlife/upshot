@@ -1,8 +1,3 @@
-//
-//  AnnotationMockupEffectsInspector.swift
-//  Upshot
-//
-
 import SwiftUI
 
 struct AnnotationProgressiveBlurInspector: View {
@@ -10,116 +5,64 @@ struct AnnotationProgressiveBlurInspector: View {
     let onEditorAction: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Apply to")
-
-                InspectorSegmented(
-                    options: AnnotationProgressiveBlurEdgeMode.allCases,
-                    isSelected: { $0 == settings.edgeMode },
-                    onTap: { edgeMode in
+        InterfaceRow("Apply to") {
+            InterfaceModeSwitch(
+                "Apply to",
+                selection: Binding(
+                    get: { settings.edgeMode },
+                    set: { edgeMode in
                         onEditorAction()
                         settings.edgeMode = edgeMode
-                    },
-                    label: { edgeMode in
-                        Label(
-                            edgeMode.title,
-                            systemImage: edgeMode == .clipped
-                                ? "photo"
-                                : "rectangle.stack"
-                        )
-                        .font(.inspectorSegment)
-                        .labelStyle(.titleAndIcon)
-                        .help(
-                            edgeMode == .clipped
-                                ? "Blur only the screenshot content inside its frame"
-                                : "Blur the transformed screenshot together with its background"
-                        )
                     }
-                )
-            }
+                ),
+                options: AnnotationProgressiveBlurEdgeMode.allCases.map {
+                    InterfaceModeSwitchOption(value: $0, title: $0.title)
+                }
+            )
+        }
+        .help(settings.edgeMode == .clipped
+            ? "Blur only the screenshot content inside its frame"
+            : "Blur the transformed screenshot together with its background")
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Mode")
-
-                InspectorSegmented(
-                    options: AnnotationProgressiveBlurMode.allCases,
-                    isSelected: { $0 == settings.mode },
-                    onTap: { mode in
+        InterfaceRow("Mode") {
+            InterfaceModeSwitch(
+                "Mode",
+                selection: Binding(
+                    get: { settings.mode },
+                    set: { mode in
                         onEditorAction()
                         settings.mode = mode
-                    },
-                    label: { mode in
-                        Label(mode.title, systemImage: mode == .radial ? "scope" : "line.diagonal")
-                            .font(.inspectorSegment)
-                            .labelStyle(.titleAndIcon)
                     }
-                )
-            }
-
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorFieldPair {
-                    InspectorSlider(
-                        "Strength",
-                        value: binding(\.strength),
-                        range: 0...40,
-                        format: .integer
-                    )
-                } trailing: {
-                    InspectorSlider(
-                        "Falloff",
-                        value: binding(\.falloff),
-                        range: 0...1,
-                        format: .decimal(fractionDigits: 2)
-                    )
+                ),
+                options: AnnotationProgressiveBlurMode.allCases.map {
+                    InterfaceModeSwitchOption(value: $0, title: $0.title)
                 }
-
-                InspectorFieldPair {
-                    InspectorSlider(
-                        "Focus",
-                        value: binding(\.focusSize),
-                        range: 0...1,
-                        format: .percent()
-                    )
-                    .help(
-                        settings.edgeMode == .clipped
-                            ? "Choose the size of the sharp area inside the frame"
-                            : "Choose the size of the sharp area across the scene"
-                    )
-                } trailing: {
-                    if settings.mode == .directional {
-                        InspectorSlider(
-                            "Angle",
-                            value: binding(\.directionDegrees),
-                            range: 0...180,
-                            format: .degrees()
-                        )
-                        .transition(.opacity)
-                    } else {
-                        Color.clear.frame(height: InspectorMetrics.controlHeight)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                HStack(spacing: 8) {
-                    InspectorGroupLabel("Focus position")
-                    Spacer(minLength: 0)
-                    Text(focusPositionText)
-                        .font(.inspectorNumeric)
-                        .foregroundStyle(.tertiary)
-                }
-
-                AnnotationFocusPositionPad(
-                    position: $settings.focusPosition,
-                    mode: settings.mode,
-                    focusSize: settings.focusSize,
-                    directionDegrees: settings.directionDegrees,
-                    onInteractionBegan: onEditorAction
-                )
-            }
+            )
         }
-        .animation(.snappy(duration: 0.18), value: settings.mode)
+
+        AnnotationInspectorSliderRow("Strength", value: binding(\.strength), range: 0...40, format: .integer)
+        AnnotationInspectorSliderRow("Falloff", value: binding(\.falloff), range: 0...1, format: .decimal(fractionDigits: 2))
+        AnnotationInspectorSliderRow("Focus", value: binding(\.focusSize), range: 0...1, format: .percent())
+            .help(settings.edgeMode == .clipped
+                ? "Choose the size of the sharp area inside the frame"
+                : "Choose the size of the sharp area across the scene")
+        if settings.mode == .directional {
+            AnnotationInspectorSliderRow("Angle", value: binding(\.directionDegrees), range: 0...180, format: .degrees())
+        }
+
+        VStack(alignment: .leading, spacing: Space.s) {
+            InterfaceRow("Focus position") {
+                InterfaceValueWithUnitLabel(value: focusPositionText, unit: "%", unitSpacing: .none)
+            }
+            AnnotationFocusPositionPad(
+                position: $settings.focusPosition,
+                mode: settings.mode,
+                focusSize: settings.focusSize,
+                directionDegrees: settings.directionDegrees,
+                onInteractionBegan: onEditorAction
+            )
+        }
+        .padding(.bottom, Space.xs)
     }
 
     private var focusPositionText: String {
@@ -163,11 +106,11 @@ private struct AnnotationFocusPositionPad: View {
             let point = geometry.focus
 
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(isHovering ? 0.055 : 0.035))
+                RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
+                    .fill(isHovering ? Palette.controlHoverFill : Palette.controlFill)
 
                 FocusPadGrid()
-                    .stroke(Color.primary.opacity(0.10), lineWidth: 0.5)
+                    .stroke(Palette.hairline, lineWidth: 0.5)
 
                 if mode == .radial {
                     Circle()
@@ -182,10 +125,10 @@ private struct AnnotationFocusPositionPad: View {
                         )
                         .position(point)
                 } else {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                         .fill(Palette.highlight.opacity(0.055))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                                 .stroke(Palette.highlight.opacity(0.28), lineWidth: 1)
                         }
                         .frame(
@@ -204,12 +147,12 @@ private struct AnnotationFocusPositionPad: View {
                     .position(point)
                     .animation(.snappy(duration: 0.12), value: isDragging)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
+                    .stroke(Palette.fieldStroke, lineWidth: 0.5)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in

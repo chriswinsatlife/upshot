@@ -24,8 +24,8 @@ struct AnnotationFrameInspector: View {
     let onEndPreview: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            InspectorBackgroundRow(
+        InterfaceRow("Background") {
+            AnnotationBackgroundPickerButton(
                 style: $settings.style,
                 rememberedWallpaper: settings.customWallpaper,
                 wallpaperStore: wallpaperStore,
@@ -35,66 +35,33 @@ struct AnnotationFrameInspector: View {
                 onPreview: onPreview,
                 onEndPreview: onEndPreview
             )
-
-            if !settings.requiresCanvasLayout {
-                InspectorHint("Pick a background to frame the screenshot.")
-            }
-
-            frameControls
-                .disabled(!settings.requiresCanvasLayout)
-                .opacity(settings.requiresCanvasLayout ? 1 : 0.4)
         }
-    }
 
-    private var frameControls: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            InspectorFieldPair {
-                InspectorSlider(
-                    "Padding",
-                    value: $settings.padding,
-                    range: 0.04...0.45,
-                    format: .percent()
-                )
-            } trailing: {
-                InspectorSlider(
-                    "Corners",
-                    value: $settings.cornerRadius,
-                    range: 0...0.12,
-                    format: .percent()
-                )
+        if settings.requiresCanvasLayout {
+            AnnotationInspectorSliderRow("Padding", value: $settings.padding, range: 0.04...0.45, format: .percent())
+            AnnotationInspectorSliderRow("Corners", value: $settings.cornerRadius, range: 0...0.12, format: .percent())
+            AnnotationInspectorSliderRow("Shadow", value: $settings.shadow, range: 0...1, format: .percent())
+
+            InterfacePickerRow("Shadow style", selection: Binding(
+                get: { settings.shadowStyle },
+                set: { style in
+                    onEditorAction()
+                    settings.shadowStyle = style
+                }
+            )) {
+                ForEach(AnnotationShadowStyle.allCases, id: \.self) { style in
+                    Text(style.title).tag(style)
+                }
             }
 
-            InspectorSlider(
-                "Shadow",
-                value: $settings.shadow,
-                range: 0...1,
-                format: .percent()
-            )
-
-            InspectorSegmented(
-                options: AnnotationShadowStyle.allCases,
-                isSelected: { $0 == settings.shadowStyle },
-                onTap: {
-                    onEditorAction()
-                    settings.shadowStyle = $0
-                },
-                label: { style in
-                    Text(style.title)
-                        .font(.inspectorSegment)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-            )
-            .opacity(settings.shadow > 0 ? 1 : 0.45)
-
-            InspectorRow("Alignment") {
+            InterfaceRow("Alignment") {
                 AlignmentPositionPicker(
                     alignment: $settings.alignment,
                     isEnabled: !settings.camera.hasEffect,
                     onEditorAction: onEditorAction
                 )
-                .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            .padding(.vertical, Space.xxs)
         }
     }
 }
@@ -117,11 +84,11 @@ struct BackgroundSwatch: View {
         switch style {
         case .none:
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(Palette.controlFill)
                 .overlay {
                     Image(systemName: "slash.circle")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: IconSize.disclosureChevron, weight: .medium))
+                        .foregroundStyle(Palette.tertiaryLabel)
                 }
         case .solid(let color):
             Rectangle().fill(color.color)
@@ -133,6 +100,62 @@ struct BackgroundSwatch: View {
             ))
         case .customWallpaper(let wallpaper):
             AnnotationCustomWallpaperPreview(wallpaper: wallpaper, maxPixelSize: 320)
+        }
+    }
+}
+
+struct AnnotationBackgroundPickerButton: View {
+    @Binding var style: AnnotationBackgroundStyle
+    let rememberedWallpaper: AnnotationCustomWallpaper?
+    @Bindable var wallpaperStore: AnnotationWallpaperStore
+    let onEditorAction: () -> Void
+    let onPickWallpaper: () -> Void
+    let onSelectWallpaper: (AnnotationCustomWallpaper) -> Void
+    let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
+    let onEndPreview: () -> Void
+
+    static let swatchSize = CGSize(width: 20, height: 14)
+    static let titleMaximumWidth: CGFloat = 110
+
+    @State private var isPickerPresented = false
+
+    var body: some View {
+        Button {
+            onEditorAction()
+            isPickerPresented = true
+        } label: {
+            HStack(spacing: InterfaceMetrics.actionButtonIconToLabelSpacing) {
+                BackgroundSwatch(style: style)
+                    .frame(width: Self.swatchSize.width, height: Self.swatchSize.height)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sidebarIconTile, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Radius.sidebarIconTile, style: .continuous)
+                            .strokeBorder(Palette.hairline, lineWidth: 0.5)
+                    }
+                Text(style.displayTitle)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: Self.titleMaximumWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .buttonStyle(.interfaceAction)
+        .help("Choose a background")
+        .accessibilityLabel("Background")
+        .accessibilityValue(style.displayTitle)
+        .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
+            BackgroundPickerPopover(
+                style: $style,
+                rememberedWallpaper: rememberedWallpaper,
+                wallpaperStore: wallpaperStore,
+                onPickWallpaper: {
+                    isPickerPresented = false
+                    onPickWallpaper()
+                },
+                onSelectWallpaper: onSelectWallpaper,
+                onPreview: onPreview,
+                onEndPreview: onEndPreview
+            )
         }
     }
 }
@@ -218,26 +241,29 @@ struct BackgroundPickerPopover: View {
     let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
     let onEndPreview: () -> Void
 
+    static let size = CGSize(width: 320, height: 520)
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.m) {
                 Text("Background")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.dsTitle)
+                    .foregroundStyle(Palette.label)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
                 if style != .none {
                     Button("None") {
                         onEndPreview()
                         withAnimation(.morphQuickIfAllowed) { style = .none }
                     }
-                    .buttonStyle(.plain)
-                    .font(.inspectorValue)
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(.interfaceAction)
                     .onHover { onPreview(.none, $0) }
                     .help("Remove the background")
                 }
             }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
+            .padding(.horizontal, Space.xl)
+            .padding(.top, Space.xl)
+            .padding(.bottom, Space.l)
 
             ScrollView(.vertical) {
                 InspectorBackgroundFillPicker(
@@ -249,12 +275,12 @@ struct BackgroundPickerPopover: View {
                     onSelectWallpaper: onSelectWallpaper,
                     onPreview: onPreview
                 )
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                .padding(.horizontal, Space.xl)
+                .padding(.bottom, Space.xl)
             }
             .scrollEdgeEffectSoftIfAvailable()
         }
-        .frame(width: 320, height: 520)
+        .frame(width: Self.size.width, height: Self.size.height)
         .background(Palette.panel)
         .presentationBackground(Palette.panel)
         .onDisappear(perform: onEndPreview)
@@ -270,23 +296,30 @@ struct InspectorBackgroundFillPicker: View {
     var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
     var onPreview: ((AnnotationBackgroundStyle, Bool) -> Void)? = nil
 
-    private let swatchColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 8)
+    private let swatchColumns = Array(repeating: GridItem(.flexible(), spacing: Space.s), count: 8)
     private static let maxVisibleRecentWallpapers = 5
-    private let wallpaperColumns = Array(repeating: GridItem(.flexible(), spacing: 7), count: 3)
+    private static let wallpaperAspectRatio: CGFloat = 1.35
+    private let wallpaperColumns = Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 3)
     @State private var expandedPackIDs: Set<String> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
+        VStack(alignment: .leading, spacing: Space.xxl) {
             ForEach(AnnotationBackgroundFillLibrary.allCases, id: \.self) { library in
                 if library == .wallpaper {
                     unfoldedWallpaperGroup
                 } else {
-                    VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                        InspectorGroupLabel(library.title)
+                    group(library.title) {
                         fillPicker(for: library)
                     }
                 }
             }
+        }
+    }
+
+    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            InterfaceSectionHeader(title)
+            content()
         }
     }
 
@@ -301,7 +334,7 @@ struct InspectorBackgroundFillPicker: View {
     private func fillPicker(for library: AnnotationBackgroundFillLibrary) -> some View {
         switch library {
         case .color:
-            LazyVGrid(columns: swatchColumns, spacing: 6) {
+            LazyVGrid(columns: swatchColumns, spacing: Space.s) {
                 ForEach(AnnotationBackgroundColor.plainPresets) { color in
                     InspectorTile(title: color.title, isSelected: style == .solid(color)) {
                         onEditorAction()
@@ -315,7 +348,7 @@ struct InspectorBackgroundFillPicker: View {
             }
 
         case .gradient:
-            LazyVGrid(columns: swatchColumns, spacing: 6) {
+            LazyVGrid(columns: swatchColumns, spacing: Space.s) {
                 ForEach(AnnotationBackgroundGradient.presets) { gradient in
                     InspectorTile(title: gradient.title, isSelected: style == .gradient(gradient)) {
                         onEditorAction()
@@ -337,14 +370,13 @@ struct InspectorBackgroundFillPicker: View {
     }
 
     private var unfoldedWallpaperGroup: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Recent")
+        VStack(alignment: .leading, spacing: Space.xxl) {
+            group("Recent") {
                 recentWallpaperGrid
             }
 
             ForEach(AnnotationWallpaperPack.builtIn, id: \.id) { pack in
-                VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
+                VStack(alignment: .leading, spacing: Space.m) {
                     packHeader(pack)
                     packContent(pack, limit: expandedPackIDs.contains(pack.id) ? nil : Self.packPreviewCount)
                 }
@@ -361,13 +393,13 @@ struct InspectorBackgroundFillPicker: View {
     private func packHeader(_ pack: AnnotationWallpaperPack) -> some View {
         let count = wallpaperStore.wallpapers(for: pack).count
         let isExpanded = expandedPackIDs.contains(pack.id)
-        return HStack(spacing: 8) {
-            InspectorGroupLabel(pack.title)
+        return HStack(spacing: Space.m) {
+            InterfaceSectionHeader(pack.title)
 
             Spacer(minLength: 0)
 
             if count > Self.packPreviewCount {
-                Button {
+                Button(isExpanded ? "Show Less" : "Show All \(count)") {
                     withAnimation(.morphIfAllowed) {
                         if isExpanded {
                             expandedPackIDs.remove(pack.id)
@@ -375,14 +407,8 @@ struct InspectorBackgroundFillPicker: View {
                             expandedPackIDs.insert(pack.id)
                         }
                     }
-                } label: {
-                    Text(isExpanded ? "Show Less" : "Show All \(count)")
-                        .font(.inspectorLabel.weight(.medium))
-                        .foregroundStyle(Palette.label)
-                        .contentTransition(.interpolate)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.interfaceAction)
             }
         }
     }
@@ -425,20 +451,20 @@ struct InspectorBackgroundFillPicker: View {
     }
 
     private var recentWallpaperGrid: some View {
-        LazyVGrid(columns: wallpaperColumns, spacing: 7) {
+        LazyVGrid(columns: wallpaperColumns, spacing: Space.m) {
             wallpaperTiles(visibleRecentWallpapers)
 
-            AnnotationAddWallpaperTile {
+            AnnotationAddWallpaperTile(aspectRatio: Self.wallpaperAspectRatio) {
                 onEditorAction()
                 onPickWallpaper()
             }
-                .help("Choose wallpaper")
+            .help("Choose wallpaper")
         }
     }
 
     @ViewBuilder
     private func wallpaperGrid(_ wallpapers: [AnnotationCustomWallpaper]) -> some View {
-        LazyVGrid(columns: wallpaperColumns, spacing: 7) {
+        LazyVGrid(columns: wallpaperColumns, spacing: Space.m) {
             wallpaperTiles(wallpapers)
         }
     }
@@ -448,7 +474,7 @@ struct InspectorBackgroundFillPicker: View {
         ForEach(wallpapers) { wallpaper in
             InspectorTile(
                 title: wallpaper.title,
-                aspectRatio: 1.35,
+                aspectRatio: Self.wallpaperAspectRatio,
                 isSelected: isSelectedWallpaper(wallpaper)
             ) {
                 selectWallpaper(wallpaper)
@@ -470,13 +496,14 @@ struct InspectorBackgroundFillPicker: View {
         guard case .customWallpaper(let selectedWallpaper) = style else { return false }
         return selectedWallpaper.url.standardizedFileURL == wallpaper.url.standardizedFileURL
     }
-
 }
 
 struct AnnotationWatermarkInspector: View {
     @Binding var settings: AnnotationWatermarkSettings
     let focusedField: FocusState<AnnotationEditorFocusedField?>.Binding
     let onFocusCleared: () -> Void
+
+    static let textFieldMaximumWidth: CGFloat = 170
 
     private var watermarkSwatch: AnnotationSwatch {
         let color = settings.color
@@ -488,78 +515,49 @@ struct AnnotationWatermarkInspector: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            AnnotationWatermarkSourceControls(settings: $settings)
-            Picker("Position", selection: $settings.position) {
-                ForEach(AnnotationWatermarkPosition.allCases) { position in
-                    Text(position.title).tag(position)
-                }
+        AnnotationWatermarkSourceControls(settings: $settings)
+
+        InterfacePickerRow("Position", selection: $settings.position) {
+            ForEach(AnnotationWatermarkPosition.allCases) { position in
+                Text(position.title).tag(position)
             }
-            watermarkTextField
+        }
 
-            if hasWatermarkText || settings.imageData != nil {
-                VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                    if settings.imageData != nil {
-                        InspectorSlider("Image size", value: $settings.imageWidth, range: 0.02...0.9, format: .percent())
-                    }
-                    InspectorFieldPair {
-                        InspectorSlider(
-                            "Density",
-                            value: $settings.density,
-                            range: 2...10,
-                            format: .integer
-                        )
-                    } trailing: {
-                        InspectorSlider(
-                            "Size",
-                            value: $settings.fontSize,
-                            range: 8...160,
-                            format: .pixels
-                        )
-                    }
-
-                    InspectorFieldPair {
-                        InspectorSlider(
-                            "Angle",
-                            value: $settings.rotationDegrees,
-                            range: -90...90,
-                            format: .degrees()
-                        )
-                    } trailing: {
-                        InspectorSlider(
-                            "Opacity",
-                            value: $settings.opacity,
-                            range: 0...1,
-                            format: .percent()
-                        )
-                    }
-
-                    InspectorRow("Color") {
-                        AnnotationSwatchStrip(selectedSwatch: watermarkSwatch) { swatch in
-                            settings.color = AnnotationWatermarkColor(
-                                red: swatch.red,
-                                green: swatch.green,
-                                blue: swatch.blue
-                            )
-                        }
-                    }
-                }
+        InterfaceRow("Text") {
+            HStack(spacing: 0) {
+                TextField("", text: $settings.text, prompt: Text("Watermark text"))
+                    .labelsHidden()
+                    .textFieldStyle(.plain)
+                    .font(.dsBody)
+                    .focused(focusedField, equals: .watermarkText)
+                    .onSubmit(finishTextEditing)
+                    .accessibilityLabel("Watermark text")
             }
+            .interfaceFieldChrome()
+            .frame(maxWidth: Self.textFieldMaximumWidth)
+            .onClickOutside(enabled: focusedField.wrappedValue == .watermarkText, perform: finishTextEditing)
         }
         .onAppear {
             if !hasWatermarkText { focusedField.wrappedValue = .watermarkText }
         }
-    }
 
-    private var watermarkTextField: some View {
-        TextField("Watermark text", text: $settings.text)
-            .focused(focusedField, equals: .watermarkText)
-            .onSubmit(finishTextEditing)
-            .textFieldStyle(.plain)
-            .font(.inspectorValue)
-            .padding(.horizontal, 8)
-            .inspectorField()
-            .onClickOutside(enabled: focusedField.wrappedValue == .watermarkText, perform: finishTextEditing)
+        if hasWatermarkText || settings.imageData != nil {
+            if settings.imageData != nil {
+                AnnotationInspectorSliderRow("Image size", value: $settings.imageWidth, range: 0.02...0.9, format: .percent())
+            }
+            AnnotationInspectorSliderRow("Density", value: $settings.density, range: 2...10, format: .integer)
+            AnnotationInspectorSliderRow("Size", value: $settings.fontSize, range: 8...160, format: .pixels)
+            AnnotationInspectorSliderRow("Angle", value: $settings.rotationDegrees, range: -90...90, format: .degrees())
+            AnnotationInspectorSliderRow("Opacity", value: $settings.opacity, range: 0...1, format: .percent())
+
+            AnnotationSwatchRow(title: "Color", selectedSwatch: watermarkSwatch) { swatch in
+                settings.color = AnnotationWatermarkColor(
+                    red: swatch.red,
+                    green: swatch.green,
+                    blue: swatch.blue
+                )
+            }
+        }
     }
 
     private var hasWatermarkText: Bool {
@@ -570,27 +568,31 @@ struct AnnotationWatermarkInspector: View {
         focusedField.wrappedValue = nil
         onFocusCleared()
     }
-
 }
 
 private struct AnnotationAddWallpaperTile: View {
+    let aspectRatio: CGFloat
     let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                .foregroundStyle(.quaternary)
-                .aspectRatio(1.35, contentMode: .fit)
+            RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .foregroundStyle(isHovering ? Palette.secondaryLabel : Palette.strongHairline)
+                .aspectRatio(aspectRatio, contentMode: .fit)
                 .overlay {
                     Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: IconSize.row, weight: .semibold))
+                        .foregroundStyle(Palette.secondaryLabel)
                 }
                 .padding(2.5)
-                .contentShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel("Choose wallpaper")
     }
 }
 
@@ -601,19 +603,18 @@ private struct AnnotationWallpaperCreditView: View {
 
     var body: some View {
         Link(destination: pack.authorURL) {
-            HStack(spacing: 3) {
+            HStack(spacing: Space.xxs) {
                 Text("Wallpapers by \(pack.authorName)")
                     .underline(isHovering)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: IconSize.disclosureChevron, weight: .semibold))
             }
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
+            .font(.dsCaption)
+            .foregroundStyle(Palette.secondaryLabel)
         }
         .buttonStyle(.plain)
         .help("Open \(pack.authorName) on X")
         .onHover { isHovering = $0 }
-        .padding(.top, 2)
     }
 }
 
@@ -623,50 +624,30 @@ private struct AnnotationWallpaperPackInstallView: View {
     let errorMessage: String?
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button(action: action) {
-                HStack(spacing: 8) {
-                    if isInstalling {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Palette.secondaryLabel)
-                    }
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Download \(pack.title)")
-                            .font(.inspectorValue)
-                            .foregroundStyle(.primary)
-                        Text(pack.subtitle)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack(spacing: Space.m) {
+                Text(pack.subtitle)
+                    .font(.dsBody)
+                    .foregroundStyle(Palette.secondaryLabel)
+                    .lineLimit(1)
+                Spacer(minLength: Space.m)
+                if isInstalling {
+                    ProgressView()
+                        .controlSize(.small)
                 }
-                .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .inspectorField(height: 40)
-                .overlay {
-                    if isHovering && !isInstalling {
-                        RoundedRectangle(cornerRadius: InspectorMetrics.fieldRadius, style: .continuous)
-                            .fill(Color.primary.opacity(0.04))
-                    }
+                Button(action: action) {
+                    Label("Download", systemImage: "icloud.and.arrow.down")
                 }
+                .buttonStyle(.interfaceAction)
+                .disabled(isInstalling)
+                .help("Download \(pack.title)")
             }
-            .buttonStyle(.plain)
-            .disabled(isInstalling)
-            .onHover { isHovering = $0 }
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.destructiveLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -681,17 +662,13 @@ private struct AlignmentPositionPicker: View {
     private let size: CGFloat = 44
     private let markerSize: CGFloat = 6
     private let cellSize: CGFloat = 12
-    private let spacing: CGFloat = 2
+    private let spacing: CGFloat = Space.xxs
 
     @State private var hoveredAlignment: AnnotationBackgroundAlignment?
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let shape = RoundedRectangle(
-            cornerRadius: InspectorMetrics.sliderRadius,
-            style: .continuous
-        )
+        let shape = RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
         let columns = Array(
             repeating: GridItem(.fixed(cellSize), spacing: spacing),
             count: 3
@@ -731,9 +708,9 @@ private struct AlignmentPositionPicker: View {
                 .accessibilityAddTraits(displayedAlignment == option ? .isSelected : [])
             }
         }
-        .padding(InspectorMetrics.controlInset)
+        .padding(Space.xxs)
         .frame(width: size, height: size)
-        .background(shape.fill(InspectorControlPalette.trackFill(for: colorScheme)))
+        .background(shape.fill(Palette.controlFill))
         .clipShape(shape)
         .opacity(isEnabled ? 1 : 0.46)
         .help(isEnabled ? "Image alignment" : "Reset Camera to use alignment")
@@ -752,11 +729,11 @@ private struct AlignmentPositionPicker: View {
 
     private func markerFill(for option: AnnotationBackgroundAlignment) -> Color {
         if displayedAlignment == option {
-            return InspectorControlPalette.selectedForeground
+            return Palette.label
         }
         if hoveredAlignment == option {
-            return Color.primary.opacity(0.48)
+            return Palette.secondaryLabel
         }
-        return Color.primary.opacity(0.22)
+        return Palette.tertiaryLabel
     }
 }

@@ -14,61 +14,56 @@ struct AnnotationStyleStrip: View {
     @State private var transferAlert: PresetTransferAlert?
     @FocusState private var isNameFieldFocused: Bool
 
-    private static let tileWidth: CGFloat = 78
+    private static let tileWidth: CGFloat = 72
     private static let tileAspect: CGFloat = 1.5
+    private static let nameEditorWidth: CGFloat = 280
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            HStack(spacing: 6) {
-                Text("Styles")
-                    .font(.inspectorSectionHeader)
-                    .foregroundStyle(Palette.label.opacity(0.95))
-                Spacer(minLength: 0)
-                headerMenu
-            }
-            .frame(minHeight: 24)
-            .padding(.horizontal, InspectorMetrics.horizontalPadding)
-
+        Section {
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 6) {
+                HStack(alignment: .top, spacing: Space.m) {
                     ForEach(presetStore.presets) { preset in
                         tile(for: preset)
                     }
                     addTile
                 }
-                .padding(.horizontal, InspectorMetrics.horizontalPadding - 2.5)
+                .padding(.vertical, Space.xs)
             }
             .scrollIndicators(.never)
-        }
-        .padding(.top, InspectorMetrics.sectionVerticalPadding / 2 + 3)
-        .padding(.bottom, 4)
-        .disabled(model.sourceURL == nil)
-        .task(id: model.sourceURL) {
-            thumbnail = await Self.thumbnail(for: model.sourceURL)
-        }
-        .alert(
-            "Delete Style?",
-            isPresented: Binding(
-                get: { presetPendingDeletion != nil },
-                set: { if !$0 { presetPendingDeletion = nil } }
-            ),
-            presenting: presetPendingDeletion
-        ) { preset in
-            Button("Delete", role: .destructive) {
-                presetStore.deletePreset(id: preset.id)
-                if model.appliedBackgroundPresetID == preset.id {
-                    model.appliedBackgroundPresetID = nil
+            .disabled(model.sourceURL == nil)
+            .task(id: model.sourceURL) {
+                thumbnail = await Self.thumbnail(for: model.sourceURL)
+            }
+            .alert(
+                "Delete Style?",
+                isPresented: Binding(
+                    get: { presetPendingDeletion != nil },
+                    set: { if !$0 { presetPendingDeletion = nil } }
+                ),
+                presenting: presetPendingDeletion
+            ) { preset in
+                Button("Delete", role: .destructive) {
+                    presetStore.deletePreset(id: preset.id)
+                    if model.appliedBackgroundPresetID == preset.id {
+                        model.appliedBackgroundPresetID = nil
+                    }
+                    presetPendingDeletion = nil
                 }
-                presetPendingDeletion = nil
+                Button("Cancel", role: .cancel) {
+                    presetPendingDeletion = nil
+                }
+            } message: { preset in
+                Text("“\(preset.name)” will be removed from your styles. This screenshot won’t change.")
             }
-            Button("Cancel", role: .cancel) {
-                presetPendingDeletion = nil
+            .alert(item: $transferAlert) { alert in
+                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
             }
-        } message: { preset in
-            Text("“\(preset.name)” will be removed from your styles. This screenshot won’t change.")
-        }
-        .alert(item: $transferAlert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        } header: {
+            HStack(spacing: Space.s) {
+                InterfaceSectionHeader("Styles")
+                Spacer(minLength: 0)
+                headerMenu
+            }
         }
     }
 
@@ -80,23 +75,24 @@ struct AnnotationStyleStrip: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: IconSize.actionButton, weight: .semibold))
                 .foregroundStyle(Palette.secondaryLabel)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
+                .frame(width: InterfaceMetrics.resetButtonSize, height: InterfaceMetrics.resetButtonSize)
+                .contentShape(Circle())
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .fixedSize()
         .help("Import or export styles")
+        .accessibilityLabel("Import or export styles")
     }
 
     private func tile(for preset: AnnotationBackgroundPreset) -> some View {
         let isApplied = model.appliedBackgroundPresetID == preset.id && preset.matches(model.backgroundSettings)
         let isDefault = presetStore.activePreset?.id == preset.id
         let isMissing = preset.hasMissingWallpaper
-        return VStack(spacing: 4) {
+        return VStack(spacing: Space.xs) {
             InspectorTile(title: preset.name, aspectRatio: Self.tileAspect, isSelected: isApplied) {
                 guard !isMissing else {
                     presetPendingDeletion = preset
@@ -114,26 +110,27 @@ struct AnnotationStyleStrip: View {
                     if isMissing {
                         Color.black.opacity(0.45)
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: IconSize.row, weight: .semibold))
                             .foregroundStyle(.white)
                     }
                 }
             }
 
-            HStack(spacing: 3) {
+            HStack(spacing: Space.xxs) {
                 if isDefault {
-                    Circle()
-                        .fill(Palette.label)
-                        .frame(width: 4, height: 4)
+                    Image(systemName: "star.fill")
+                        .font(.system(size: IconSize.disclosureChevron, weight: .semibold))
+                        .foregroundStyle(Palette.secondaryLabel)
                         .help("Used for new screenshots")
+                        .accessibilityLabel("Used for new screenshots")
                 }
                 Text(preset.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .font(.system(size: 10, weight: isApplied ? .semibold : .regular))
+            .font(.dsCaption)
+            .fontWeight(isApplied ? .semibold : .regular)
             .foregroundStyle(isApplied ? Palette.label : Palette.secondaryLabel)
-            .padding(.horizontal, 2)
         }
         .frame(width: Self.tileWidth)
         .help(isMissing ? "\(preset.name)’s wallpaper can’t be found" : preset.name)
@@ -152,20 +149,20 @@ struct AnnotationStyleStrip: View {
     }
 
     private var addTile: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Space.xs) {
             Button {
                 onEditorAction()
                 draftName = ""
                 isNameEditorPresented = true
             } label: {
-                RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                    .foregroundStyle(.quaternary)
+                RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .foregroundStyle(Palette.strongHairline)
                     .aspectRatio(Self.tileAspect, contentMode: .fit)
                     .overlay {
                         Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: IconSize.row, weight: .semibold))
+                            .foregroundStyle(Palette.secondaryLabel)
                     }
                     .padding(2.5)
                     .contentShape(Rectangle())
@@ -177,9 +174,10 @@ struct AnnotationStyleStrip: View {
                 nameEditor
             }
 
-            Text(presetStore.presets.isEmpty ? "Save Look" : "Save")
-                .font(.system(size: 10))
-                .foregroundStyle(Palette.tertiaryLabel)
+            Text("Save Style")
+                .font(.dsCaption)
+                .foregroundStyle(Palette.secondaryLabel)
+                .lineLimit(1)
         }
         .frame(width: Self.tileWidth)
     }
@@ -199,42 +197,68 @@ struct AnnotationStyleStrip: View {
             && !model.backgroundSettings.hasMissingCustomWallpaper
     }
 
-    private var nameEditor: some View {
-        InspectorPopover(
-            title: "New Style",
-            message: "Saves the background, frame, camera, blur, border and watermark. New screenshots start with it.",
-            confirmTitle: "Save",
-            isConfirmDisabled: !canSaveName,
-            width: 292,
-            onCancel: { isNameEditorPresented = false },
-            onConfirm: savePreset
-        ) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("Style name", text: $draftName)
-                    .inspectorTextField()
-                    .focused($isNameFieldFocused)
-                    .onSubmit(savePreset)
-                    .onChange(of: draftName) { _, newValue in
-                        let limitedName = String(newValue.prefix(AnnotationBackgroundPresetStore.maximumNameLength))
-                        if limitedName != newValue {
-                            draftName = limitedName
-                        }
-                    }
+    private var nameEditorProblem: String? {
+        if model.backgroundSettings.hasMissingCustomWallpaper {
+            return "The selected wallpaper can’t be found. Choose it again before saving."
+        }
+        if duplicateNamePreset != nil {
+            return "A style with this name already exists."
+        }
+        return nil
+    }
 
-                if model.backgroundSettings.hasMissingCustomWallpaper {
-                    Label(
-                        "The selected wallpaper can’t be found. Choose it again before saving.",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.inspectorLabel)
-                    .foregroundStyle(Palette.record)
-                } else if duplicateNamePreset != nil {
-                    Label("A style with this name already exists.", systemImage: "exclamationmark.circle.fill")
-                        .font(.inspectorLabel)
-                        .foregroundStyle(Palette.record)
+    private var nameEditor: some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text("New Style")
+                    .font(.dsHeadline)
+                    .foregroundStyle(Palette.label)
+                    .accessibilityAddTraits(.isHeader)
+                Text("New screenshots start with this style.")
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.secondaryLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: Space.s) {
+                HStack(spacing: 0) {
+                    TextField("", text: $draftName, prompt: Text("Style name"))
+                        .labelsHidden()
+                        .textFieldStyle(.plain)
+                        .font(.dsBody)
+                        .focused($isNameFieldFocused)
+                        .onSubmit(savePreset)
+                        .accessibilityLabel("Style name")
+                        .onChange(of: draftName) { _, newValue in
+                            let limitedName = String(newValue.prefix(AnnotationBackgroundPresetStore.maximumNameLength))
+                            if limitedName != newValue {
+                                draftName = limitedName
+                            }
+                        }
+                }
+                .interfaceFieldChrome()
+
+                if let nameEditorProblem {
+                    Text(nameEditorProblem)
+                        .font(.dsCaption)
+                        .foregroundStyle(Palette.destructiveLabel)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            HStack(spacing: Space.m) {
+                Spacer(minLength: 0)
+                Button("Cancel") { isNameEditorPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save", action: savePreset)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSaveName)
+            }
+            .buttonStyle(.interfaceAction)
         }
+        .padding(Space.xl)
+        .frame(width: Self.nameEditorWidth)
+        .presentationBackground(Palette.panel)
         .onAppear {
             Task { @MainActor in
                 isNameFieldFocused = true
@@ -420,7 +444,7 @@ struct AnnotationStylePreview: View {
                 if hasFill {
                     BackgroundSwatch(style: settings.style)
                 } else {
-                    Rectangle().fill(Color.primary.opacity(0.05))
+                    Rectangle().fill(Palette.controlFill)
                 }
 
                 Group {

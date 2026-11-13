@@ -1,8 +1,3 @@
-//
-//  AnnotationScreenshotBorderInspector.swift
-//  Upshot
-//
-
 import SwiftUI
 
 struct AnnotationScreenshotBorderInspector: View {
@@ -10,30 +5,24 @@ struct AnnotationScreenshotBorderInspector: View {
     let onEditorAction: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            InspectorRow("Color") {
-                AnnotationSwatchStrip(selectedSwatch: settings.color) { color in
-                    onEditorAction()
-                    settings.color = color
-                }
-            }
-
-            InspectorFieldPair {
-                InspectorSlider(
-                    "Thickness",
-                    value: binding(\.thickness),
-                    range: 0.002...0.08,
-                    format: .percent(fractionDigits: 1)
-                )
-            } trailing: {
-                InspectorSlider(
-                    "Opacity",
-                    value: binding(\.opacity),
-                    range: 0...1,
-                    format: .percent()
-                )
-            }
+        AnnotationSwatchRow(title: "Color", selectedSwatch: settings.color) { color in
+            onEditorAction()
+            settings.color = color
         }
+
+        AnnotationInspectorSliderRow(
+            "Thickness",
+            value: binding(\.thickness),
+            range: 0.002...0.08,
+            format: .percent(fractionDigits: 1)
+        )
+
+        AnnotationInspectorSliderRow(
+            "Opacity",
+            value: binding(\.opacity),
+            range: 0...1,
+            format: .percent()
+        )
     }
 
     private func binding(
