@@ -15,8 +15,8 @@ struct AnnotationToolDock: View {
     private static let groups: [[AnnotationTool]] = [
         [.select],
         [.rectangle, .filledRectangle, .ellipse, .highlight],
-        [.arrow, .line, .freehand, .highlighter],
-        [.text, .numberedCircle, .measure],
+        [.arrow, .line, .freehand],
+        [.text, .numberedCircle],
         [.pixelate, .blur],
     ]
 
@@ -38,7 +38,7 @@ struct AnnotationToolDock: View {
                 }
             }
 
-            autoRedactMenu
+            additionalToolsMenu
 
             separator
 
@@ -67,8 +67,17 @@ struct AnnotationToolDock: View {
             .accessibilityHidden(true)
     }
 
-    private var autoRedactMenu: some View {
+    private var additionalToolsMenu: some View {
         Menu {
+            Button("Highlighter", systemImage: AnnotationTool.highlighter.systemImage) {
+                onEditorAction()
+                model.selectTool(.highlighter)
+            }
+            Button("Measure", systemImage: AnnotationTool.measure.systemImage) {
+                onEditorAction()
+                model.selectTool(.measure)
+            }
+            Divider()
             Button("Pixelate Sensitive Text", systemImage: AnnotationTool.pixelate.systemImage) {
                 onEditorAction()
                 model.smartRedact(using: .pixelate)
@@ -84,7 +93,7 @@ struct AnnotationToolDock: View {
                         .controlSize(.small)
                         .transition(.blurPop)
                 } else {
-                    Image(systemName: "wand.and.sparkles")
+                    Image(systemName: model.selectedTool == .highlighter || model.selectedTool == .measure ? model.selectedTool.systemImage : "wand.and.sparkles")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Palette.label)
                         .transition(.blurPop)
@@ -98,7 +107,8 @@ struct AnnotationToolDock: View {
         .buttonStyle(.plain)
         .fixedSize()
         .disabled(model.isSmartRedacting)
-        .help("Redact sensitive text automatically")
+        .help("Highlighter, measure, and automatic redaction")
+        .accessibilityLabel("Additional annotation tools")
         .motion(.morphQuick, value: model.isSmartRedacting)
     }
 }
