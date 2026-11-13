@@ -3,31 +3,17 @@ import SwiftUI
 
 enum MenuBarMenuRenderState: String, CaseIterable {
     case menuBar = "menu-bar"
-    case captureActions = "menu-capture-actions"
-    case recordingControls = "menu-recording-controls"
     case history = "menu-history"
-    case projects = "menu-projects"
-    case libraryActions = "menu-library-actions"
-    case screenshotEditorActions = "menu-screenshot-editor-actions"
-    case recordingEditorActions = "menu-recording-editor-actions"
-    case settingsPanes = "menu-settings-panes"
 
     var openSubmenuTitle: String? {
         switch self {
         case .menuBar: nil
-        case .captureActions: MenuBarView.captureActionsTitle
-        case .recordingControls: MenuBarView.recordingControlsTitle
         case .history: MenuBarView.recentCapturesTitle
-        case .projects: MenuBarView.recordingsTitle
-        case .libraryActions: MenuBarView.libraryActionsTitle
-        case .screenshotEditorActions: MenuBarView.screenshotEditorActionsTitle
-        case .recordingEditorActions: MenuBarView.recordingEditorActionsTitle
-        case .settingsPanes: MenuBarView.settingsPanesTitle
         }
     }
 
     var size: CGSize {
-        CGSize(width: openSubmenuTitle == nil ? 420 : 760, height: self == .screenshotEditorActions ? 1180 : 860)
+        CGSize(width: openSubmenuTitle == nil ? 420 : 760, height: 860)
     }
 }
 
@@ -96,13 +82,8 @@ struct MenuBarMenuSnapshotItem: Identifiable {
 enum MenuBarMenuRendering {
     static func makeView(for state: MenuBarMenuRenderState) async -> AnyView {
         precondition(UpshotStorage.isRenderingStates)
-        let recordingManager = ScreenRecordingManager.shared
-        recordingManager.state = state == .recordingControls ? .recording : .idle
-        recordingManager.elapsedTime = state == .recordingControls ? 84 : 0
         assignFixtureShortcuts()
         ScreenshotHistoryStore.shared.reload()
-        RecordingProjectStore.shared.reload()
-        await waitUntil { !RecordingProjectStore.shared.projects.isEmpty }
         let menu = NSHostingMenu(rootView: MenuBarView().defaultAppStorage(UpshotStorage.defaults))
         await waitUntil {
             menu.update()
@@ -121,12 +102,7 @@ enum MenuBarMenuRendering {
             (.textCapture, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 19)),
             (.fullscreen, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 20)),
             (.area, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 21)),
-            (.previousArea, HotkeyShortcut(modifiers: [.command, .shift, .option], keyCode: 21)),
-            (.recordingStop, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 53)),
-            (.recordingPause, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 35)),
-            (.editorUndo, HotkeyShortcut(modifiers: [.control, .option], keyCode: 6)),
-            (.recordingEditorPlay, HotkeyShortcut(modifiers: [.control, .option], keyCode: 49)),
-            (.captureHistory, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 22))
+            (.library, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 37))
         ]
         for (action, shortcut) in fixtureShortcuts {
             CaptureHotkeyPreferences.saveShortcut(shortcut, for: action)
@@ -142,14 +118,13 @@ enum MenuBarMenuRendering {
 
     private static func logCoverage(items: [MenuBarMenuSnapshotItem], state: MenuBarMenuRenderState) {
         let titles = Set(items.flatMap(\.allTitles))
-        let missing = CaptureHotkeyAction.allCases.filter { !titles.contains(MenuBarView.menuTitle(for: $0)) }
-        let unlisted = CaptureHotkeyAction.allCases.filter { !MenuBarView.menuActions.contains($0) }
+        let missing = MenuBarView.menuActions.filter { !titles.contains(MenuBarView.menuTitle(for: $0)) }
         let duplicated = Dictionary(grouping: MenuBarView.menuActions, by: { $0 }).filter { $0.value.count > 1 }.keys
         let shortcutTitles = items.flatMap(\.flattened).filter { !$0.keyEquivalentText.isEmpty }.map { "\($0.title)=\($0.keyEquivalentText)" }
         let symbolless = items.filter { !$0.isSeparator && $0.image == nil }.map(\.title)
         FileHandle.standardError.write(Data((
-            "menu_bar_render state=\(state.rawValue) actions=\(CaptureHotkeyAction.allCases.count) reachable=\(CaptureHotkeyAction.allCases.count - missing.count) "
-            + "missing=[\(missing.map(\.rawValue).joined(separator: ","))] unlisted=[\(unlisted.map(\.rawValue).joined(separator: ","))] "
+            "menu_bar_render state=\(state.rawValue) actions=\(MenuBarView.menuActions.count) reachable=\(MenuBarView.menuActions.count - missing.count) "
+            + "missing=[\(missing.map(\.rawValue).joined(separator: ","))] "
             + "duplicated=[\(duplicated.map(\.rawValue).joined(separator: ","))] top_level_without_symbol=[\(symbolless.joined(separator: ","))] "
             + "shortcuts=[\(shortcutTitles.joined(separator: "; "))]\n"
         ).utf8))

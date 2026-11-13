@@ -5,8 +5,6 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject private var updaterManager = UpdaterManager.shared
     @State private var historyStore = ScreenshotHistoryStore.shared
-    @State private var projectStore = RecordingProjectStore.shared
-    @State private var recordingManager = ScreenRecordingManager.shared
     @State private var hotkeyManager = HotkeyManager.shared
     @State private var shortcuts = CaptureHotkeyPreferences.shortcuts()
 
@@ -21,20 +19,11 @@ struct MenuBarView: View {
             actionButton(.textCapture, symbol: "text.viewfinder") { CaptureCoordinator.shared.captureText() }
             actionButton(.screenRecording, symbol: "record.circle") { RecordingPickerPresenter.shared.show() }
 
-            actionMenu(Self.captureActionsTitle, symbol: "ellipsis.circle", groups: Self.captureActionGroups)
-            actionMenu(Self.recordingControlsTitle, symbol: "pause.circle", groups: Self.recordingControlGroups)
-
-            Divider()
-
-            actionButton(.toggleDesktopIcons, symbol: "eye")
-
             Divider()
 
             actionButton(.library, symbol: "square.grid.2x2", fallbackShortcut: KeyboardShortcut("l", modifiers: [.command, .shift])) {
                 CaptureLibraryModel.shared.show()
             }
-            actionButton(.captureHistory, symbol: "clock.arrow.circlepath")
-            actionButton(.restoreLastCapture, symbol: "arrow.uturn.backward")
 
             Menu {
                 historyMenuContent
@@ -42,30 +31,13 @@ struct MenuBarView: View {
                 MenuBarItemLabel(Self.recentCapturesTitle, symbol: "photo")
             }
 
-            Menu {
-                projectsMenuContent
-            } label: {
-                MenuBarItemLabel(Self.recordingsTitle, symbol: "film.stack")
-            }
-
             actionButton(.screenshotsFolder, symbol: "folder") { openScreenshotsFolder() }
-
-            Divider()
-
-            actionMenu(Self.libraryActionsTitle, symbol: "rectangle.stack", groups: Self.libraryActionGroups)
-            actionMenu(Self.screenshotEditorActionsTitle, symbol: "pencil.tip.crop.circle", groups: Self.screenshotEditorActionGroups)
-            actionMenu(Self.recordingEditorActionsTitle, symbol: "film", groups: Self.recordingEditorActionGroups)
-
-            Divider()
-
-            actionButton(.settingsAbout, symbol: "info.circle")
 
             Divider()
 
             actionButton(.settings, symbol: "gearshape", fallbackShortcut: KeyboardShortcut(",", modifiers: [.command])) {
                 SettingsWindowController.show(tab: .general)
             }
-            actionMenu(Self.settingsPanesTitle, symbol: "sidebar.left", groups: Self.settingsPaneGroups)
 
             Button {
                 updaterManager.checkForUpdates()
@@ -85,7 +57,6 @@ struct MenuBarView: View {
         }
         .task {
             historyStore.reload()
-            projectStore.reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             let latest = CaptureHotkeyPreferences.shortcuts()
@@ -109,67 +80,11 @@ struct MenuBarView: View {
             }
         }
         .keyboardShortcut(menuShortcut(for: action) ?? fallbackShortcut)
-        .disabled(!isAvailable(action))
-    }
-
-    private func actionMenu(_ title: String, symbol: String, groups: [[CaptureHotkeyAction]]) -> some View {
-        Menu {
-            ForEach(groups.indices, id: \.self) { index in
-                if index > 0 { Divider() }
-                ForEach(groups[index]) { action in
-                    actionButton(action)
-                }
-            }
-        } label: {
-            MenuBarItemLabel(title, symbol: symbol)
-        }
     }
 
     private func menuShortcut(for action: CaptureHotkeyAction) -> KeyboardShortcut? {
         guard hotkeyManager.registrationErrors[action] == nil else { return nil }
         return shortcuts[action]?.menuKeyboardShortcut
-    }
-
-    private func isAvailable(_ action: CaptureHotkeyAction) -> Bool {
-        let state = recordingManager.state
-        switch action {
-        case .recordingStart:
-            return !recordingManager.isActive
-        case .recordingToggle:
-            return [.idle, .recording, .paused].contains(state)
-        case .recordingStop, .recordingRestart, .recordingDiscard:
-            return [.recording, .paused].contains(state)
-        case .recordingPause, .recordingTogglePen, .recordingClearPen:
-            return state == .recording
-        case .recordingResume:
-            return state == .paused
-        default:
-            return true
-        }
-    }
-
-    @ViewBuilder
-    private var projectsMenuContent: some View {
-        if projectStore.projects.isEmpty {
-            Text("No Recordings")
-        } else {
-            ForEach(projectStore.recentProjects) { project in
-                Button(projectMenuTitle(for: project)) {
-                    RecordingProjectOpener.shared.open(project.session)
-                }
-            }
-        }
-
-        Divider()
-
-        Button("Show All Recordings…") {
-            CaptureLibraryModel.shared.show(filter: .recordings)
-        }
-    }
-
-    private func projectMenuTitle(for project: RecordingProjectSummary) -> String {
-        let name = truncatedMenuTitle(project.displayName)
-        return project.hasUnsavedDraft ? "\(name) - Unsaved" : name
     }
 
     @ViewBuilder
@@ -238,90 +153,22 @@ struct MenuBarView: View {
 
         return "\(baseName.prefix(allowedBaseLength))…\(suffix)"
     }
-
-    private func truncatedMenuTitle(_ name: String) -> String {
-        let limit = 34
-        guard name.count > limit else { return name }
-        return "\(name.prefix(limit - 1))…"
-    }
 }
 
 extension MenuBarView {
-    static let captureActionsTitle = "Capture Actions"
-    static let recordingControlsTitle = "Recording Controls"
     static let recentCapturesTitle = "Recent Captures"
-    static let recordingsTitle = "Recordings"
-    static let libraryActionsTitle = "Library Actions"
-    static let screenshotEditorActionsTitle = "Screenshot Editor Actions"
-    static let recordingEditorActionsTitle = "Recording Editor Actions"
-    static let settingsPanesTitle = "Settings Panes"
     static let checkForUpdatesTitle = "Check for Updates…"
     static let quitTitle = "Quit Upshot"
 
-    static let topLevelActions: [CaptureHotkeyAction] = [
+    static let menuActions: [CaptureHotkeyAction] = [
         .area, .fullscreen, .window, .allInOne, .scrollingCapture, .selfTimer, .textCapture, .screenRecording,
-        .toggleDesktopIcons,
-        .library, .captureHistory, .restoreLastCapture, .screenshotsFolder,
-        .settingsAbout, .settings
+        .library, .screenshotsFolder, .settings
     ]
-
-    static let captureActionGroups: [[CaptureHotkeyAction]] = [
-        [.smartElement, .previousArea],
-        [.areaCopy, .areaSave, .areaUpload],
-        [.toggleCrosshair, .toggleMagnifier]
-    ]
-
-    static let recordingControlGroups: [[CaptureHotkeyAction]] = [
-        [.recordingStart, .recordingStop, .recordingToggle],
-        [.recordingPause, .recordingResume, .recordingRestart, .recordingDiscard],
-        [.recordingTogglePen, .recordingClearPen]
-    ]
-
-    static let libraryActionGroups: [[CaptureHotkeyAction]] = [
-        [.libraryScreenshots, .libraryRecordings, .libraryRefresh],
-        [.libraryPreview, .libraryEdit, .libraryRename, .libraryCopy, .libraryExport, .libraryReveal, .libraryTrash],
-        [.libraryCopyText, .libraryDetectCodes]
-    ]
-
-    static let screenshotEditorActionGroups: [[CaptureHotkeyAction]] = [
-        [.editorOpen],
-        [.editorSave, .editorSaveCopy, .editorDone, .editorShare],
-        [.editorUndo, .editorRedo],
-        [.editorHighlighter, .editorMeasure, .editorTextPlain, .editorTextLabel, .editorTextCallout, .editorRedactionStyle],
-        [.editorRotateClockwise, .editorRotateCounterclockwise, .editorFlipHorizontal, .editorFlipVertical,
-         .editorCombineSideBySide, .editorCombineStacked],
-        [.editorWatermark, .editorColorAdjustments, .editorDrawingSmoothing, .editorObjectShadows,
-         .editorExpandCanvas, .editorAlwaysOnTop]
-    ]
-
-    static let recordingEditorActionGroups: [[CaptureHotkeyAction]] = [
-        [.recordingEditorOpen],
-        [.recordingEditorPlay, .recordingEditorPause],
-        [.recordingEditorUndo, .recordingEditorRedo, .recordingEditorSave],
-        [.recordingEditorExport, .recordingEditorExportGIF, .recordingEditorExportAudio, .recordingEditorCancelExport]
-    ]
-
-    static let settingsPaneGroups: [[CaptureHotkeyAction]] = [
-        [.settingsScreenshots, .settingsVideo, .settingsOverlay, .settingsMCP, .settingsCloud]
-    ]
-
-    static var menuActions: [CaptureHotkeyAction] {
-        topLevelActions + [
-            captureActionGroups, recordingControlGroups, libraryActionGroups,
-            screenshotEditorActionGroups, recordingEditorActionGroups, settingsPaneGroups
-        ].flatMap { $0.flatMap { $0 } }
-    }
 
     static func menuTitle(for action: CaptureHotkeyAction) -> String {
         switch action {
         case .screenRecording: "Record Screen"
-        case .settingsAbout: "About Upshot"
         case .settings: "Settings…"
-        case .settingsScreenshots: SettingsTab.screenshots.title
-        case .settingsVideo: SettingsTab.screenRecording.title
-        case .settingsOverlay: SettingsTab.quickAccess.title
-        case .settingsMCP: SettingsTab.mcp.title
-        case .settingsCloud: SettingsTab.cloud.title
         default: action.title
         }
     }

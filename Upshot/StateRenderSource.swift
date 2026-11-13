@@ -177,7 +177,7 @@ enum StateRenderSource {
         ],
         "Upshot/MenuBarView.swift": [
             ("struct MenuBarView: View {", 5),
-            ("AppAlerts.screenshotsFolderFailed(directory: directory, errorDescription: errorDescription).runModal()", 222),
+            ("AppAlerts.screenshotsFolderFailed(directory: directory, errorDescription: errorDescription).runModal()", 137),
         ],
         "Upshot/PinnedScreenshotPresenter.swift": [
             ("final class PinnedScreenshotPresenter {", 5),
