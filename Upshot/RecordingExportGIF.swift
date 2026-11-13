@@ -7,6 +7,8 @@ import ImageIO
 import UniformTypeIdentifiers
 
 nonisolated enum RecordingGIFExporter {
+    static let maximumGIFFrameDelay: Double = 600
+
     enum ExportError: LocalizedError {
         case destinationUnavailable
         case encodingFailed
@@ -81,6 +83,10 @@ nonisolated enum RecordingGIFExporter {
                 let frameDuration = min(1 / frameRate, duration - time)
                 let data = options.optimizesGIF ? image.dataProvider?.data.map { $0 as Data } : nil
                 if options.optimizesGIF, let previousData, let data, previousData == data {
+                    if accumulatedDuration + frameDuration > Self.maximumGIFFrameDelay, let previous {
+                        append(previous, duration: accumulatedDuration)
+                        accumulatedDuration = 0
+                    }
                     accumulatedDuration += frameDuration
                 } else {
                     if let previous { append(previous, duration: accumulatedDuration) }
