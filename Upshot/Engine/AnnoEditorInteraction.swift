@@ -416,6 +416,11 @@ extension AnnoEditor {
     }
 
     private func bindTerminal(arrowId: AnnoShapeID, terminal: ArrowTerminal, at pagePoint: Vec, precise: Bool) {
+        if document.shape(arrowId)?.arrowProps?.isMeasurement == true {
+            document.removeBinding(arrowId: arrowId, terminal: terminal)
+            setHintedBinding(nil)
+            return
+        }
         let target = document.shapes.reversed().first { shape in
             guard shape.id != arrowId, !shape.isArrow, !shape.isHighlight, !shape.isRedaction else { return false }
             let local = document.pointInShapeSpace(shape, pagePoint)
