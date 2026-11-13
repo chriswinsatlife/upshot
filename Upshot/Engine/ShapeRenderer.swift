@@ -148,6 +148,7 @@ enum AnnoShapeRenderer {
               let info = document.arrowInfo(shape.id),
               info.isValid else { return [] }
 
+        if props.isMeasurement == true { return AnnotationMeasurement.elements(props) }
         var elements: [RenderElement] = []
         elements.append(strokeElement(
             path: ArrowPath.body(info),

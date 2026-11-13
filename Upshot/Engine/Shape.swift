@@ -65,6 +65,7 @@ enum Arrowhead: String, CaseIterable, Codable {
 }
 
 struct ArrowProps: Codable, Equatable {
+    var isMeasurement: Bool?
     var start = Vec(0, 0)
     var end = Vec(100, 0)
     var bend: Double = 0
@@ -215,6 +216,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
             }
         case .draw: return .freehand
         case let .arrow(properties):
+            if properties.isMeasurement == true { return .measure }
             return properties.arrowheadStart == .none && properties.arrowheadEnd == .none ? .line : .arrow
         case .text: return .text
         case let .redaction(properties): return properties.kind == .pixelate ? .pixelate : .blur

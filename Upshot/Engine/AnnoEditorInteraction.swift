@@ -23,7 +23,7 @@ extension AnnoEditor {
             beginBoxShape(pointer)
         case .numberedCircle:
             createNumberedCircle(at: pointer.pagePoint)
-        case .line, .arrow:
+        case .line, .arrow, .measure:
             beginArrow(pointer)
         }
         notifyChanged()
@@ -146,15 +146,18 @@ extension AnnoEditor {
     private func beginArrow(_ pointer: PointerInfo) {
         markUndo()
         var props = ArrowProps()
+        props.isMeasurement = tool == .measure
         props.swatch = currentSwatch
         props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
-        props.arrowheadStart = tool == .line ? .none : currentArrowheadStart
-        props.arrowheadEnd = tool == .line ? .none : currentArrowheadEnd
+        props.arrowheadStart = tool == .line || tool == .measure ? .none : currentArrowheadStart
+        props.arrowheadEnd = tool == .line || tool == .measure ? .none : currentArrowheadEnd
         props.start = Vec(0, 0)
         props.end = Vec(0, 0)
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, castsShadow: UpshotPreferences.annotationObjectShadows, kind: .arrow(props))
         document.add(shape)
-        bindTerminal(arrowId: shape.id, terminal: .start, at: pointer.pagePoint, precise: pointer.alt)
+        if tool != .measure {
+            bindTerminal(arrowId: shape.id, terminal: .start, at: pointer.pagePoint, precise: pointer.alt)
+        }
         setInteraction(.creatingArrow(id: shape.id))
         updateCreationArrowDirection(optionHeld: pointer.alt)
     }
@@ -252,7 +255,11 @@ extension AnnoEditor {
 
         case let .creatingArrow(id):
             updateCreationArrowDirection(optionHeld: pointer.alt)
-            NSLog("Annotation arrow committed inverse=%@", String(pointer.alt))
+            if let properties = document.shape(id)?.arrowProps, properties.isMeasurement == true {
+                NSLog("Annotation measure committed distance=%.1f px", AnnotationMeasurement.distance(properties))
+            } else {
+                NSLog("Annotation arrow committed inverse=%@", String(pointer.alt))
+            }
             if let shape = document.shape(id), let props = shape.arrowProps,
                Vec.distMin(props.start, props.end, 4) {
                 document.delete([id])
@@ -395,7 +402,9 @@ extension AnnoEditor {
             props.end = local
             shape.kind = .arrow(props)
         }
-        bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
+        if shape.arrowProps?.isMeasurement != true {
+            bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
+        }
     }
 
     private func axisSnapped(from anchor: Vec, to point: Vec) -> Vec {
@@ -618,6 +627,7 @@ extension AnnoEditor {
             }
             bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
         case .arrowMiddle:
+            guard shape.arrowProps?.isMeasurement != true else { return }
             let bindings = document.arrowBindings(id)
             let terminals = ArrowShared.terminalsInArrowSpace(document, shape, bindings)
             let mid = Vec.med(terminals.start, terminals.end)

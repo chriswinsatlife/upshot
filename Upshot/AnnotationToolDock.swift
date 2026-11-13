@@ -16,7 +16,7 @@ struct AnnotationToolDock: View {
         [.select],
         [.rectangle, .filledRectangle, .ellipse, .highlight],
         [.arrow, .line, .freehand, .highlighter],
-        [.text, .numberedCircle],
+        [.text, .numberedCircle, .measure],
         [.pixelate, .blur],
     ]
 

@@ -11,6 +11,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     case text
     case highlight
     case highlighter
+    case measure
     case pixelate
     case blur
 
@@ -44,6 +45,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
             "Spotlight"
         case .highlighter:
             "Highlighter"
+        case .measure:
+            "Measure"
         }
     }
 
@@ -75,6 +78,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
             "square.dashed.inset.filled"
         case .highlighter:
             "highlighter"
+        case .measure:
+            "ruler"
         }
     }
 
@@ -93,7 +98,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     }
 
     var usesEndpoints: Bool {
-        self == .line || self == .arrow
+        self == .line || self == .arrow || self == .measure
     }
 
     var isRedactionTool: Bool {
@@ -102,7 +107,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsColorStyle: Bool {
         switch self {
-        case .rectangle, .filledRectangle, .ellipse, .line, .arrow, .freehand, .numberedCircle, .text, .highlighter:
+        case .rectangle, .filledRectangle, .ellipse, .line, .arrow, .freehand, .numberedCircle, .text, .highlighter, .measure:
             true
         case .select, .pixelate, .blur, .highlight:
             false
@@ -111,7 +116,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsStrokeStyle: Bool {
         switch self {
-        case .rectangle, .ellipse, .line, .arrow, .freehand:
+        case .rectangle, .ellipse, .line, .arrow, .freehand, .measure:
             true
         case .select, .filledRectangle, .numberedCircle, .pixelate, .blur, .text, .highlight, .highlighter:
             false
@@ -126,7 +131,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .rectangle, .filledRectangle, .ellipse, .highlight:
             true
-        case .select, .line, .arrow, .freehand, .numberedCircle, .pixelate, .blur, .text, .highlighter:
+        case .select, .line, .arrow, .freehand, .numberedCircle, .pixelate, .blur, .text, .highlighter, .measure:
             false
         }
     }

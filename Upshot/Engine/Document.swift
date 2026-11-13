@@ -192,7 +192,8 @@ enum AnnoShapeGeometry {
             case .ellipse:
                 return Ellipse2d(width: props.w, height: props.h, isFilled: isFilled)
             }
-        case .arrow:
+        case let .arrow(properties):
+            if properties.isMeasurement == true { return AnnotationMeasurement.geometry(properties) }
             return arrowGeometry(shape, in: document)
         case let .text(props):
             let size = AnnotationTextDecoration.size(props)
