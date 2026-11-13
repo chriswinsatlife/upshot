@@ -14,16 +14,20 @@ struct StateRenderDefinition {
     let size: CGSize
     let placement: StateRenderPlacement
     let scroll: StateRenderScroll
+    let displaySize: CGSize
+    let windowTitle: String?
     var makeAlert: (() -> NSAlert)? = nil
     let makeView: () async throws -> AnyView
 
     init(_ name: String, source: String, marker: String, size: CGSize, scroll: CGFloat? = nil,
-         makeAlert: (() -> NSAlert)? = nil, makeView: @escaping () async throws -> AnyView) {
+         displaySize: CGSize = StateRenderDisplay.standardSize, windowTitle: String? = nil, makeAlert: (() -> NSAlert)? = nil, makeView: @escaping () async throws -> AnyView) {
         self.name = name
         sourceFile = "Upshot/\(source).swift"
         line = StateRenderSource.line(in: sourceFile, containing: marker)
         self.size = size
         (placement, self.scroll) = StateRenderPlacement.resolve(name: name, scrollFraction: scroll)
+        self.displaySize = displaySize
+        self.windowTitle = windowTitle
         self.makeAlert = makeAlert
         self.makeView = makeView
     }
@@ -197,7 +201,8 @@ enum StateRenderer {
     private static func build(_ definition: StateRenderDefinition, on stage: StateRenderStage) async throws {
         switch definition.placement {
         case .window(let kind):
-            stage.addWindow(kind, view: try await prepare(definition))
+            let window = stage.addWindow(kind, view: try await prepare(definition))
+            if let title = definition.windowTitle { window.title = title }
         case .panel(let panel):
             try stage.addPanel(panel, view: try await prepare(definition))
         case .display:
@@ -257,6 +262,8 @@ enum StateRenderer {
 
     private static func capture(_ definition: StateRenderDefinition, appearance: String, onlyScrollFrame: Int?, output: URL) async throws -> [StateRenderEntry] {
         NSApp.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
+        StateRenderDisplay.size = definition.displaySize
+        defer { StateRenderDisplay.size = StateRenderDisplay.standardSize }
         let stage = try StateRenderStage(appearance: appearance)
         try StateRenderDesktop.prepare(appearance: appearance)
         defer { stage.tearDown() }

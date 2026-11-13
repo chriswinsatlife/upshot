@@ -12,9 +12,9 @@ enum StateRenderCatalog {
     static func states(fixtures: StateRenderFixtures) -> [StateRenderDefinition] {
         var states: [StateRenderDefinition] = []
         func add(_ name: String, _ source: String, _ marker: String, _ width: CGFloat, _ height: CGFloat,
-                 scroll: CGFloat? = nil, _ view: @escaping () async throws -> AnyView) {
+                 scroll: CGFloat? = nil, display: CGSize = StateRenderDisplay.standardSize, _ view: @escaping () async throws -> AnyView) {
             states.append(StateRenderDefinition(name, source: source, marker: marker,
-                                                 size: CGSize(width: width, height: height), scroll: scroll, makeView: view))
+                                                 size: CGSize(width: width, height: height), scroll: scroll, displaySize: display, makeView: view))
         }
         for tab in SettingsTab.allCases where ![.quickAccess, .annotate, .advanced, .textRecognition].contains(tab) {
             add("settings-\(tab.rawValue)", "SettingsView", "struct SettingsView", 1000, 820) {
@@ -276,15 +276,18 @@ enum StateRenderCatalog {
                 guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
-                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: true, crosshair: false, size: StateRenderDisplay.size) })
+                let highlight = [.fullscreen, .window, .element, .timer].contains(mode) ? StateRenderDesktop.selectorHighlight(for: mode) : nil
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: true, crosshair: false, size: StateRenderDisplay.size,
+                                                                                         pointer: highlight?.pointer, selection: highlight?.selection) })
             }
         }
         for variant in ["aspect", "narrow", "no-selection", "status"] {
-            let size = StateRenderDisplay.size
-            add("selector-all-in-one-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", size.width, size.height) {
+            let display = variant == "narrow" ? StateRenderDisplay.narrowSize : StateRenderDisplay.standardSize
+            add("selector-all-in-one-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", display.width, display.height, display: display) {
                 guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
+                let size = StateRenderDisplay.size
                 return AnyView(StateRenderAppKitView {
                     AreaCaptureSelection.renderView(image: image, mode: variant == "status" ? .previousArea : .area, allInOne: true, crosshair: variant == "no-selection" || variant == "status", size: size,
                                                     aspect: variant == "aspect" ? RecordingAreaAspect(16, 9) : nil,
@@ -299,7 +302,10 @@ enum StateRenderCatalog {
                 guard let image = StateRenderDesktop.image else {
                     throw StateRenderFailure(message: "Fixture selector image could not be decoded")
                 }
-                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier", size: StateRenderDisplay.size) })
+                let mode: AllInOneCaptureMode = variant == "window" ? .window : variant == "element" ? .element : .area
+                let highlight = variant == "crosshair-magnifier" ? nil : StateRenderDesktop.selectorHighlight(for: mode)
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: mode, allInOne: false, crosshair: variant == "crosshair-magnifier", size: StateRenderDisplay.size,
+                                                                                         pointer: highlight?.pointer, selection: highlight?.selection) })
             }
         }
         for variant in ["magnifier-above", "magnifier-below", "area-default"] {

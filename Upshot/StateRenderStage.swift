@@ -4,7 +4,9 @@ import ScreenCaptureKit
 import SwiftUI
 
 enum StateRenderDisplay {
-    static let size = CGSize(width: 1728, height: 1117)
+    static let standardSize = CGSize(width: 1728, height: 1117)
+    static var size = standardSize
+    static let narrowSize = CGSize(width: 800, height: 600)
     static let scale: CGFloat = 2
     static var pixelWidth: Int { Int(size.width * scale) }
     static var pixelHeight: Int { Int(size.height * scale) }
@@ -216,6 +218,48 @@ enum StateRenderDesktop {
     private static var fixtureWindow: CGImage?
     private static let fixtureWindowFraction = CGRect(x: 80.0 / 1280, y: 70.0 / 800, width: 1120.0 / 1280, height: 660.0 / 800)
     private static let fixtureWindowCornerRadius: CGFloat = 16
+    private static let fixtureWindowSize = CGSize(width: 1120, height: 660)
+    private static let fixtureWindowDisplayMargin: CGFloat = 64
+    private static let fixtureWindowRecordingsCard = CGRect(x: 400, y: 195, width: 320, height: 200)
+
+    static var fixtureWindowScale: CGFloat {
+        min(1, (StateRenderDisplay.size.width - fixtureWindowDisplayMargin * 2) / fixtureWindowSize.width)
+    }
+
+    static var fixtureWindowFrame: CGRect {
+        let display = StateRenderDisplay.size
+        let scale = fixtureWindowScale
+        let size = CGSize(width: (fixtureWindowSize.width * scale).rounded(), height: (fixtureWindowSize.height * scale).rounded())
+        return CGRect(x: ((display.width - size.width) / 2).rounded(.down), y: ((display.height - size.height) / 2).rounded(.down) - (40 * scale).rounded(),
+                      width: size.width, height: size.height)
+    }
+
+    static var fixtureElementFrame: CGRect {
+        let window = fixtureWindowFrame
+        let scale = window.width / fixtureWindowSize.width
+        return CGRect(x: window.minX + fixtureWindowRecordingsCard.minX * scale, y: window.minY + fixtureWindowRecordingsCard.minY * scale,
+                      width: fixtureWindowRecordingsCard.width * scale, height: fixtureWindowRecordingsCard.height * scale).integral
+    }
+
+    static var areaSelection: CGRect {
+        let display = StateRenderDisplay.size
+        return CGRect(x: (display.width * 0.12).rounded(), y: (display.height * 0.28).rounded(),
+                      width: (display.width * 0.62).rounded(), height: (display.height * 0.528).rounded())
+    }
+
+    static func selectorHighlight(for mode: AllInOneCaptureMode) -> (pointer: CGPoint?, selection: CGRect)? {
+        switch mode {
+        case .fullscreen: return (nil, CGRect(origin: .zero, size: StateRenderDisplay.size))
+        case .window, .timer: return (nil, fixtureWindowFrame)
+        case .element:
+            let element = fixtureElementFrame
+            return (CGPoint(x: element.midX.rounded(), y: element.midY.rounded()), element)
+        case .area:
+            let area = areaSelection
+            return (CGPoint(x: area.maxX, y: area.minY), area)
+        case .scrolling, .text, .recording, .previousArea: return nil
+        }
+    }
 
     static func install(fixtureImage: NSImage) throws {
         guard let source = fixtureImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -243,9 +287,8 @@ enum StateRenderDesktop {
         context.interpolationQuality = .high
         context.draw(wallpaper, in: CGRect(x: (target.width - wallpaperSize.width) / 2, y: (target.height - wallpaperSize.height) / 2,
                                            width: wallpaperSize.width, height: wallpaperSize.height))
-        let windowSize = CGSize(width: 1120 * scale, height: 660 * scale)
-        let windowRect = CGRect(x: (target.width - windowSize.width) / 2, y: (target.height - windowSize.height) / 2 - 40 * scale,
-                                width: windowSize.width, height: windowSize.height)
+        let frame = fixtureWindowFrame
+        let windowRect = CGRect(x: frame.minX * scale, y: frame.minY * scale, width: frame.width * scale, height: frame.height * scale)
         let path = CGPath(roundedRect: windowRect, cornerWidth: fixtureWindowCornerRadius * scale, cornerHeight: fixtureWindowCornerRadius * scale, transform: nil)
         context.saveGState()
         context.setShadow(offset: CGSize(width: 0, height: -18 * scale), blur: 30 * scale, color: NSColor.black.withAlphaComponent(0.4).cgColor)
