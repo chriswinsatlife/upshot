@@ -1,12 +1,6 @@
-//
-//  CaptureLibraryAnalysis.swift
-//  Upshot
-//
 
 import AppKit
 
-/// What a capture shows, as the Library files it. A fixed set, so the sidebar
-/// stays short and the on-device model chooses rather than invents.
 nonisolated enum CaptureCategory: String, Codable, CaseIterable, Identifiable, Sendable {
     case code, design, website, document, chat, email, data, error, receipt, social, media, settings, other
 
@@ -48,7 +42,6 @@ nonisolated enum CaptureCategory: String, Codable, CaseIterable, Identifiable, S
         }
     }
 
-    /// The meaning the model is given for each category.
     var guidance: String {
         switch self {
         case .code: "source code, terminals, IDEs, diffs, logs, developer tools"
@@ -68,25 +61,14 @@ nonisolated enum CaptureCategory: String, Codable, CaseIterable, Identifiable, S
     }
 }
 
-/// One line of recognized text.
 nonisolated struct CaptureTextLine: Codable, Sendable, Equatable {
     var text: String
-    /// Normalized to the image, top-left origin. Nil for text read from a
-    /// video frame other than the one the Library shows.
     var box: CGRect?
 }
 
-/// The lines of text in a capture, saved as an array of lines but held as
-/// one string with each line's end and box. A Library's worth of captures
-/// otherwise makes a small allocation for nearly every line, and the heap
-/// those leave behind stays with the app long after they're freed.
 nonisolated struct CaptureTextLines: Codable, Sendable, Equatable, RandomAccessCollection {
-    /// Every line, joined by newlines.
     private(set) var text = ""
-    /// Where each line ends in `text`, in UTF-8 bytes.
     private var ends: [UInt32] = []
-    /// Each line's box as x, y, width and height; NaN for a line without
-    /// one. Normalized coordinates don't need doubles.
     private var boxes: [Float] = []
 
     init() {}
@@ -128,41 +110,29 @@ nonisolated struct CaptureTextLines: Codable, Sendable, Equatable, RandomAccessC
     }
 }
 
-/// Everything the Library learns about a capture by looking at it. Stored
-/// apart from the capture so the index can be rebuilt without touching it.
 nonisolated struct CaptureAnalysis: Codable, Sendable, Equatable {
     enum Classifier: String, Codable, Sendable {
-        /// Apple's on-device language model.
         case model
-        /// App and keyword rules, used while the model is unavailable.
         case rules
     }
 
-    /// Bump to re-analyze every capture after the pipeline changes.
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var id: String
     var version = Self.currentVersion
-    /// The capture's thumbnail key: path plus modification date, so an edit
-    /// re-reads the new pixels.
     var fingerprint: String
     var lines = CaptureTextLines()
-    /// Spoken words from a recording's transcript, when it has one.
     var transcript: String?
     var category: CaptureCategory?
-    /// A short description written by the model.
     var title: String?
     var keywords: [String] = []
     var classifier: Classifier?
-    /// The model was available but gave no answer (guardrails, language), so
-    /// the rules' category stands until the pipeline version changes.
     var modelDeclined = false
     var hasFeaturePrint = false
 
     var text: String { lines.text }
 }
 
-/// The fallback classifier: the source app first, then telltale words.
 nonisolated enum CaptureCategoryRules {
     static func category(source: CaptureSource?, text: String, isVideo: Bool) -> CaptureCategory {
         let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
@@ -202,8 +172,6 @@ nonisolated enum CaptureCategoryRules {
         return appStoreCategory(id)
     }
 
-    /// The category an app declares in its Info.plist, for apps the rules
-    /// above don't name.
     private static func appStoreCategory(_ bundleIdentifier: String) -> CaptureCategory? {
         guard !bundleIdentifier.isEmpty,
               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),

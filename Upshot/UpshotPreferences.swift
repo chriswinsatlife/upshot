@@ -1,9 +1,3 @@
-//
-//  UpshotPreferences.swift
-//  Upshot
-//
-//  Created by Codex on 26/04/26.
-//
 
 import AppKit
 import ImageIO
@@ -31,13 +25,9 @@ enum UpshotPreferences {
     static let previewPositionKey = "previewPosition"
     static let previewAutoCloseSecondsKey = "previewAutoCloseSeconds"
     static let previewCloseAfterDraggingKey = "previewCloseAfterDragging"
-    /// Where the tucked shelf's handle sits along the screen edge, from 0
-    /// (top) to 1 (bottom).
     static let shelfHandlePositionKey = "captureShelfHandlePosition"
     static let overlayCardLayoutKey = "overlayCardLayout"
     static let lowResolutionEditorPreviewKey = "lowResolutionEditorPreview"
-    /// The tool the annotator opens with: a tool's raw value, or
-    /// `startingToolLastUsed` to reopen with whatever was picked last.
     static let annotationStartingToolKey = "annotationStartingTool"
     static let startingToolLastUsed = "lastUsed"
     static let trimFullscreenMenuBarKey = "trimFullscreenMenuBar"
@@ -49,13 +39,8 @@ enum UpshotPreferences {
     static let recordingTeleprompterScriptKey = "recordingTeleprompterScript"
     static let recordingTeleprompterLineCountKey = "recordingTeleprompterLineCount"
     static let revealExportInFinderKey = "revealExportInFinder"
-    /// Lets AI agents (Claude Code, Codex, ...) edit recordings through the
-    /// local MCP server. On unless turned off.
     static let agentServerEnabledKey = "agentServerEnabled"
-    /// The ratio an area recording's selection is locked to ("16:9"), or
-    /// empty for freeform.
     static let recordingAreaAspectKey = "recordingAreaAspect"
-    /// The last area recorded, so a retake starts from the same framing.
     static let recordingAreaLastSelectionKey = "recordingAreaLastSelection"
 
     private static let defaultCompressionQuality = 0.8
@@ -108,25 +93,21 @@ enum UpshotPreferences {
             .appendingPathComponent("Upshot", isDirectory: true)
     }
 
-    /// Unique ID of the camera recorded alongside the screen. Empty = camera off.
     static var recordingCameraDeviceID: String {
         get { UserDefaults.standard.string(forKey: recordingCameraDeviceIDKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: recordingCameraDeviceIDKey) }
     }
 
-    /// Unique ID of the microphone captured during recordings. Empty = mic off.
     static var recordingMicrophoneDeviceID: String {
         get { UserDefaults.standard.string(forKey: recordingMicrophoneDeviceIDKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: recordingMicrophoneDeviceIDKey) }
     }
 
-    /// Whether recordings include system audio. Defaults to off.
     static var recordingSystemAudio: Bool {
         get { UserDefaults.standard.bool(forKey: recordingSystemAudioKey) }
         set { UserDefaults.standard.set(newValue, forKey: recordingSystemAudioKey) }
     }
 
-    /// Countdown delay (in seconds) before a recording starts. 0 means off.
     static var recordingStartDelaySeconds: Int {
         max(0, UserDefaults.standard.integer(forKey: recordingStartDelaySecondsKey))
     }
@@ -139,9 +120,6 @@ enum UpshotPreferences {
         set { UserDefaults.standard.set(newValue?.storageValue ?? "", forKey: recordingAreaAspectKey) }
     }
 
-    /// The last area recorded, in global AppKit coordinates, with the display
-    /// it was on. Restored only while that display is attached and still
-    /// contains it.
     static var recordingAreaLastSelection: (displayID: CGDirectDisplayID, rect: CGRect)? {
         get {
             let parts = (UserDefaults.standard.string(forKey: recordingAreaLastSelectionKey) ?? "")
@@ -163,13 +141,11 @@ enum UpshotPreferences {
         }
     }
 
-    /// Whether the notch teleprompter appears during recordings. Defaults to off.
     static var recordingTeleprompterEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: recordingTeleprompterEnabledKey) }
         set { UserDefaults.standard.set(newValue, forKey: recordingTeleprompterEnabledKey) }
     }
 
-    /// The script read from the teleprompter. Empty means nothing to show.
     static var recordingTeleprompterScript: String {
         get { UserDefaults.standard.string(forKey: recordingTeleprompterScriptKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: recordingTeleprompterScriptKey) }
@@ -177,7 +153,6 @@ enum UpshotPreferences {
 
     static let teleprompterLineCountRange = 2...5
 
-    /// How many script lines the teleprompter shows at once.
     static var recordingTeleprompterLineCount: Int {
         get {
             let stored = UserDefaults.standard.integer(forKey: recordingTeleprompterLineCountKey)
@@ -187,7 +162,6 @@ enum UpshotPreferences {
         set { UserDefaults.standard.set(newValue, forKey: recordingTeleprompterLineCountKey) }
     }
 
-    /// Whether to play the shutter sound after a screenshot. Defaults to on.
     static var playSounds: Bool {
         if UserDefaults.standard.object(forKey: playSoundsKey) == nil {
             return true
@@ -195,7 +169,6 @@ enum UpshotPreferences {
         return UserDefaults.standard.bool(forKey: playSoundsKey)
     }
 
-    /// Whether the menu bar icon is shown. Defaults to on.
     static var showMenuBarIcon: Bool {
         if UserDefaults.standard.object(forKey: showMenuBarIconKey) == nil {
             return true
@@ -203,10 +176,6 @@ enum UpshotPreferences {
         return UserDefaults.standard.bool(forKey: showMenuBarIconKey)
     }
 
-    /// Whether Upshot's own windows and floating controls are visible in
-    /// screenshots and screen recordings. Defaults to off for capture privacy.
-    /// Keeps the app `.accessory` even while its windows are open, so the
-    /// Dock icon never appears. Defaults to off.
     static var hideDockIcon: Bool {
         UserDefaults.standard.bool(forKey: hideDockIconKey)
     }
@@ -215,18 +184,14 @@ enum UpshotPreferences {
         UserDefaults.standard.bool(forKey: includeAppWindowsInCapturesKey)
     }
 
-    /// Whether captured windows include their drop shadow. Defaults to off
-    /// (tighter, shadow-free crops).
     static var captureWindowShadow: Bool {
         UserDefaults.standard.bool(forKey: captureWindowShadowKey)
     }
 
-    /// Countdown delay (in seconds) before a capture is taken. 0 means off.
     static var captureDelaySeconds: Int {
         max(0, UserDefaults.standard.integer(forKey: captureDelaySecondsKey))
     }
 
-    /// Which screen corner the preview overlay docks to.
     static var previewPosition: PreviewOverlayPosition {
         guard let raw = UserDefaults.standard.string(forKey: previewPositionKey),
               let position = PreviewOverlayPosition(rawValue: raw) else {
@@ -235,12 +200,10 @@ enum UpshotPreferences {
         return position
     }
 
-    /// Seconds before the preview overlay auto-dismisses. 0 means never.
     static var previewAutoCloseSeconds: Int {
         max(0, UserDefaults.standard.integer(forKey: previewAutoCloseSecondsKey))
     }
 
-    /// Whether dragging a preview card out dismisses it. Defaults to on.
     static var previewCloseAfterDragging: Bool {
         if UserDefaults.standard.object(forKey: previewCloseAfterDraggingKey) == nil {
             return true
@@ -248,10 +211,6 @@ enum UpshotPreferences {
         return UserDefaults.standard.bool(forKey: previewCloseAfterDraggingKey)
     }
 
-    /// Whether the annotation editor displays a downscaled preview of the
-    /// screenshot to reduce memory usage. This only affects the on-screen
-    /// editing preview - exported images are always rendered at full
-    /// resolution. Defaults to on.
     static var lowResolutionEditorPreview: Bool {
         if UserDefaults.standard.object(forKey: lowResolutionEditorPreviewKey) == nil {
             return true
@@ -259,8 +218,6 @@ enum UpshotPreferences {
         return UserDefaults.standard.bool(forKey: lowResolutionEditorPreviewKey)
     }
     
-    /// Whether a finished Studio export selects the file in Finder. An export
-    /// is a deliberate "hand me the file" action, so this defaults to on.
     static var revealExportInFinder: Bool {
         if UserDefaults.standard.object(forKey: revealExportInFinderKey) == nil {
             return true
@@ -275,9 +232,6 @@ enum UpshotPreferences {
         return UserDefaults.standard.bool(forKey: agentServerEnabledKey)
     }
 
-    /// Whether fullscreen captures on notched displays trim the empty black
-    /// menu-bar strip at the top. The strip is only removed when it's solid
-    /// black (menu bar hidden); a revealed menu bar is preserved. Defaults to on.
     static var trimFullscreenMenuBar: Bool {
         if UserDefaults.standard.object(forKey: trimFullscreenMenuBarKey) == nil {
             return true
@@ -285,7 +239,6 @@ enum UpshotPreferences {
         return UserDefaults.standard.bool(forKey: trimFullscreenMenuBarKey)
     }
 
-    // MARK: - Cloud
     
     static var cloudWorkerURL: String {
         CloudCredentialStore.shared.workerURL
@@ -295,7 +248,6 @@ enum UpshotPreferences {
         CloudCredentialStore.shared.uploadToken
     }
     
-    /// Cloud upload is available when the worker URL and upload token are configured.
     static var isCloudConfigured: Bool {
         CloudCredentialStore.shared.isConfigured
     }
@@ -362,46 +314,13 @@ enum ScreenshotExportFormat: String, CaseIterable, Identifiable {
 
 enum ScreenshotFileActions {
     static func copyImageToClipboard(from url: URL) throws {
-        let contentType = UTType(filenameExtension: url.pathExtension)
-        let dataType: NSPasteboard.PasteboardType = if contentType?.conforms(to: .jpeg) == true {
-            NSPasteboard.PasteboardType(UTType.jpeg.identifier)
-        } else {
-            .png
-        }
-
-        try copyImageToClipboard(from: url, dataType: dataType)
+        try ScreenshotClipboardService.copy(from: url)
     }
 
     static func copyPNGToClipboard(from url: URL) throws {
-        try copyImageToClipboard(from: url, dataType: .png)
+        try ScreenshotClipboardService.copy(from: url)
     }
 
-    private static func copyImageToClipboard(from url: URL, dataType: NSPasteboard.PasteboardType) throws {
-        let imageData = try Data(contentsOf: url, options: .mappedIfSafe)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-
-        // Write several representations on a single pasteboard item so that
-        // every kind of paste target can find a flavor it understands:
-        //
-        // - `.fileURL`: terminals and apps that "paste a file" (e.g. opencode's
-        //   terminal, editors, Slack) read the file reference from disk.
-        // - image data / `.tiff`: rich-text and web targets (Gmail, Notes, Mail,
-        //   image editors) read raw pixels directly.
-        //
-        // Only providing image data is why pasting worked in Gmail but not in
-        // terminal apps - those read the file URL flavor instead.
-        let item = NSPasteboardItem()
-        item.setString(url.absoluteString, forType: .fileURL)
-        item.setData(imageData, forType: dataType)
-        if let tiffData = NSBitmapImageRep(data: imageData)?.tiffRepresentation
-            ?? NSImage(data: imageData)?.tiffRepresentation {
-            item.setData(tiffData, forType: .tiff)
-        }
-
-        pasteboard.writeObjects([item])
-    }
-    
     @discardableResult
     static func saveToDefaultLocation(from url: URL) throws -> URL {
         let destinationDirectory = UpshotPreferences.exportDirectory
@@ -430,10 +349,6 @@ enum ScreenshotFileActions {
         }
     }
 
-    /// Updates an already-associated export without changing its file format.
-    /// The replacement is staged beside the destination and atomically swapped
-    /// in only after encoding succeeds, so the last good export is never deleted
-    /// first. Pixel dimensions are preserved; PNG-to-PNG updates copy bytes.
     static func replaceExistingExport(from sourceURL: URL, at destinationURL: URL) throws {
         guard let destinationType = exportContentType(for: destinationURL) else {
             throw CocoaError(.fileWriteUnknown)
@@ -550,13 +465,9 @@ enum ScreenshotFileActions {
     }
 }
 
-// MARK: - Library analysis
 
 extension UpshotPreferences {
-    /// The master switch for reading and sorting captures in the background.
     static let libraryAnalyzeCapturesKey = "libraryAnalyzeCaptures"
-    /// Whether captures from before `libraryAutoSortSince` are sorted by the
-    /// model too. Off until the user opts in, since it can take hours.
     static let librarySortExistingKey = "librarySortExistingCaptures"
     static let librarySortOfferDismissedKey = "librarySortOfferDismissed"
     private static let libraryAutoSortSinceKey = "libraryAutoSortSince"
@@ -569,8 +480,6 @@ extension UpshotPreferences {
         UserDefaults.standard.bool(forKey: librarySortExistingKey)
     }
 
-    /// Captures made from this moment on are sorted automatically; older ones
-    /// wait for the opt-in. Fixed the first time it's read.
     static var libraryAutoSortSince: Date {
         let stored = UserDefaults.standard.double(forKey: libraryAutoSortSinceKey)
         if stored > 0 { return Date(timeIntervalSinceReferenceDate: stored) }

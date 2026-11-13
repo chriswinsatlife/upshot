@@ -1,36 +1,20 @@
-//
-//  CaptureSource.swift
-//  Upshot
-//
 
 import AppKit
 import CoreGraphics
 
-/// The app, and when known the window, a capture was taken from. Stored with
-/// the capture, because it can't be recovered from the pixels afterwards.
 nonisolated struct CaptureSource: Codable, Sendable, Hashable {
     var bundleIdentifier: String?
     var appName: String
     var windowTitle: String?
 
-    /// Groups captures by app. Bundle IDs survive renames and localization;
-    /// the name is only a fallback for processes without one.
     var appKey: String { bundleIdentifier ?? appName }
 }
 
-/// Works out where a screenshot came from. `screencapture` hands back pixels
-/// only, so the probe snapshots the on-screen windows before the capture
-/// starts and watches the pointer while the user picks a window or draws an
-/// area. Global mouse monitors need no Accessibility permission, and window
-/// titles are readable because Upshot already holds Screen Recording.
 @MainActor
 final class CaptureSourceProbe {
     enum Target {
-        /// The whole display: the frontmost app, else the topmost window on it.
         case display(CGDirectDisplayID?)
-        /// The window under the click that picked it.
         case window
-        /// The window under the middle of the drawn area.
         case area
     }
 
@@ -38,19 +22,16 @@ final class CaptureSourceProbe {
         let pid: pid_t
         let ownerName: String
         let title: String?
-        /// Global display coordinates, top-left origin (Quartz space).
         let bounds: CGRect
     }
 
-    /// Front to back, as the window server reports them.
     private let windows: [Window]
     private let frontmostPID: pid_t?
     private var pressedAt: CGPoint?
     private var releasedAt: CGPoint?
     private var monitor: Any?
+    private(set) var selectionModifiers: NSEvent.ModifierFlags = []
 
-    /// Snapshots the windows now. `tracksPointer` also starts watching the
-    /// pointer for interactive window and area picks.
     init(tracksPointer: Bool) {
         windows = Self.onScreenWindows()
         let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
@@ -61,14 +42,16 @@ final class CaptureSourceProbe {
             let isPress = event.type == .leftMouseDown
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if isPress { self.pressedAt = location } else { self.releasedAt = location }
+                if isPress {
+                    self.pressedAt = location
+                } else {
+                    self.releasedAt = location
+                    self.selectionModifiers = event.modifierFlags
+                }
             }
         }
     }
 
-    /// Stops watching the pointer and names the source, if any window fits.
-    /// Call it on every path, a cancelled capture included, so the monitor
-    /// never outlives the capture.
     func finish(_ target: Target) -> CaptureSource? {
         stop()
         let window: Window?
@@ -107,8 +90,6 @@ final class CaptureSourceProbe {
         windows.first { $0.bounds.contains(point) }
     }
 
-    /// Ordinary app windows only: layer 0, visible, not Upshot's own
-    /// panels and not the system's capture overlays.
     private static func onScreenWindows() -> [Window] {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
@@ -129,8 +110,6 @@ final class CaptureSourceProbe {
         }
     }
 
-    /// AppKit's global space is bottom-left at the primary display; Quartz
-    /// window bounds are top-left.
     private nonisolated static func quartzPoint(_ point: NSPoint) -> CGPoint {
         let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
         return CGPoint(x: point.x, y: primaryHeight - point.y)

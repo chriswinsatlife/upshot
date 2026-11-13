@@ -376,10 +376,7 @@ final class CaptureShelf {
         guard let item = item(id: id), item.kind == .image else { return }
         let url = item.url
         Task {
-            let text = await ImageTextRecognizer.recognizeText(at: url)
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            await CaptureTextActions.copyText(at: url)
         }
     }
 

@@ -132,7 +132,7 @@ final class AnnotationEditorModel {
         } else {
             renderSourceURL = url
             let presetStore = AnnotationBackgroundPresetStore.shared
-            let activePreset = presetStore.activePreset
+            let activePreset = ScreenshotOutputMetadata.hasAppliedBackgroundPreset(at: url) ? nil : presetStore.activePreset
             backgroundSettings = document?.backgroundSettings ?? activePreset?.settings ?? AnnotationBackgroundSettings()
             appliedBackgroundPresetID = document == nil ? activePreset?.id : nil
         }
@@ -485,7 +485,20 @@ final class AnnotationEditorModel {
         let generation = UUID()
         smartRedactionGeneration = generation
         smartRedactionTask = Task { @MainActor [weak self] in
-            let regions = await SmartRedactionRecognizer.sensitiveRegions(at: recognitionURL)
+            let regions: [SmartRedactionRegion]
+            do {
+                regions = try await SmartRedactionRecognizer.recognizeSensitiveRegions(at: recognitionURL)
+            } catch {
+                guard let self, self.smartRedactionGeneration == generation else { return }
+                self.smartRedactionTask = nil
+                self.isSmartRedacting = false
+                guard !(error is CancellationError), !Task.isCancelled,
+                      self.sourceURL == loadedSourceURL,
+                      self.baseImageURL == recognitionURL || self.sourceURL == recognitionURL else { return }
+                self.smartRedactionMessage = ImageTextRecognizer.failureTitle(for: error)
+                NSLog("Smart Redaction %@: %@", ImageTextRecognizer.failureTitle(for: error), String(describing: error))
+                return
+            }
 
             guard !Task.isCancelled, let self, self.smartRedactionGeneration == generation else { return }
             self.smartRedactionTask = nil

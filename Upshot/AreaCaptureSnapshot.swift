@@ -35,6 +35,13 @@ struct AreaCaptureSnapshot {
     }
 
     static func captureAll() async throws -> [AreaCaptureSnapshot] {
+        let lease = try await DesktopIconVisibilityService.shared.beginCapture()
+        defer { DesktopIconVisibilityService.shared.endCapture(lease) }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let coverIDs = DesktopIconVisibilityService.shared.coverWindowIDs
+        let excluded = content.windows.filter {
+            !UpshotPreferences.includeAppWindowsInCaptures && $0.owningApplication?.processID == getpid() && !coverIDs.contains($0.windowID)
+        }
         var snapshots: [AreaCaptureSnapshot] = []
         let screens = NSScreen.screens.compactMap { screen -> (CGDirectDisplayID, CGRect)? in
             guard let displayID = ActiveDisplayResolver.displayID(for: screen) else { return nil }
@@ -42,7 +49,14 @@ struct AreaCaptureSnapshot {
         }
         for (displayID, frame) in screens {
             try Task.checkCancellation()
-            let image = try await SCScreenshotManager.captureImage(in: CGDisplayBounds(displayID))
+            guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw CocoaError(.fileReadUnknown) }
+            let filter = SCContentFilter(display: display, excludingWindows: excluded)
+            let configuration = SCStreamConfiguration()
+            configuration.width = Int(filter.contentRect.width * CGFloat(filter.pointPixelScale))
+            configuration.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))
+            configuration.showsCursor = false
+            configuration.ignoreShadowsDisplay = false
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
             snapshots.append(AreaCaptureSnapshot(displayID: displayID, frame: frame, image: image))
         }
         guard !snapshots.isEmpty else { throw CocoaError(.fileReadUnknown) }

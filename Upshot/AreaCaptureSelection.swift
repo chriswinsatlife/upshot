@@ -16,6 +16,9 @@ struct AreaCaptureSelectionResult {
     let snapshots: [AreaCaptureSnapshot]
     let frozen: Bool
     let source: CaptureSource?
+    var cursor: ScreenshotCursorSnapshot?
+    var skipBackgroundPreset = false
+    var capturedAt = Date()
 }
 
 @MainActor
@@ -38,6 +41,7 @@ final class AreaCaptureSelection {
     private var screenObserver: NSObjectProtocol?
     private let liveMagnifier = AreaSelectionLiveMagnifier()
     private var active = false
+    private var cursor: ScreenshotCursorSnapshot?
     private var frozen = true
     private(set) var isAllInOne = false
     private(set) var mode: AllInOneCaptureMode = .area
@@ -60,13 +64,14 @@ final class AreaCaptureSelection {
         }
     }
 
-    func select(smartElement: Bool = false, allInOne: Bool = false) async throws -> AreaCaptureSelectionResult? {
+    func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area) async throws -> AreaCaptureSelectionResult? {
         guard !active, !CaptureCountdownPresenter.shared.isRunning, !Task.isCancelled else { return nil }
+        cursor = ScreenshotCursorService.snapshot()
         active = true
         defer { active = false; snapshots.removeAll(); windows.removeAll() }
         frozen = UpshotPreferences.areaSelectionFreezeScreen
         isAllInOne = allInOne
-        mode = smartElement ? .element : allInOne ? UpshotPreferences.allInOneLastMode : .area
+        mode = smartElement ? .element : allInOne ? UpshotPreferences.allInOneLastMode : initialMode
         status = nil
         start = nil
         highlightedRect = allInOne ? AreaSelectionMemory.lastSelectionRect : nil
@@ -283,7 +288,13 @@ final class AreaCaptureSelection {
             target = Self.target(in: rect, windows: windows)
         }
         if isAllInOne { AreaSelectionMemory.rememberSelection(mode: mode, rect: rect) }
-        finish(AreaCaptureSelectionResult(kind: kind, rect: rect, snapshots: snapshots, frozen: frozen, source: target?.source))
+        let location = ActiveDisplayResolver.quartzPoint(fromAppKit: pointer)
+        let captureCursor = cursor.map {
+            ScreenshotCursorSnapshot(image: $0.image, pointSize: $0.pointSize, hotSpot: $0.hotSpot, location: location)
+        }
+        var result = AreaCaptureSelectionResult(kind: kind, rect: rect, snapshots: snapshots, frozen: frozen, source: target?.source, cursor: captureCursor)
+        result.skipBackgroundPreset = NSEvent.modifierFlags.contains(.shift)
+        finish(result)
     }
 
     static func captureSource(in rect: CGRect) -> CaptureSource? {

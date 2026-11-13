@@ -63,7 +63,7 @@ final class CaptureCoordinator {
             case .area, .element, .window, .fullscreen:
                 guard let url = try await ScreenshotManager.shared.capture(selection, includeShadow: UpshotPreferences.captureWindowShadow,
                                                                            delaySeconds: UpshotPreferences.captureDelaySeconds) else { return nil }
-                return finishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
+                return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
             }
         } catch {
             NSLog("All-In-One capture failed: %@", String(describing: error))
@@ -81,7 +81,7 @@ final class CaptureCoordinator {
         guard let url = await ScreenshotManager.shared.captureArea(includeShadow: UpshotPreferences.captureWindowShadow,
                                                                   delaySeconds: UpshotPreferences.captureDelaySeconds,
                                                                   smartElement: true) else { return nil }
-        return finishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
+        return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
     }
 
     func capturePreviousArea() {
@@ -91,7 +91,7 @@ final class CaptureCoordinator {
     @discardableResult
     func capturePreviousAreaAwaiting() async -> URL? {
         guard let url = await ScreenshotManager.shared.capturePreviousArea(delaySeconds: UpshotPreferences.captureDelaySeconds) else { return nil }
-        return finishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
+        return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
     }
 
     func captureText() {
@@ -114,6 +114,15 @@ final class CaptureCoordinator {
         await performCaptureArea()
     }
 
+    func captureAreaAwaiting(delaySeconds: Int, presentsPreview: Bool) async -> URL? {
+        guard let url = await ScreenshotManager.shared.captureArea(
+            includeShadow: UpshotPreferences.captureWindowShadow,
+            delaySeconds: delaySeconds
+        ) else { return nil }
+        return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID,
+                                             source: ScreenshotManager.shared.lastAreaCaptureSource, presentsPreview: presentsPreview)
+    }
+
     @discardableResult
     func captureTextAwaiting() async -> CaptureTextOutcome {
         await performCaptureText()
@@ -131,20 +140,19 @@ final class CaptureCoordinator {
         let probe = CaptureSourceProbe(tracksPointer: false)
         let source = probe.finish(.display(displayID))
         guard let url = await ScreenshotManager.shared.captureFullscreen(displayID: displayID) else { return nil }
-        return finishCapture(url: url, displayID: displayID, source: source)
+        return await processAndFinishCapture(url: url, displayID: displayID, source: source)
     }
 
     @discardableResult
     private func performCaptureWindow() async -> URL? {
-        let probe = CaptureSourceProbe(tracksPointer: true)
         let captured = await ScreenshotManager.shared.captureWindow(
             includeShadow: UpshotPreferences.captureWindowShadow,
             delaySeconds: UpshotPreferences.captureDelaySeconds
         )
-        let source = probe.finish(.window)
+        let source = ScreenshotManager.shared.lastAreaCaptureSource
         guard let url = captured else { return nil }
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
-        return finishCapture(url: url, displayID: displayID, source: source)
+        return await processAndFinishCapture(url: url, displayID: displayID, source: source)
     }
 
     @discardableResult
@@ -156,7 +164,7 @@ final class CaptureCoordinator {
         let source = ScreenshotManager.shared.lastAreaCaptureSource
         guard let url = captured else { return nil }
         let displayID = ScreenshotManager.shared.lastAreaCaptureDisplayID
-        return finishCapture(url: url, displayID: displayID, source: source)
+        return await processAndFinishCapture(url: url, displayID: displayID, source: source)
     }
 
     @discardableResult
@@ -238,11 +246,34 @@ final class CaptureCoordinator {
 
     @discardableResult
     @MainActor
-    private func finishCapture(url: URL, displayID: CGDirectDisplayID?, source: CaptureSource?) -> URL {
+    private func processAndFinishCapture(url: URL, displayID: CGDirectDisplayID?, source: CaptureSource?, presentsPreview: Bool = true) async -> URL? {
+        let metadata = ScreenshotManager.shared.lastCaptureMetadata
+        do {
+            let processedURL = try await ScreenshotOutputService.processCapture(
+                at: url, captureType: metadata.captureType, appName: source?.appName ?? "Upshot",
+                displayID: displayID, captureBounds: metadata.bounds, sourceScale: metadata.sourceScale,
+                cursor: metadata.cursor, skipBackgroundPreset: metadata.skipBackgroundPreset, capturedAt: metadata.capturedAt
+            )
+            return finishCapture(url: processedURL, displayID: displayID, source: source, presentsPreview: presentsPreview)
+        } catch {
+            NSLog("Screenshot output integration failed; raw capture retained file=%@ error=%@", url.path, error.localizedDescription)
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: displayID)
+            return nil
+        }
+    }
+
+    @discardableResult
+    private func finishCapture(url: URL, displayID: CGDirectDisplayID?, source: CaptureSource?, presentsPreview: Bool) -> URL {
         if UpshotPreferences.playSounds {
             CaptureFeedbackSound.play()
         }
-        return showPreview(url: url, displayID: displayID, source: source)
+        let historyURL = presentsPreview
+            ? showPreview(url: url, displayID: displayID, source: source)
+            : ScreenshotHistoryStore.shared.importScreenshot(from: url, source: source)
+        if UpshotPreferences.recognitionDetectCodes {
+            Task { await CaptureCodeActions.detectCodes(at: historyURL, displayID: displayID) }
+        }
+        return historyURL
     }
 
     @discardableResult

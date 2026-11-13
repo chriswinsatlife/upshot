@@ -5,11 +5,14 @@ struct TextRecognitionSettingsSection: View {
     @AppStorage(UpshotPreferences.recognitionLanguageKey) private var language = ""
     @AppStorage(UpshotPreferences.recognitionKeepLineBreaksKey) private var keepLineBreaks = true
     @AppStorage(UpshotPreferences.recognitionDetectLinksKey) private var detectLinks = true
+    @AppStorage(UpshotPreferences.recognitionDetectCodesKey) private var detectCodes = false
     @State private var languages: [String] = []
     @State private var languageError: String?
 
     var body: some View {
         Section("Text Recognition") {
+            Toggle("Detect QR codes and barcodes after capture", isOn: $detectCodes)
+                .toggleStyle(.ink)
             Picker("Recognition language", selection: $language) {
                 Text("Automatic").tag("")
                 ForEach(languages, id: \.self) { identifier in

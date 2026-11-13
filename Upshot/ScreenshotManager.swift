@@ -12,12 +12,15 @@ final class ScreenshotManager {
 
     private(set) var lastAreaCaptureDisplayID: CGDirectDisplayID?
     private(set) var lastAreaCaptureSource: CaptureSource?
+    private(set) var lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .area)
 
 
     func captureFullscreen(displayID: CGDirectDisplayID?) async -> URL? {
+        let metadata = ScreenshotCaptureMetadata(captureType: .fullscreen)
         let displayIndex = Self.screencaptureDisplayIndex(for: displayID)
-        guard let url = await runScreencapture(args: ["-D", "\(displayIndex)"]) else { return nil }
+        guard let url = await runScreencapture(args: ["-D", "\(displayIndex)"] + ScreenshotCursorService.noninteractiveCaptureArguments) else { return nil }
 
+        lastCaptureMetadata = metadata
         trimEmptyMenuBarIfNeeded(at: url, displayID: displayID)
         return url
     }
@@ -39,13 +42,28 @@ final class ScreenshotManager {
 
 
     func captureWindow(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
+        if UpshotPreferences.screenshotShowCursor {
+            do {
+                guard let selection = try await AreaCaptureSelection.shared.select(initialMode: .window) else { return nil }
+                return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
+            } catch {
+                NSLog("Window capture failed: %@", error.localizedDescription)
+                CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+                return nil
+            }
+        }
+        let probe = CaptureSourceProbe(tracksPointer: true)
         NSLog("Window capture started: shadow=%d delay=%ld", includeShadow, delaySeconds)
         var args = ["-w"]
         if !includeShadow {
             args.append("-o")
         }
         args.append(contentsOf: delayArguments(delaySeconds))
-        return await runScreencapture(args: args)
+        let url = await runScreencapture(args: args)
+        lastAreaCaptureSource = probe.finish(.window)
+        lastAreaCaptureDisplayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
+        lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .window, skipBackgroundPreset: probe.selectionModifiers.contains(.shift))
+        return url
     }
 
 
@@ -82,10 +100,19 @@ final class ScreenshotManager {
             var arguments = ["-l", "\(windowID)"]
             if !includeShadow { arguments.append("-o") }
             NSLog("Area window capture started: window=%u shadow=%d", windowID, includeShadow)
-            return await runScreencapture(args: arguments)
+            let metadata = ScreenshotCaptureMetadata(captureType: .window, skipBackgroundPreset: selection.skipBackgroundPreset, capturedAt: selection.capturedAt)
+            let url = await runScreencapture(args: arguments + ScreenshotCursorService.noninteractiveCaptureArguments)
+            lastCaptureMetadata = metadata
+            return url
         }
         guard let image = try await image(for: selection, delaySeconds: delaySeconds) else { return nil }
         let scale = selection.snapshots.filter { $0.frame.intersects(selection.rect) }.map(\.scale).max() ?? 1
+        let topLeft = ActiveDisplayResolver.quartzPoint(fromAppKit: CGPoint(x: selection.rect.minX, y: selection.rect.maxY))
+        let bounds = CGRect(origin: topLeft, size: selection.rect.size)
+        let delayedCursor = delaySeconds > 0 ? ScreenshotCursorService.snapshot() : selection.cursor
+        lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .area, bounds: bounds, sourceScale: scale,
+                                                        cursor: delayedCursor, skipBackgroundPreset: delaySeconds > 0 ? NSEvent.modifierFlags.contains(.shift) : selection.skipBackgroundPreset,
+                                                        capturedAt: delaySeconds > 0 ? Date() : selection.capturedAt)
         let url = try writeAreaImage(image, scale: scale)
         AreaSelectionMemory.rememberScreenshot(rect: selection.rect)
         return url
@@ -99,7 +126,7 @@ final class ScreenshotManager {
         }
         do {
             let snapshots = try await AreaCaptureSnapshot.captureAll()
-            let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: AreaCaptureSelection.captureSource(in: rect))
+            let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: AreaCaptureSelection.captureSource(in: rect), cursor: ScreenshotCursorService.snapshot(), skipBackgroundPreset: NSEvent.modifierFlags.contains(.shift))
             NSLog("Previous screenshot area capture started")
             return try await capture(selection, includeShadow: false, delaySeconds: delaySeconds)
         } catch {
@@ -148,6 +175,15 @@ final class ScreenshotManager {
 
 
     private func runScreencapture(args: [String]) async -> URL? {
+        let lease: UUID?
+        do {
+            lease = try await DesktopIconVisibilityService.shared.beginCapture()
+        } catch {
+            NSLog("Screenshot acquisition failed: %@", error.localizedDescription)
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
+        }
+        defer { DesktopIconVisibilityService.shared.endCapture(lease) }
         let filePath = generateTempPath(extension: "png")
 
         return await withCheckedContinuation { continuation in

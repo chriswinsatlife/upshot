@@ -14,7 +14,9 @@ enum ScreenshotOutputService {
         skipBackgroundPreset: Bool,
         capturedAt: Date = Date()
     ) async throws -> URL {
+        let processingURL = url.deletingLastPathComponent().appendingPathComponent("Upshot_processing_\(UUID().uuidString).png")
         do {
+            try FileManager.default.copyItem(at: url, to: processingURL)
             let options = ScreenshotPixelOptions(
                 convertToSRGB: UpshotPreferences.screenshotConvertToSRGB,
                 scaleToOneX: UpshotPreferences.screenshotScaleToOneX,
@@ -26,7 +28,7 @@ enum ScreenshotOutputService {
                 : nil
             let result = try await Task.detached(priority: .userInitiated) {
                 try processPixels(
-                    at: url,
+                    at: processingURL,
                     options: options,
                     sourceScale: sourceScale,
                     cursor: cursor,
@@ -45,14 +47,17 @@ enum ScreenshotOutputService {
             let fileName = ScreenshotCaptureNamePrompt.fileName(suggested: suggested, outputScale: result.outputScale)
             let destination: URL
             if url.lastPathComponent == fileName {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: processingURL)
                 destination = url
             } else {
                 destination = ScreenshotFileNaming.uniqueURL(fileName: fileName, in: url.deletingLastPathComponent())
-                try FileManager.default.moveItem(at: url, to: destination)
+                try FileManager.default.moveItem(at: processingURL, to: destination)
+                try? FileManager.default.removeItem(at: url)
             }
             NSLog("Screenshot output: capture finalized type=%@ filename=%@ width=%d height=%d scale=%.2f", captureType.rawValue, destination.lastPathComponent, result.width, result.height, result.outputScale)
             return destination
         } catch {
+            try? FileManager.default.removeItem(at: processingURL)
             NSLog("Screenshot output: processing failed type=%@ error=%@", captureType.rawValue, error.localizedDescription)
             throw error
         }

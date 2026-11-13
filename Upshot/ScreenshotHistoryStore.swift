@@ -145,7 +145,10 @@ final class ScreenshotHistoryStore {
     func importScreenshot(from sourceURL: URL, source: CaptureSource? = nil) -> URL {
         do {
             try FileManager.default.createDirectory(at: Self.historyDirectory, withIntermediateDirectories: true)
-            let destinationURL = uniqueHistoryURL(for: sourceURL)
+            let destinationURL = ScreenshotFileNaming.uniqueURL(
+                fileName: ScreenshotFileNaming.historyFileName(for: sourceURL),
+                in: Self.historyDirectory
+            )
 
             if sourceURL != destinationURL {
                 if FileManager.default.fileExists(atPath: destinationURL.path) {

@@ -201,10 +201,7 @@ enum AutomationActions {
                 }
                 seconds = delay
             } else { seconds = UpshotPreferences.captureDelaySeconds }
-            let probe = CaptureSourceProbe(tracksPointer: true)
-            if let raw = await ScreenshotManager.shared.captureArea(includeShadow: UpshotPreferences.captureWindowShadow, delaySeconds: seconds) {
-                captured = ScreenshotHistoryStore.shared.importScreenshot(from: raw, source: probe.finish(.area))
-            } else { captured = nil }
+            captured = await CaptureCoordinator.shared.captureAreaAwaiting(delaySeconds: seconds, presentsPreview: false)
         default: throw AutomationError.message("Unsupported capture action.")
         }
         guard let captured else { throw AutomationError.message("Screenshot capture was cancelled or failed.") }

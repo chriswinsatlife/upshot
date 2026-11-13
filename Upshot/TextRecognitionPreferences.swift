@@ -1,6 +1,12 @@
 import Foundation
 
 extension UpshotPreferences {
+    static let recognitionDetectCodesKey = "recognitionDetectCodes"
+
+    static var recognitionDetectCodes: Bool {
+        UserDefaults.standard.bool(forKey: recognitionDetectCodesKey)
+    }
+
     static let recognitionLanguageKey = "recognitionLanguage"
     static let recognitionKeepLineBreaksKey = "recognitionKeepLineBreaks"
     static let recognitionDetectLinksKey = "recognitionDetectLinks"
