@@ -426,3 +426,15 @@ nonisolated struct CaptureFeaturePrintPack {
         open()
     }
 }
+
+extension CaptureLibraryIndex {
+    func installRenderAnalyses(_ fixtureAnalyses: [String: CaptureAnalysis], unsortedExistingCount fixtureUnsortedExistingCount: Int, readingCount fixtureReadingCount: Int) {
+        precondition(UpshotStorage.isRenderingStates)
+        analyses = fixtureAnalyses
+        unsortedExistingCount = fixtureUnsortedExistingCount
+        readingCount = fixtureReadingCount
+        sortingCount = 0
+        isLoaded = true
+        revision &+= 1
+    }
+}

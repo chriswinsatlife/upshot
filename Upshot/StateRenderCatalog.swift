@@ -126,20 +126,7 @@ enum StateRenderCatalog {
                 return AnyView(SettingsAdvancedPane())
             }
         }
-        for variant in ["grid", "list", "empty", "search", "search-empty", "inspector", "multi-selection", "screenshots", "recordings"] {
-            add("library-\(variant)", "CaptureLibraryView", "struct CaptureLibraryView", 1280, 850) {
-                let model = CaptureLibraryModel.shared
-                model.installRenderItems(variant == "empty" ? [] : fixtures.items)
-                UpshotStorage.defaults.set(variant == "list" ? "list" : "grid", forKey: "captureLibrary.layout")
-                UpshotStorage.defaults.set(variant == "inspector" || variant == "multi-selection", forKey: "captureLibrary.inspectorVisible")
-                if variant == "inspector", let item = fixtures.items.first(where: { !$0.isVideo }) { model.selection = [item.id] }
-                if variant == "multi-selection" { model.selection = Set(fixtures.items.prefix(2).map(\.id)) }
-                if variant == "screenshots" { model.scope = .kind(.screenshots) }
-                if variant == "recordings" { model.scope = .kind(.recordings) }
-                if variant.hasPrefix("search") { model.searchText = variant == "search" ? "Release" : "No matching capture" }
-                return AnyView(CaptureLibraryView())
-            }
-        }
+        states += StateRenderLibraryCatalog.states(fixtures: fixtures)
         for tool in AnnotationTool.allCases {
             add("annotation-tool-\(tool.rawValue)", "AnnotationEditorWindow", "struct AnnotationEditorWindow", 1280, 900) {
                 AnyView(AnnotationEditorWindow(url: .constant(fixtures.screenshots[0]), renderModel: fixtures.annotationModel(tool: tool)))
