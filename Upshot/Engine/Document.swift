@@ -195,7 +195,7 @@ enum AnnoShapeGeometry {
         case .arrow:
             return arrowGeometry(shape, in: document)
         case let .text(props):
-            let size = TextMeasure.measure(props)
+            let size = AnnotationTextDecoration.size(props)
             return Rectangle2d(
                 width: Double(size.width),
                 height: Double(size.height),

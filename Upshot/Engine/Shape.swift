@@ -97,6 +97,7 @@ enum TextAlign: String, CaseIterable, Codable {
 }
 
 struct TextProps: Codable, Equatable, Hashable {
+    var style: AnnotationTextStyle?
     var text: String = ""
     var swatch: AnnotationSwatch = .red
     var fontSize: Double = 48

@@ -1,14 +1,7 @@
-//
-//  AnnotationEditorTextStyle.swift
-//  Upshot
-//
 
 import AppKit
 import CoreGraphics
 
-/// The inspector's text controls. Each setter updates the style new text will use *and* whatever
-/// text is selected; the engine re-measures the box from the same layout the glyphs come from, so
-/// a font change reflows it without a round trip through a text view.
 extension AnnotationEditorModel {
     private var selectedTextShape: AnnoShape? {
         guard engine.selectedIds.count == 1, let shape = engine.selectedShapes.first, shape.isText else {
@@ -20,6 +13,16 @@ extension AnnotationEditorModel {
     var isTextStyleAvailable: Bool {
         if !engine.selectedIds.isEmpty { return selectedTextShape != nil }
         return selectedTool == .text
+    }
+
+    var selectedTextStyle: AnnotationTextStyle {
+        get { selectedTextShape?.textProps?.style ?? engine.currentTextStyle }
+        set {
+            engine.currentTextStyle = newValue
+            updateSelectedText { $0.style = newValue }
+            engine.notifyChanged()
+            NSLog("Annotation text style applied style=%@", newValue.rawValue)
+        }
     }
 
     var selectedTextFontSize: CGFloat {

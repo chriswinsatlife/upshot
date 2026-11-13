@@ -1,7 +1,3 @@
-//
-//  AnnotationTextStyleControls.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
@@ -13,6 +9,11 @@ struct AnnotationTextStyleControls: View {
 
     var body: some View {
         VStack(spacing: InspectorMetrics.rowSpacing) {
+            Picker("Style", selection: $model.selectedTextStyle) {
+                ForEach(AnnotationTextStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
             fontFamilyMenu
                 .frame(minWidth: 0, maxWidth: .infinity)
 

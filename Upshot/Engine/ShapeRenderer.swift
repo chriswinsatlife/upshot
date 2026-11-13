@@ -59,13 +59,7 @@ enum AnnoShapeRenderer {
 
 
     private static func textElements(_ props: TextProps) -> [RenderElement] {
-        guard !props.text.isEmpty else { return [] }
-        return [RenderElement(
-            content: .glyphs(TextMeasure.glyphPath(props)),
-            fill: props.swatch.nsColor,
-            stroke: nil,
-            usesEvenOddFill: false
-        )]
+        AnnotationTextDecoration.elements(props)
     }
 
 

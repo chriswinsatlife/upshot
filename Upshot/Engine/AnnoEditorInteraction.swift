@@ -622,6 +622,7 @@ extension AnnoEditor {
     func createText(at pagePoint: Vec) {
         markUndo()
         var props = TextProps()
+        props.style = currentTextStyle
         props.swatch = currentSwatch
         props.fontSize = currentTextFontSize
         props.fontFamily = currentFontFamily
@@ -630,7 +631,7 @@ extension AnnoEditor {
         props.isUnderline = currentTextIsUnderline
         props.align = currentTextAlign
 
-        let size = TextMeasure.measure(props)
+        let size = AnnotationTextDecoration.size(props)
         let x: Double
         switch props.align {
         case .start: x = pagePoint.x
@@ -660,6 +661,9 @@ extension AnnoEditor {
             selectedIds.remove(id)
         }
         onEditingTextChanged?(nil)
+        if let props = document.shape(id)?.textProps {
+            NSLog("Annotation text committed style=%@", (props.style ?? .plain).rawValue)
+        }
         if tool == .text { tool = .select }
         notifyChanged()
     }

@@ -1,21 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// The annotation layer: one `NSView` that draws every shape and the selection chrome.
-///
-/// It is a pure renderer. Pointer input still arrives through `AnnotationCanvas`'s existing
-/// gesture, which already unprojects the camera transform and owns zoom and pan - so the engine
-/// gets clean page-space points without this view having to re-implement any of that.
-///
-/// Ported in spirit from the drawing-app's `UI/CanvasView.swift`, minus the parts that belong to
-/// Upshot's chrome (grid, background, its own camera).
 struct AnnoCanvasLayer: NSViewRepresentable {
     let editor: AnnoEditor
     let sourceImage: CGImage?
     let imageFrame: CGRect
     let imageSize: CGSize
     let spotlightClip: CGPath?
-    /// Bumped by the model on every change, so SwiftUI knows to push a redraw through.
     let revision: Int
 
     func makeNSView(context: Context) -> AnnoCanvasNSView {
@@ -66,11 +57,8 @@ final class AnnoCanvasNSView: NSView {
         AnnoShapeDrawing.clearCaches()
     }
 
-    /// Page space is y-down, like the image and like the engine.
     override var isFlipped: Bool { true }
 
-    /// Transparent to the pointer except where the text caret is: the drag gesture that drives the
-    /// engine lives in SwiftUI, and it only fires if this view declines the event.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let textOverlay else { return nil }
         return textOverlay.frame.contains(convert(point, from: superview)) ? textOverlay : nil
@@ -94,12 +82,8 @@ final class AnnoCanvasNSView: NSView {
         self.spotlightClip = spotlightClip
         self.imageFrame = imageFrame
         self.imageSize = imageSize
-        // The editor's camera has to track the layout even when no pointer event has fired -
-        // otherwise a window resize leaves the selection chrome drawing against a stale frame.
         editor.viewport = AnnoViewport(imageFrame: imageFrame, imageSize: imageSize)
 
-        // Attach or tear down the caret to match the engine, and keep it lined up with its shape
-        // as the document, the camera or the layout move underneath it.
         if textOverlay?.window != nil || editor.editingTextId != nil {
             updateTextOverlay(for: editor.editingTextId)
         }
@@ -107,7 +91,6 @@ final class AnnoCanvasNSView: NSView {
         needsDisplay = true
     }
 
-    /// Attach, detach or retarget the editing overlay to follow `editingTextId`.
     private func updateTextOverlay(for id: AnnoShapeID?) {
         guard let editor else { return }
         if let id, textOverlay?.editedShapeId == id { return }
@@ -124,14 +107,12 @@ final class AnnoCanvasNSView: NSView {
         needsDisplay = true
     }
 
-    // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         guard let editor,
               let context = NSGraphicsContext.current?.cgContext,
               imageSize.width > 0, imageFrame.width > 0 else { return }
 
-        // Every colour below is dynamic; resolving them needs the view's appearance to be current.
         effectiveAppearance.performAsCurrentDrawingAppearance {
             render(editor: editor, in: context)
         }
@@ -148,8 +129,6 @@ final class AnnoCanvasNSView: NSView {
             transform: pageToView,
             pageSize: imageSize,
             sample: { [sourceImage] rect in
-                // The rect arrives in view coordinates; both spaces are y-down, so this is a
-                // straight scale into the screenshot's own pixels.
                 guard let sourceImage, self.imageFrame.width > 0, self.imageFrame.height > 0 else { return nil }
                 let sx = CGFloat(sourceImage.width) / self.imageFrame.width
                 let sy = CGFloat(sourceImage.height) / self.imageFrame.height
@@ -169,18 +148,16 @@ final class AnnoCanvasNSView: NSView {
             redactionPreviewCache: redactionCache
         )
 
-        // The shape being typed into is drawn by its text overlay instead, so the two don't double
-        // up while the caret is live.
         let skipped: Set<AnnoShapeID> = editor.editingTextId.map { [$0] } ?? []
         AnnoShapeDrawing.draw(editor.document, in: context, target: target, skipping: skipped)
 
+        if let id = editor.editingTextId, let shape = editor.document.shape(id) {
+            AnnoShapeDrawing.drawShape(shape, document: editor.document, in: context, target: target, textBackgroundOnly: true)
+        }
         drawOverlays(editor: editor, in: context)
     }
 
-    // MARK: - Overlays
 
-    /// Selection, handles and the brush, drawn in view space so they keep a constant weight at any
-    /// zoom.
     private func drawOverlays(editor: AnnoEditor, in context: CGContext) {
         let accent = AnnoTheme.selectionStroke
         let lineWidth = 1.5
@@ -209,11 +186,8 @@ final class AnnoCanvasNSView: NSView {
             context.stroke(rect)
         }
 
-        // While text is being typed the selection frame stays hidden - the text view is the only
-        // affordance.
         guard editor.editingTextId == nil, editor.tool == .select, !editor.selectedIds.isEmpty else { return }
 
-        // A lone arrow shows its own handles, since resizing it as a box makes no sense.
         if editor.selectedIds.count == 1, let shape = editor.selectedShapes.first, shape.isArrow,
            let info = editor.document.arrowInfo(shape.id) {
             let transform = shape.pageTransform
@@ -235,8 +209,6 @@ final class AnnoCanvasNSView: NSView {
 
         guard let bounds = editor.selectionBounds else { return }
 
-        // Draw in the selection's own frame so the box and its corner squares follow a rotated
-        // shape. Sizes are divided by the scale to come out fixed on screen.
         let transform = bounds.transform.cgAffineTransform.concatenating(pageToView)
         let scale = imageFrame.width / imageSize.width
         let box = bounds.box
@@ -248,8 +220,6 @@ final class AnnoCanvasNSView: NSView {
         context.setLineWidth(lineWidth)
         context.strokePath()
 
-        // Only the corners are drawn. The edge and rotate handles stay live for hit testing but are
-        // invisible, which is what keeps the selection quiet.
         let handleSize = 8.0 / scale
         let cornersPath = CGMutablePath()
         for corner in box.corners {

@@ -44,9 +44,14 @@ enum AnnoShapeDrawing {
         _ shape: AnnoShape,
         document: AnnoDocument,
         in context: CGContext,
-        target: Target
+        target: Target,
+        textBackgroundOnly: Bool = false
     ) {
-        let elements = document.renderElements(shape.id)
+        let elements = if textBackgroundOnly, let props = shape.textProps {
+            AnnotationTextDecoration.elements(props, includesText: false)
+        } else {
+            document.renderElements(shape.id)
+        }
         guard !elements.isEmpty else { return }
 
         context.saveGState()
