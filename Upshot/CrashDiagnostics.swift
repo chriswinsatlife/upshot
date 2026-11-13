@@ -7,9 +7,11 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
     private let lock = NSLock()
     private var importedDiagnostics: Set<String> = []
     private let stateDirectory: URL
+    private let logStore: AppLogStore
 
-    init(stateDirectory: URL = AppLog.shared.fileURL.deletingLastPathComponent()) {
+    init(stateDirectory: URL = AppLog.shared.fileURL.deletingLastPathComponent(), logStore: AppLogStore = AppLog.shared) {
         self.stateDirectory = stateDirectory
+        self.logStore = logStore
         super.init()
     }
 
@@ -40,7 +42,9 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
                       modified > previous, modified <= now else { continue }
                 let text = try String(contentsOf: url, encoding: .utf8)
                 guard let fields = Self.crashReportFields(text, filename: url.lastPathComponent) else { continue }
-                AppLog.shared.recordCrash(event: "system_crash_report", fields: fields, previousSession: true)
+                let processID = fields["crashed_pid"].flatMap(Int32.init)
+                let processStart = fields["crashed_process_start"].flatMap(Self.reportDate)
+                guard recordDiagnostic("system_crash_report", fields: fields, processIdentifier: processID, processStart: processStart) else { throw CocoaError(.fileWriteUnknown) }
                 count += 1
             }
             AppLog.event("crash", "system_crash_scan_completed", fields: ["reports": String(count)])
@@ -77,7 +81,27 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
         var fields = ["report": filename, "incident_id": body["incident"] as? String ?? header["incident_id"] as? String ?? "unavailable", "exception": exception?["type"] as? String ?? "unavailable", "signal": exception?["signal"] as? String ?? "unavailable", "termination_namespace": termination?["namespace"] as? String ?? "unavailable", "crash_time": body["captureTime"] as? String ?? header["timestamp"] as? String ?? "unavailable"]
         if let code = termination?["code"] as? NSNumber { fields["termination_code"] = code.stringValue }
         if let processID = body["pid"] as? NSNumber { fields["crashed_pid"] = processID.stringValue }
+        if let start = body["procLaunch"] as? String { fields["crashed_process_start"] = start }
         return fields
+    }
+
+    @discardableResult
+    func recordDiagnostic(_ event: String, fields: [String: String], processIdentifier: Int32? = nil, processStart: Date? = nil, range: ClosedRange<Date>? = nil) -> Bool {
+        let selection = logStore.breadcrumbStore.select(processIdentifier: processIdentifier, processStart: processStart, range: range)
+        return logStore.recordCrash(event: event, fields: fields, selection: selection)
+    }
+
+    private static func reportDate(_ value: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: value) { return date }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        for format in ["yyyy-MM-dd HH:mm:ss.SSS Z", "yyyy-MM-dd HH:mm:ss Z"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) { return date }
+        }
+        return nil
     }
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
@@ -102,8 +126,10 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
                    let text = String(data: compact, encoding: .utf8) {
                     fields["call_stack"] = text
                 }
-                AppLog.shared.recordCrash(event: "metrickit_crash", fields: fields, previousSession: true)
-                importedDiagnostics.insert(fingerprint)
+                let range = payload.timeStampBegin <= payload.timeStampEnd ? payload.timeStampBegin...payload.timeStampEnd : nil
+                if recordDiagnostic("metrickit_crash", fields: fields, range: range) {
+                    importedDiagnostics.insert(fingerprint)
+                }
             }
         }
         do {

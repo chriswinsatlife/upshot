@@ -70,7 +70,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
 
     let fileURL: URL
     let sessionID = UUID().uuidString
-    let processStart = Date()
+    let processStart = ProcessBreadcrumbStore.currentProcessStart ?? Date()
     private let bufferLock = NSLock()
     private let crashWriter: CrashLogWriter
     private let writerQueue = DispatchQueue(label: "co.chrisyork.upshot.logging", qos: .utility)
@@ -86,13 +86,14 @@ nonisolated final class AppLogStore: @unchecked Sendable {
     private var descriptor: Int32 = -1
     private var lockDescriptor: Int32 = -1
     private var fileBytes = 0
-    private var previousEvents: [String] = []
+    let breadcrumbStore: ProcessBreadcrumbStore
     private var loggers: [String: Logger] = [:]
     private let formatter: ISO8601DateFormatter
 
     init(directory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Upshot", isDirectory: true), maximumBytes: Int = 5 * 1024 * 1024, backupCount: Int = 3, queueCapacity: Int = 1024) {
         fileURL = directory.appendingPathComponent("upshot.log")
         crashWriter = CrashLogWriter(directory: directory, sessionID: sessionID)
+        breadcrumbStore = ProcessBreadcrumbStore(directory: directory.appendingPathComponent("Breadcrumbs", isDirectory: true))
         self.maximumBytes = maximumBytes
         self.backupCount = backupCount
         self.queueCapacity = queueCapacity
@@ -102,10 +103,6 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         writerQueue.async { [self] in
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-                let restored = Self.readPreviousEvents(fileURL: fileURL, backupCount: backupCount)
-                bufferLock.lock()
-                previousEvents = restored
-                bufferLock.unlock()
                 lockDescriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
                 openFile()
             } catch {
@@ -130,8 +127,10 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         }
         let input = Event(timestamp: Date(), area: area, name: event, fields: fields, persists: persists)
         pending.append(input)
-        breadcrumbs[breadcrumbPosition] = input
-        breadcrumbPosition = (breadcrumbPosition + 1) % breadcrumbs.count
+        if persists {
+            breadcrumbs[breadcrumbPosition] = input
+            breadcrumbPosition = (breadcrumbPosition + 1) % breadcrumbs.count
+        }
         let schedule = !drainScheduled
         drainScheduled = true
         bufferLock.unlock()
@@ -157,6 +156,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
             }
             if batch.isEmpty { return }
             for event in batch { emit(event) }
+            if batch.contains(where: \.persists) { persistBreadcrumbs() }
         }
     }
 
@@ -167,23 +167,23 @@ nonisolated final class AppLogStore: @unchecked Sendable {
     }
 
     @discardableResult
-    func recordCrash(event: String, fields: [String: String], previousSession: Bool = false) -> Bool {
+    func recordCrash(event: String, fields: [String: String], selection: ProcessBreadcrumbSelection? = nil) -> Bool {
         crashWriter.write { deadline in
             let dateFormatter = ISO8601DateFormatter()
             dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             var snapshot: [Event] = []
-            var restored: [String] = []
+
             var status = "available"
             if bufferLock.try() {
                 snapshot = (0..<breadcrumbs.count).compactMap { breadcrumbs[(breadcrumbPosition + $0) % breadcrumbs.count] }
-                restored = previousEvents
                 bufferLock.unlock()
             } else {
                 status = "snapshot_busy"
             }
             var trail: [String] = []
-            if previousSession {
-                trail = restored
+            if let selection {
+                trail = selection.events.map(\.line)
+                status = selection.status
             } else {
                 for input in snapshot {
                     guard DispatchTime.now().uptimeNanoseconds + 1_000_000 < deadline else { status = "deadline_exceeded"; break }
@@ -195,7 +195,12 @@ nonisolated final class AppLogStore: @unchecked Sendable {
             values["crash_id"] = crashID
             values["breadcrumb_count"] = String(trail.count)
             values["breadcrumb_status"] = status
-            values["breadcrumb_source"] = previousSession ? "previous_logged_process" : "current_process"
+            values["breadcrumb_source"] = selection == nil ? "current_process" : "process_archive"
+            if let snapshot = selection?.snapshot {
+                values["breadcrumb_pid"] = String(snapshot.processIdentifier)
+                values["breadcrumb_process_start"] = String(snapshot.processStart.timeIntervalSince1970)
+                values["breadcrumb_session_id"] = snapshot.sessionIdentifier
+            }
             values["write_budget_ms"] = "25"
             var lines: [String] = []
             for (index, line) in trail.enumerated() {
@@ -224,6 +229,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         values["session_id"] = sessionID
         values["pid"] = String(getpid())
         values["process_start"] = String(processStart.timeIntervalSince1970)
+        values["process_start_source"] = ProcessBreadcrumbStore.currentProcessStart == nil ? "log_initialization" : "kernel"
         let encoded = values.keys.sorted().map { key in "\(token(key))=\(quote(AppLog.path(values[key] ?? "")))" }.joined(separator: " ")
         return "\((dateFormatter ?? formatter).string(from: event.timestamp)) area=\(token(event.area)) event=\(token(event.name)) \(encoded)"
     }
@@ -323,22 +329,22 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         }
     }
 
+    private func persistBreadcrumbs() {
+        guard let verifiedStart = ProcessBreadcrumbStore.currentProcessStart else { return }
+        bufferLock.lock()
+        let snapshot = (0..<breadcrumbs.count).compactMap { breadcrumbs[(breadcrumbPosition + $0) % breadcrumbs.count] }
+        bufferLock.unlock()
+        let events = snapshot.map { ProcessBreadcrumb(timestamp: $0.timestamp, line: format($0)) }
+        do {
+            try breadcrumbStore.save(ProcessBreadcrumbSnapshot(processIdentifier: getpid(), processStart: verifiedStart, sessionIdentifier: sessionID, events: events))
+        } catch {
+            reportFileFailure("breadcrumb_archive_failed", fields: ["error": AppLog.error(error)])
+        }
+    }
+
     private func reportFileFailure(_ event: String, fields: [String: String]) {
         let line = format(Event(timestamp: Date(), area: "logging", name: event, fields: fields, persists: false))
         logger(area: "logging").error("\(line, privacy: .public)")
     }
 
-    private static func readPreviousEvents(fileURL: URL, backupCount: Int) -> [String] {
-        var lines: [String] = []
-        for index in stride(from: backupCount, through: 0, by: -1) {
-            let url = index == 0 ? fileURL : URL(fileURLWithPath: fileURL.path + ".\(index)")
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            lines.append(contentsOf: text.split(separator: "\n").map(String.init).filter { !$0.contains("area=crash ") })
-        }
-        guard let last = lines.last,
-              let range = last.range(of: "session_id=\""),
-              let end = last[range.upperBound...].firstIndex(of: "\"") else { return [] }
-        let session = String(last[range.upperBound..<end])
-        return Array(lines.filter { $0.contains("session_id=\"\(session)\"") }.suffix(200))
-    }
 }

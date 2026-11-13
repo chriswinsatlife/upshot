@@ -76,6 +76,57 @@ struct LoggingVerification {
             Darwin.close(descriptor)
             precondition(store.flush())
             print("blocked_crash_verification outcome=verified process_lock=held breadcrumbs=200 elapsed_ns=\(elapsed) independent_file=present")
+        case "archive":
+            guard arguments.count == 3 else { throw VerificationFailure.argument }
+            let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
+            let store = AppLogStore(directory: directory)
+            for index in 0..<2 {
+                store.record(area: "verification", event: "process_archive_probe", fields: ["index": String(index), "marker": arguments[2]])
+                precondition(store.flush())
+            }
+            print("archive_verification outcome=written pid=\(getpid()) process_start=\(store.processStart.timeIntervalSince1970) marker=\(arguments[2])")
+        case "correlation":
+            guard arguments.count == 2 else { throw VerificationFailure.argument }
+            let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
+            let store = AppLogStore(directory: directory)
+            store.prepareCrashCapture()
+            precondition(store.flush())
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .secondsSince1970
+            let urls = try FileManager.default.contentsOfDirectory(at: store.breadcrumbStore.directory, includingPropertiesForKeys: nil)
+            let snapshots = try urls.filter { $0.pathExtension == "json" }.map { try decoder.decode(ProcessBreadcrumbSnapshot.self, from: Data(contentsOf: $0)) }.sorted { $0.processStart < $1.processStart }
+            precondition(snapshots.count == 2)
+            let first = snapshots[0]
+            let second = snapshots[1]
+            precondition(first.processIdentifier != second.processIdentifier)
+            guard let firstEnd = first.events.last?.timestamp, let secondEnd = second.events.last?.timestamp else { throw VerificationFailure.argument }
+            precondition(firstEnd < second.processStart)
+            let service = CrashDiagnostics(stateDirectory: directory, logStore: store)
+            func verify(_ name: String, status: String, count: Int, processIdentifier: Int32? = nil, processStart: Date? = nil, range: ClosedRange<Date>? = nil) throws {
+                precondition(service.recordDiagnostic("metrickit_crash", fields: ["case": name], processIdentifier: processIdentifier, processStart: processStart, range: range))
+                let lines = try String(contentsOf: store.crashFileURL, encoding: .utf8).split(separator: "\n").map(String.init)
+                guard let header = lines.last(where: { $0.contains("event=metrickit_crash ") && $0.contains("case=\"\(name)\"") }) else { throw VerificationFailure.argument }
+                precondition(header.contains("breadcrumb_status=\"\(status)\""))
+                precondition(header.contains("breadcrumb_count=\"\(count)\""))
+                if count > 0 {
+                    precondition(header.contains("breadcrumb_pid=\"\(first.processIdentifier)\""))
+                    let trail = lines.suffix(count).joined(separator: "\n")
+                    precondition(trail.contains(#"marker=\"first\""#))
+                    precondition(!trail.contains(#"marker=\"second\""#))
+                }
+            }
+            try verify("historical_pid", status: "matched_process_identifier", count: 2, processIdentifier: first.processIdentifier)
+            try verify("historical_range", status: "matched_time_range", count: 2, range: first.processStart...firstEnd)
+            try verify("unrelated_range", status: "no_match", count: 0, range: first.processStart.addingTimeInterval(-10000)...first.processStart.addingTimeInterval(-9999))
+            try verify("ambiguous_range", status: "ambiguous_match", count: 0, range: first.processStart...secondEnd)
+            try verify("unknown_pid", status: "no_match", count: 0, processIdentifier: Int32.max)
+            try verify("missing_identity", status: "no_identity", count: 0)
+            let earlier = first.processStart.addingTimeInterval(-3600)
+            try store.breadcrumbStore.save(ProcessBreadcrumbSnapshot(processIdentifier: first.processIdentifier, processStart: earlier, sessionIdentifier: "pid-reuse-verification", events: [ProcessBreadcrumb(timestamp: earlier.addingTimeInterval(1), line: "earlier_process_verification")]))
+            try verify("reused_pid", status: "ambiguous_match", count: 0, processIdentifier: first.processIdentifier)
+            try verify("reused_pid_start", status: "matched_process_identifier", count: 2, processIdentifier: first.processIdentifier, processStart: first.processStart)
+            try verify("wrong_process_start", status: "no_match", count: 0, processIdentifier: first.processIdentifier, processStart: first.processStart.addingTimeInterval(-2000))
+            print("correlation_verification outcome=verified cases=9 historical_pid=matched historical_range=matched unrelated=empty ambiguous=empty missing_identity=empty pid_reuse=disambiguated latest_process=excluded")
         case "exception":
             AppLog.installExceptionHandler()
             for index in 0..<225 {
