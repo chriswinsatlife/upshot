@@ -1,18 +1,12 @@
-//
-//  AnnotationInspector.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
 
-// MARK: - Inspector
 
 enum AnnotationEditorFocusedField: Hashable {
     case watermarkText
 }
 
-/// Sections that fold with a chevron rather than a feature switch.
 private enum AnnotationInspectorAdvancedSection: String, Hashable, CaseIterable {
     case camera
 }
@@ -50,8 +44,6 @@ struct AnnotationEditorInspector: View {
                     onEditorAction: onEditorAction
                 )
 
-                // Only while a styled tool is picked or an annotation is
-                // selected; with nothing to style it would be filler.
                 if model.hasInspectorStyleControls {
                     InspectorSection("Annotation") {
                         styleControls
@@ -75,8 +67,6 @@ struct AnnotationEditorInspector: View {
                                 .minimumScaleFactor(0.8)
                         }
                     )
-                    // The ratio shapes the background canvas; there is none
-                    // to shape without one.
                     .disabled(!model.backgroundSettings.usesCanvasLayout)
                     .opacity(model.backgroundSettings.usesCanvasLayout ? 1 : 0.4)
                 }
@@ -262,7 +252,6 @@ struct AnnotationEditorInspector: View {
         )
     }
 
-    /// A feature switch in a section header. The section folds with it.
     private func featureBinding(
         _ keyPath: WritableKeyPath<AnnotationBackgroundSettings, Bool>
     ) -> Binding<Bool> {
@@ -275,7 +264,6 @@ struct AnnotationEditorInspector: View {
         )
     }
 
-    /// Restores a switched-on feature's defaults without switching it off.
     private func sectionResetButton(_ help: String, reset: @escaping () -> Void) -> some View {
         InspectorResetButton(help: help) {
             onEditorAction()
@@ -284,7 +272,6 @@ struct AnnotationEditorInspector: View {
         .transition(.blurPop)
     }
 
-    // MARK: Tools & style
 
     @ViewBuilder
     private var styleControls: some View {
@@ -315,6 +302,18 @@ struct AnnotationEditorInspector: View {
                 }
             }
 
+            if model.inspectedTool == .freehand {
+                InspectorSlider(
+                    "Smoothing",
+                    value: Binding(
+                        get: { CGFloat(model.drawingSmoothing) },
+                        set: { model.setDrawingSmoothing(Double($0)) }
+                    ),
+                    range: 0...1,
+                    format: .percent()
+                )
+            }
+
             if model.isRedactionStyleAvailable {
                 InspectorSlider(
                     "Strength",
@@ -333,10 +332,7 @@ struct AnnotationEditorInspector: View {
     }
 }
 
-// MARK: - Section summaries
 
-/// One-line readouts for collapsed section headers. `nil` means the section
-/// has nothing active worth announcing.
 private enum AnnotationInspectorSummary {
     static func border(_ settings: AnnotationScreenshotBorderSettings) -> String? {
         guard settings.isEnabled else { return nil }

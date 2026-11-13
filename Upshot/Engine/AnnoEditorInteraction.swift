@@ -102,6 +102,7 @@ extension AnnoEditor {
         props.swatch = currentSwatch
         props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
         props.isPen = pointer.isPen
+        props.smoothing = UpshotPreferences.annotationDrawingSmoothing
         props.points = [Vec(0, 0, pointer.isPen ? pointer.pressure : 0.5)]
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .draw(props))
         document.add(shape)
@@ -215,6 +216,7 @@ extension AnnoEditor {
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
                     props.isComplete = true
+                    NSLog("Annotation freehand committed points=%ld smoothing=%.2f", props.points.count, props.smoothing ?? 0.62)
                     if props.points.count > 3,
                        Vec.distMin(props.points[0], props.points[props.points.count - 1], props.strokeWidth * 2) {
                         props.isClosed = true

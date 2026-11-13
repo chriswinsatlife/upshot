@@ -1,22 +1,12 @@
 import AppKit
 import Foundation
 
-/// The shape model, ported from the drawing-app's `Model/Shape.swift` and widened to cover the
-/// tools Upshot has that a whiteboard doesn't (redactions, the spotlight highlight, numbered
-/// callouts).
-///
-/// Page space is the screenshot's own pixel space: y-down, origin at the image's top-left, one
-/// unit per image pixel. That makes export a 1:1 draw and lets the canvas be a pure camera on top,
-/// which is what gives every tool the same rotate/resize behaviour for free.
 struct AnnoShapeID: Hashable, Codable {
     let raw: String
     init(_ raw: String = UUID().uuidString) { self.raw = raw }
 }
 
-// MARK: - Styles
 
-/// Dash styles. Upshot draws clean strokes, so `solid` is the default; the engine keeps the
-/// others because arrows and geo share one stroke path.
 enum DashStyle: String, CaseIterable, Codable {
     case draw
     case solid
@@ -26,7 +16,6 @@ enum DashStyle: String, CaseIterable, Codable {
     var label: String { rawValue.capitalized }
 }
 
-/// How a geo shape's interior is painted.
 enum AnnoFillStyle: String, CaseIterable, Codable {
     case none
     case solid
@@ -41,24 +30,21 @@ enum GeoKind: String, CaseIterable, Codable {
     var label: String { rawValue.capitalized }
 }
 
-// MARK: - Props
 
 struct GeoProps: Codable, Equatable {
     var geo: GeoKind = .rectangle
     var w: Double = 100
     var h: Double = 100
     var swatch: AnnotationSwatch = .red
-    /// Stroke width in page (image pixel) units, so resizing never changes it.
     var strokeWidth: Double = 8
     var fill: AnnoFillStyle = .none
     var dash: DashStyle = .solid
-    /// Corner rounding for rectangles, in page units. Ellipses ignore it.
     var cornerRadius: Double = 0
 }
 
 struct DrawProps: Codable, Equatable {
-    /// Points in the shape's local space; `z` carries pressure.
     var points: [Vec] = []
+    var smoothing: Double?
     var isComplete = false
     var isPen = false
     var isClosed = false
@@ -78,11 +64,8 @@ enum Arrowhead: String, CaseIterable, Codable {
 }
 
 struct ArrowProps: Codable, Equatable {
-    /// Terminals in the shape's local space. When a terminal is bound to another shape, the bound
-    /// position wins and this is only a fallback.
     var start = Vec(0, 0)
     var end = Vec(100, 0)
-    /// How far the arrow bows out from the straight line between its terminals.
     var bend: Double = 0
     var arrowheadStart: Arrowhead = .none
     var arrowheadEnd: Arrowhead = .arrow
@@ -116,17 +99,13 @@ enum TextAlign: String, CaseIterable, Codable {
 struct TextProps: Codable, Equatable, Hashable {
     var text: String = ""
     var swatch: AnnotationSwatch = .red
-    /// Point size in page (image pixel) units.
     var fontSize: Double = 48
     var fontFamily: AnnoFontFamily = .pro
     var isBold = true
     var isItalic = false
     var isUnderline = false
     var align: TextAlign = .start
-    /// The box's width. Meaningful only when `autoSize` is false, where text wraps into it.
     var w: Double = 16
-    /// While true the box is exactly as wide as its text. Dragging a side handle turns it off,
-    /// which is how text switches from growing to wrapping.
     var autoSize = true
 }
 
@@ -139,7 +118,6 @@ struct RedactionProps: Codable, Equatable {
     var kind: RedactionKind = .blur
     var w: Double = 100
     var h: Double = 100
-    /// 0...1; drives blur radius and pixel block size.
     var density: Double = 0.55
 }
 
@@ -154,7 +132,6 @@ struct NumberedProps: Codable, Equatable {
     var swatch: AnnotationSwatch = .red
 }
 
-// MARK: - Shape
 
 enum AnnoShapeKind: Codable, Equatable {
     case geo(GeoProps)
@@ -168,11 +145,9 @@ enum AnnoShapeKind: Codable, Equatable {
 
 struct AnnoShape: Codable, Equatable, Identifiable {
     var id: AnnoShapeID
-    /// Position of the shape's local origin, in page space.
     var x: Double
     var y: Double
     var rotation: Double = 0
-    /// 0...1, applied to the whole shape when drawn.
     var opacity: Double = 1
     var kind: AnnoShapeKind
 
@@ -205,7 +180,6 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         }
     }
 
-    /// The tool this shape belongs to, for the inspector and the style presets.
     var tool: AnnotationTool {
         switch kind {
         case let .geo(p):
@@ -235,13 +209,11 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         }
     }
 
-    /// Whether a click anywhere inside the shape grabs it, as opposed to only its outline.
     var isFilled: Bool {
         switch kind {
         case let .geo(p): p.fill != .none
         case let .draw(p): p.isClosed
         case .arrow: false
-        // Text, redactions, the highlight and numbered callouts are solid objects.
         case .text, .redaction, .highlight, .numbered: true
         }
     }
@@ -297,27 +269,21 @@ struct AnnoShape: Codable, Equatable, Identifiable {
     }
 }
 
-// MARK: - Bindings
 
 enum ArrowTerminal: String, Codable {
     case start
     case end
 }
 
-/// A binding between an arrow terminal and a shape.
 struct ArrowBinding: Codable, Equatable {
     var arrowId: AnnoShapeID
     var toId: AnnoShapeID
     var terminal: ArrowTerminal
-    /// Where on the bound shape's bounds the terminal points, in 0...1 of its width and height.
     var normalizedAnchor: Vec
-    /// When false the terminal snaps to the shape's center rather than the anchor.
     var isPrecise: Bool
-    /// When true the arrow stops exactly at the terminal rather than at the shape's edge.
     var isExact: Bool
 }
 
-// MARK: - Codable support
 
 extension AnnotationSwatch: Codable {
     private enum CodingKeys: String, CodingKey {

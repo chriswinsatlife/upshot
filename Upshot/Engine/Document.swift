@@ -1,8 +1,5 @@
 import Foundation
 
-/// The shape store: shapes in z-order (back to front), arrow bindings, and the derived geometry
-/// every other system reads. This plays the role of old-apps's `Editor` for the parts the ported
-/// engines need - `getShape`, `getShapeGeometry`, `getShapePageTransform`, `getShapePageBounds`.
 final class AnnoDocument {
     private(set) var shapes: [AnnoShape] = []
     private(set) var bindings: [ArrowBinding] = []
@@ -12,7 +9,6 @@ final class AnnoDocument {
     private var arrowInfoCache: [AnnoShapeID: ArrowInfo] = [:]
     private var renderCache: [AnnoShapeID: [RenderElement]] = [:]
 
-    // MARK: - Reading
 
     func shape(_ id: AnnoShapeID) -> AnnoShape? {
         guard let i = indexById[id] else { return nil }
@@ -25,12 +21,10 @@ final class AnnoDocument {
 
     func pageTransform(_ id: AnnoShapeID) -> Mat? { shape(id)?.pageTransform }
 
-    /// A point in page space expressed in the shape's local space.
     func pointInShapeSpace(_ shape: AnnoShape, _ pagePoint: Vec) -> Vec {
         shape.pageTransform.inverse.applyToPoint(pagePoint)
     }
 
-    /// The shape's geometry in its own local space.
     func geometry(_ id: AnnoShapeID) -> Geometry2d? {
         if let cached = geometryCache[id] { return cached }
         guard let shape = shape(id) else { return nil }
@@ -43,22 +37,17 @@ final class AnnoDocument {
         geometry(shape.id) ?? AnnoShapeGeometry.build(shape, in: self)
     }
 
-    /// The shape's bounds in page space, as the bounds of its transformed geometry.
     func pageBounds(_ id: AnnoShapeID) -> Box? {
         guard let shape = shape(id), let geometry = geometry(id) else { return nil }
         return Box.fromPoints(shape.pageTransform.applyToPoints(geometry.vertices))
     }
 
-    /// The shape's local bounds transformed into page space, kept as a rotated quad.
     func pageCorners(_ id: AnnoShapeID) -> [Vec]? {
         guard let shape = shape(id), let geometry = geometry(id) else { return nil }
         return shape.pageTransform.applyToPoints(geometry.bounds.corners)
     }
 
-    // MARK: - Arrow info
 
-    /// The resolved geometry of an arrow: where its body actually starts and ends once bindings,
-    /// intersections and arrowhead offsets are taken into account.
     func arrowInfo(_ id: AnnoShapeID) -> ArrowInfo? {
         if let cached = arrowInfoCache[id] { return cached }
         guard let shape = shape(id), case .arrow = shape.kind else { return nil }
@@ -67,11 +56,6 @@ final class AnnoDocument {
         return info
     }
 
-    /// What to draw for a shape, cached until the shape itself changes.
-    ///
-    /// Rebuilding this per frame meant panning re-ran the whole freehand pipeline for strokes whose
-    /// pixels hadn't moved. old-apps sidesteps it by giving each shape its own DOM node and only
-    /// touching its transform; the cache is the same idea.
     func renderElements(_ id: AnnoShapeID) -> [RenderElement] {
         if let cached = renderCache[id] { return cached }
         guard let shape = shape(id) else { return [] }
@@ -95,13 +79,7 @@ final class AnnoDocument {
         bindings.filter { $0.toId == shapeId }
     }
 
-    // MARK: - Writing
 
-    /// Drop the derived state for specific shapes.
-    ///
-    /// An arrow's shape depends on whatever it's bound to, so moving a shape also invalidates the
-    /// arrows attached to it - but nothing else. Clearing every cache on every edit meant dragging
-    /// one shape recomputed the geometry of all the others.
     private func invalidate(_ ids: Set<AnnoShapeID>) {
         var stale = ids
         for binding in bindings where ids.contains(binding.toId) {
@@ -114,7 +92,6 @@ final class AnnoDocument {
         }
     }
 
-    /// For edits that can touch anything: undo, restoring a snapshot, loading a scratchpad.
     private func invalidateAll() {
         geometryCache.removeAll(keepingCapacity: true)
         arrowInfoCache.removeAll(keepingCapacity: true)
@@ -146,8 +123,6 @@ final class AnnoDocument {
 
     func delete(_ ids: Set<AnnoShapeID>) {
         shapes.removeAll { ids.contains($0.id) }
-        // Bindings that point at a deleted shape, or belong to a deleted arrow, go with it.
-        // Read the arrows off the doomed shapes before the bindings go.
         let stale = ids.union(bindings.filter { ids.contains($0.toId) }.map(\.arrowId))
         bindings.removeAll { ids.contains($0.arrowId) || ids.contains($0.toId) }
         reindex()
@@ -179,7 +154,6 @@ final class AnnoDocument {
         invalidate([arrowId])
     }
 
-    // MARK: - Snapshots (undo/redo)
 
     struct Snapshot: Codable {
         var shapes: [AnnoShape]
@@ -198,15 +172,12 @@ final class AnnoDocument {
     }
 }
 
-/// Builds the local-space geometry for a shape, mirroring each shape util's `getGeometry`.
 enum AnnoShapeGeometry {
     static func build(_ shape: AnnoShape, in document: AnnoDocument) -> Geometry2d {
         switch shape.kind {
         case let .draw(props):
             return drawGeometry(props)
         case let .geo(props):
-            // The geometry flattens the same path that gets drawn, so hit-testing, selection
-            // bounds and arrow intersections all follow exactly what's on screen.
             let isFilled = props.fill != .none
             switch props.geo {
             case .rectangle:
@@ -239,8 +210,6 @@ enum AnnoShapeGeometry {
         }
     }
 
-    /// The drawing app's `DrawShapeUtil.getGeometry`: the streamlined centerline, or a circle for
-    /// a dot.
     private static func drawGeometry(_ props: DrawProps) -> Geometry2d {
         let points = props.points
         let sw = props.strokeWidth + 1
@@ -249,7 +218,6 @@ enum AnnoShapeGeometry {
             return Circle2d(x: -sw, y: -sw, radius: sw, isFilled: true)
         }
 
-        // A dot: a stroke small enough that it's really just a blob.
         let box = Box.fromPoints(points)
         if box.width < sw * 2 && box.height < sw * 2 {
             return Circle2d(x: -sw, y: -sw, radius: sw, isFilled: true)
@@ -260,7 +228,8 @@ enum AnnoShapeGeometry {
             isComplete: props.isComplete,
             strokeWidth: sw,
             forceComplete: true,
-            forceSolid: true
+            forceSolid: true,
+            smoothing: props.smoothing
         )
         let strokePoints = StrokeOutline.getStrokePoints(points, options).map { $0.point }
 
@@ -273,7 +242,6 @@ enum AnnoShapeGeometry {
         return Polyline2d(points: strokePoints)
     }
 
-    /// An arrow's geometry is its resolved body: a segment or an arc.
     private static func arrowGeometry(_ shape: AnnoShape, in document: AnnoDocument) -> Geometry2d {
         guard let info = ArrowEngine.getArrowInfo(document, shape) else {
             return Polyline2d(points: [Vec(0, 0), Vec(1, 1)])
