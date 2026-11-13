@@ -1,25 +1,112 @@
 import AppKit
 import CoreImage
 import CoreMedia
+import CoreVideo
+import Darwin
 import ScreenCaptureKit
 
 nonisolated private struct AreaCaptureStreamSample: @unchecked Sendable {
     let buffer: CMSampleBuffer
 }
 
-struct AreaCaptureLatestFrame<Value> {
-    private(set) var value: Value?
-    private(set) var presentationTime: TimeInterval?
-
-    mutating func receive(_ value: Value, presentedAt time: TimeInterval) {
-        guard time.isFinite, time >= 0, time >= (presentationTime ?? 0) else { return }
-        self.value = value
-        presentationTime = time
+struct AreaCaptureFrameRing<Value> {
+    struct Frame {
+        let value: Value
+        let presentationTime: TimeInterval
     }
 
-    func frame(atOrBefore time: TimeInterval) -> Value? {
-        guard time.isFinite, let presentationTime, presentationTime <= time else { return nil }
-        return value
+    struct Selection {
+        let frame: Frame
+        let usedOldestFallback: Bool
+    }
+
+    let capacity: Int
+    private var frames: [Frame?]
+    private var oldestIndex = 0
+    private(set) var count = 0
+
+    var newest: Frame? { count > 0 ? frames[(oldestIndex + count - 1) % capacity] : nil }
+    var oldest: Frame? { count > 0 ? frames[oldestIndex] : nil }
+
+    init(maximumFramesPerSecond: Int = 60) {
+        capacity = Int(ceil(Double(max(1, maximumFramesPerSecond)) * 0.25)) + 2
+        frames = Array(repeating: nil, count: capacity)
+    }
+
+    mutating func receive(_ value: Value, presentedAt time: TimeInterval) {
+        guard time.isFinite, time >= 0, time >= (newest?.presentationTime ?? 0) else { return }
+        let frame = Frame(value: value, presentationTime: time)
+        if newest?.presentationTime == time {
+            frames[(oldestIndex + count - 1) % capacity] = frame
+        } else if count < capacity {
+            frames[(oldestIndex + count) % capacity] = frame
+            count += 1
+        } else {
+            frames[oldestIndex] = frame
+            oldestIndex = (oldestIndex + 1) % capacity
+        }
+    }
+
+    func selection(for eventTime: TimeInterval) -> Selection? {
+        guard eventTime.isFinite, count > 0 else { return nil }
+        for offset in (0..<count).reversed() {
+            if let frame = frames[(oldestIndex + offset) % capacity], frame.presentationTime <= eventTime {
+                return Selection(frame: frame, usedOldestFallback: false)
+            }
+        }
+        return oldest.map { Selection(frame: $0, usedOldestFallback: true) }
+    }
+
+    mutating func removeAll() {
+        frames = Array(repeating: nil, count: capacity)
+        oldestIndex = 0
+        count = 0
+    }
+}
+
+final class AreaCaptureFrameBufferPool {
+    let maximumBufferCount: Int
+    private let pool: CVPixelBufferPool
+    private let width: Int
+    private let height: Int
+
+    init(width: Int, height: Int, maximumBufferCount: Int) throws {
+        self.width = width
+        self.height = height
+        self.maximumBufferCount = maximumBufferCount
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferWidthKey: width,
+            kCVPixelBufferHeightKey: height,
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferIOSurfacePropertiesKey: [:]
+        ]
+        var createdPool: CVPixelBufferPool?
+        guard CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &createdPool) == kCVReturnSuccess,
+              let createdPool else { throw CocoaError(.fileReadUnknown) }
+        pool = createdPool
+    }
+
+    func copy(_ source: CVPixelBuffer) throws -> CVPixelBuffer {
+        guard CVPixelBufferGetWidth(source) == width, CVPixelBufferGetHeight(source) == height,
+              CVPixelBufferGetPixelFormatType(source) == kCVPixelFormatType_32BGRA else { throw CocoaError(.fileReadCorruptFile) }
+        var destination: CVPixelBuffer?
+        let attributes = [kCVPixelBufferPoolAllocationThresholdKey: maximumBufferCount] as CFDictionary
+        guard CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool, attributes, &destination) == kCVReturnSuccess,
+              let destination else { throw CocoaError(.fileReadUnknown) }
+        guard CVPixelBufferLockBaseAddress(source, .readOnly) == kCVReturnSuccess else { throw CocoaError(.fileReadUnknown) }
+        defer { CVPixelBufferUnlockBaseAddress(source, .readOnly) }
+        guard CVPixelBufferLockBaseAddress(destination, []) == kCVReturnSuccess else { throw CocoaError(.fileReadUnknown) }
+        defer { CVPixelBufferUnlockBaseAddress(destination, []) }
+        guard let input = CVPixelBufferGetBaseAddress(source), let output = CVPixelBufferGetBaseAddress(destination) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let inputStride = CVPixelBufferGetBytesPerRow(source)
+        let outputStride = CVPixelBufferGetBytesPerRow(destination)
+        for row in 0..<height {
+            memcpy(output.advanced(by: row * outputStride), input.advanced(by: row * inputStride), width * 4)
+        }
+        CVBufferPropagateAttachments(source, destination)
+        return destination
     }
 }
 
@@ -28,14 +115,15 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
     let displayID: CGDirectDisplayID
     let frame: CGRect
     private var stream: SCStream?
-    private var latest = AreaCaptureLatestFrame<CMSampleBuffer>()
+    private var frames = AreaCaptureFrameRing<CVPixelBuffer>()
+    private var frameBufferPool: AreaCaptureFrameBufferPool?
     private var acceptingFrames = true
     private var stoppedBySystem = false
     private let didUpdate: () -> Void
     private let didFail: (Error) -> Void
     private static let imageContext = CIContext(options: [.cacheIntermediates: false])
 
-    var isReady: Bool { latest.value != nil }
+    var isReady: Bool { frames.count > 0 }
 
     init(displayID: CGDirectDisplayID, frame: CGRect, didUpdate: @escaping () -> Void, didFail: @escaping (Error) -> Void) {
         self.displayID = displayID
@@ -53,26 +141,38 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.showsCursor = false
         configuration.ignoreShadowsDisplay = false
-        configuration.minimumFrameInterval = .zero
+        let maximumFramesPerSecond = max(1, NSScreen.screens.first {
+            ActiveDisplayResolver.displayID(for: $0) == displayID
+        }?.maximumFramesPerSecond ?? 60)
+        frames = AreaCaptureFrameRing(maximumFramesPerSecond: maximumFramesPerSecond)
+        frameBufferPool = try AreaCaptureFrameBufferPool(width: configuration.width, height: configuration.height,
+                                                       maximumBufferCount: frames.capacity + 1)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(maximumFramesPerSecond))
         configuration.queueDepth = 3
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         self.stream = stream
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
         try await stream.startCapture()
-        NSLog("Area capture stream started: display=%u excludedApplication=%d wallpaperCovers=%ld", displayID, application.processID, covers.count)
+        NSLog("Area capture stream started: display=%u excludedApplication=%d wallpaperCovers=%ld frameCapacity=%ld historyMs=250 maximumFrameRate=%ld",
+              displayID, application.processID, covers.count, frames.capacity, maximumFramesPerSecond)
     }
 
-    func snapshot(atOrBefore eventTime: TimeInterval) throws -> AreaCaptureSnapshot {
-        guard let sample = latest.frame(atOrBefore: eventTime), let time = latest.presentationTime else {
-            NSLog("Area capture frame rejected: display=%u selectionTime=%.6f latestPresentationTime=%.6f",
-                  displayID, eventTime, latest.presentationTime ?? -1)
+    func snapshot(for eventTime: TimeInterval) throws -> AreaCaptureSnapshot {
+        guard let selection = frames.selection(for: eventTime) else {
+            NSLog("Area capture frame unavailable: display=%u retainedFrames=%ld", displayID, frames.count)
             throw CocoaError(.fileReadUnknown)
         }
-        return AreaCaptureSnapshot(displayID: displayID, frame: frame, image: try Self.image(from: sample), presentationTime: time)
+        if selection.usedOldestFallback {
+            NSLog("Area capture frame fallback: display=%u gapMs=%.3f retainedFrames=%ld",
+                  displayID, (selection.frame.presentationTime - eventTime) * 1000, frames.count)
+        }
+        acceptingFrames = false
+        return AreaCaptureSnapshot(displayID: displayID, frame: frame, image: try Self.image(from: selection.frame.value),
+                                   presentationTime: selection.frame.presentationTime)
     }
 
     func magnifierImage(at point: CGPoint, geometry: AreaCaptureSnapshot) -> CGImage? {
-        guard let sample = latest.value, let buffer = CMSampleBufferGetImageBuffer(sample) else { return nil }
+        guard let buffer = frames.newest?.value else { return nil }
         let pixels = geometry.magnifierPixelRect(at: point)
         let image = CIImage(cvPixelBuffer: buffer)
         let region = CGRect(x: pixels.minX, y: image.extent.height - pixels.maxY, width: pixels.width, height: pixels.height)
@@ -85,7 +185,8 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         defer {
             try? stream.removeStreamOutput(self, type: .screen)
             self.stream = nil
-            latest = AreaCaptureLatestFrame()
+            frames.removeAll()
+            frameBufferPool = nil
         }
         if !stoppedBySystem {
             do {
@@ -100,6 +201,10 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
 
     static func image(from sample: CMSampleBuffer) throws -> CGImage {
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { throw CocoaError(.fileReadCorruptFile) }
+        return try image(from: buffer)
+    }
+
+    static func image(from buffer: CVPixelBuffer) throws -> CGImage {
         let image = CIImage(cvPixelBuffer: buffer)
         guard let result = imageContext.createCGImage(image, from: image.extent) else { throw CocoaError(.fileReadCorruptFile) }
         return result
@@ -127,8 +232,15 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 return
             }
             guard status == SCFrameStatus.complete.rawValue, let time = Self.presentationTime(of: sampleBuffer) else { return }
-            latest.receive(sampleBuffer, presentedAt: time)
-            didUpdate()
+            do {
+                guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer), let frameBufferPool else { throw CocoaError(.fileReadCorruptFile) }
+                frames.receive(try frameBufferPool.copy(buffer), presentedAt: time)
+                didUpdate()
+            } catch {
+                acceptingFrames = false
+                NSLog("Area capture frame retention failed: display=%u error=%@", displayID, error.localizedDescription)
+                didFail(error)
+            }
         }
     }
 

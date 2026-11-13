@@ -415,7 +415,7 @@ final class AreaCaptureSelection {
     }
 
     private func selectionUsingLiveFrames(_ result: AreaCaptureSelectionResult, eventTime: TimeInterval) throws -> AreaCaptureSelectionResult {
-        let selected = try streams.filter { $0.frame.intersects(result.rect) }.map { try $0.snapshot(atOrBefore: eventTime) }
+        let selected = try streams.filter { $0.frame.intersects(result.rect) }.map { try $0.snapshot(for: eventTime) }
         guard !selected.isEmpty else { throw CocoaError(.fileReadUnknown) }
         var selection = result
         selection.snapshots = selected

@@ -1,6 +1,8 @@
 import AppKit
 import CoreMedia
+import CoreVideo
 import ImageIO
+import IOSurface
 import ScreenCaptureKit
 
 enum UpshotPreferences {
@@ -46,22 +48,107 @@ struct AreaCaptureOfflineVerification {
     }
 
     static func verifyFrameSelection(_ stored: AreaCaptureSnapshot) {
-        var latest = AreaCaptureLatestFrame<AreaCaptureSnapshot>()
-        precondition(latest.frame(atOrBefore: 10) == nil)
-        latest.receive(stored, presentedAt: 10)
-        precondition(latest.frame(atOrBefore: 10)?.displayID == stored.displayID)
-        precondition(latest.frame(atOrBefore: 10.01)?.displayID == stored.displayID)
-        precondition(latest.frame(atOrBefore: 9.99) == nil)
-        latest.receive(AreaCaptureSnapshot(displayID: 2, frame: stored.frame, image: stored.image), presentedAt: 11)
-        precondition(latest.frame(atOrBefore: 11)?.displayID == 2)
-        precondition(latest.frame(atOrBefore: 10.5) == nil)
-        latest.receive(stored, presentedAt: 9)
-        latest.receive(stored, presentedAt: .nan)
-        latest.receive(stored, presentedAt: .infinity)
-        latest.receive(stored, presentedAt: -1)
-        precondition(latest.frame(atOrBefore: 11)?.displayID == 2)
-        precondition(latest.frame(atOrBefore: .nan) == nil)
-        print("PASS timestamp selection: exact boundary, earlier frame, future rejection, latest replacement, out-of-order rejection, invalid timestamps")
+        var frames = AreaCaptureFrameRing<Int>()
+        precondition(frames.selection(for: 10) == nil)
+        frames.receive(0, presentedAt: 10)
+        precondition(frames.selection(for: 10)?.frame.value == 0)
+        frames.receive(1, presentedAt: 10 + 1.0 / 60)
+        let afterOneFrame = frames.selection(for: 10.01)!
+        precondition(afterOneFrame.frame.value == 0 && !afterOneFrame.usedOldestFallback)
+        print("PASS frame arriving after event: selected the preceding frame")
+        frames.receive(2, presentedAt: 10 + 2.0 / 60)
+        frames.receive(3, presentedAt: 10 + 3.0 / 60)
+        let afterSeveralFrames = frames.selection(for: 10.02)!
+        precondition(afterSeveralFrames.frame.value == 1 && !afterSeveralFrames.usedOldestFallback)
+        precondition(frames.selection(for: 10.01)?.frame.value == 0)
+        print("PASS several frames arriving after event: selected the newest preceding frame")
+        let fallback = frames.selection(for: 9.99)!
+        precondition(fallback.frame.value == 0 && fallback.usedOldestFallback)
+        precondition(abs((fallback.frame.presentationTime - 9.99) * 1000 - 10) < 0.000001)
+        print("PASS no frame at or before event: oldest retained frame selected, gapMs=10.000")
+        frames.receive(-1, presentedAt: 9)
+        frames.receive(-1, presentedAt: .nan)
+        frames.receive(-1, presentedAt: .infinity)
+        frames.receive(-1, presentedAt: -1)
+        precondition(frames.count == 4 && frames.newest?.value == 3)
+        frames.receive(4, presentedAt: 10 + 3.0 / 60)
+        precondition(frames.count == 4 && frames.newest?.value == 4)
+        precondition(frames.selection(for: .nan) == nil)
+        precondition(frames.selection(for: .infinity) == nil)
+        frames.removeAll()
+        precondition(frames.count == 0 && frames.newest == nil && frames.oldest == nil)
+        print("PASS timestamp boundaries, duplicate replacement, out-of-order rejection, invalid timestamps, cleanup")
+        for frequency in [60, 120, 240] {
+            var history = AreaCaptureFrameRing<Int>(maximumFramesPerSecond: frequency)
+            for index in 0..<5_000 {
+                history.receive(index, presentedAt: 10 + Double(index) / Double(frequency))
+                precondition(history.count <= history.capacity)
+            }
+            let newest = history.newest!.presentationTime
+            precondition(newest - history.oldest!.presentationTime >= 0.25 - 0.000001)
+            let selection = history.selection(for: newest - 0.25 + 0.000000001)!
+            precondition(!selection.usedOldestFallback)
+            precondition(selection.frame.value == 4_999 - frequency / 4)
+            let oldestFallback = history.selection(for: history.oldest!.presentationTime - 0.001)!
+            precondition(oldestFallback.usedOldestFallback)
+            precondition(oldestFallback.frame.value == 5_000 - history.capacity)
+            precondition(abs((oldestFallback.frame.presentationTime - (history.oldest!.presentationTime - 0.001)) * 1000 - 1) < 0.000001)
+        }
+        print("PASS bounded ring wraparound: at least 250 ms retained at 60, 120, and 240 frames per second")
+        var storedFrames = AreaCaptureFrameRing<AreaCaptureSnapshot>()
+        storedFrames.receive(stored, presentedAt: 10)
+        storedFrames.receive(AreaCaptureSnapshot(displayID: 2, frame: stored.frame, image: stored.image), presentedAt: 10.02)
+        precondition(storedFrames.selection(for: 10.01)?.frame.value.displayID == stored.displayID)
+    }
+
+    static func verifyBufferRetention() throws {
+        var source: CVPixelBuffer?
+        precondition(CVPixelBufferCreate(nil, 16, 12, kCVPixelFormatType_32BGRA,
+                                        [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &source) == kCVReturnSuccess)
+        let sourceBuffer = source!
+        var frames = AreaCaptureFrameRing<CVPixelBuffer>()
+        let pool = try AreaCaptureFrameBufferPool(width: 16, height: 12, maximumBufferCount: frames.capacity + 1)
+        var surfaceIDs: Set<UInt32> = []
+        for index in 0..<600 {
+            precondition(CVPixelBufferLockBaseAddress(sourceBuffer, []) == kCVReturnSuccess)
+            let bytes = CVPixelBufferGetBaseAddress(sourceBuffer)!.assumingMemoryBound(to: UInt8.self)
+            for row in 0..<12 {
+                for column in 0..<16 {
+                    let offset = row * CVPixelBufferGetBytesPerRow(sourceBuffer) + column * 4
+                    bytes[offset] = 0
+                    bytes[offset + 1] = UInt8(index / 251)
+                    bytes[offset + 2] = UInt8(index % 251)
+                    bytes[offset + 3] = 255
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(sourceBuffer, [])
+            let retained = try pool.copy(sourceBuffer)
+            precondition(retained !== sourceBuffer)
+            let surface = CVPixelBufferGetIOSurface(retained)!.takeUnretainedValue()
+            surfaceIDs.insert(IOSurfaceGetID(surface))
+            frames.receive(retained, presentedAt: 10 + Double(index) / 60)
+            precondition(frames.count <= frames.capacity)
+        }
+        precondition(surfaceIDs.count <= pool.maximumBufferCount)
+        let eventTime = 10 + 592.25 / 60
+        let selected = frames.selection(for: eventTime)!
+        precondition(!selected.usedOldestFallback)
+        precondition(abs(selected.frame.presentationTime - (10 + 592.0 / 60)) < 0.000001)
+        let selectedPixels = pixels(try AreaCaptureFrameStream.image(from: selected.frame.value))
+        precondition(Array(selectedPixels.prefix(4)) == [UInt8(592 % 251), UInt8(592 / 251), 0, 255])
+        print("PASS IOSurface retention: 600 producer updates, independent pixels, bounded pool reuse, historical frame conversion")
+        let exhaustedPool = try AreaCaptureFrameBufferPool(width: 16, height: 12, maximumBufferCount: 2)
+        let first = try exhaustedPool.copy(sourceBuffer)
+        let second = try exhaustedPool.copy(sourceBuffer)
+        withExtendedLifetime((first, second)) {
+            do {
+                _ = try exhaustedPool.copy(sourceBuffer)
+                preconditionFailure("Pixel buffer allocation must remain bounded")
+            } catch {}
+        }
+        frames.removeAll()
+        precondition(frames.count == 0)
+        print("PASS IOSurface allocation threshold and ring release")
     }
 
     static func verifySampleConversion() throws {
@@ -116,11 +203,12 @@ struct AreaCaptureOfflineVerification {
         let loaded = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(frameURL as CFURL, nil)!, 0, nil)!
         let stored = AreaCaptureSnapshot(displayID: 1, frame: CGRect(x: -40, y: 20, width: 40, height: 30), image: loaded, presentationTime: 10)
         verifyFrameSelection(stored)
+        try verifyBufferRetention()
         try verifySampleConversion()
-        var latest = AreaCaptureLatestFrame<AreaCaptureSnapshot>()
-        latest.receive(stored, presentedAt: 10)
-        let chosen = latest.frame(atOrBefore: 10.01)!
-        latest.receive(AreaCaptureSnapshot(displayID: 1, frame: stored.frame,
+        var frames = AreaCaptureFrameRing<AreaCaptureSnapshot>()
+        frames.receive(stored, presentedAt: 10)
+        let chosen = frames.selection(for: 10.01)!.frame.value
+        frames.receive(AreaCaptureSnapshot(displayID: 1, frame: stored.frame,
                                            image: image(width: 80, height: 60, colors: [white, white, white, white]), presentationTime: 10.02),
                        presentedAt: 10.02)
         let full = try AreaCaptureSnapshot.composite([chosen], in: stored.frame)
