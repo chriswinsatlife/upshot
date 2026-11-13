@@ -64,6 +64,10 @@ enum StateRenderSupplementalCatalog {
             SettingsNavigation.shared.selectedTab = .mcp
             return AnyView(SettingsView())
         }
+        add("settings-section-after-recording-upload-paused", "AfterCaptureSettingsSection", "struct AfterCaptureActionsSection", 860, 520) {
+            UpshotStorage.defaults.set(true, forKey: AfterCaptureAction.upload.storageKey(for: .recording))
+            return AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") })
+        }
         add("design-gallery", "InterfaceStyleGallery", "struct InterfaceStyleGallery", 1380, 2900) {
             AnyView(InterfaceStyleGallery(backdrop: fixtures.image))
         }

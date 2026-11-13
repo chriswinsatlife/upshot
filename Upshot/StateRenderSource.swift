@@ -3,8 +3,8 @@ import Foundation
 enum StateRenderSource {
     private static let locations: [String: [(String, Int)]] = [
         "Upshot/AfterCaptureSettingsSection.swift": [
-            ("struct AfterCaptureActionsSection: View {", 10),
-            ("private struct AfterCaptureToggleRow: View {", 23),
+            ("struct AfterCaptureActionsSection: View {", 3),
+            ("private struct AfterCaptureToggleRow: View {", 16),
         ],
         "Upshot/AnnotationBackgroundInspector.swift": [
             ("private enum AnnotationBackgroundFillLibrary: CaseIterable, Hashable {", 4),
@@ -39,12 +39,12 @@ enum StateRenderSource {
             (".alert(\"Watermark Image Failed\", isPresented: Binding(", 18),
         ],
         "Upshot/AreaCaptureSelection.swift": [
-            ("struct AreaCaptureSelectionResult {", 4),
-            ("enum Kind {", 5),
-            ("final class AreaCaptureSelection {", 26),
-            ("struct WindowTarget {", 29),
-            ("private final class AreaCaptureSelectionPanel: NSPanel {", 353),
-            ("final class AreaCaptureSelectionView: NSView {", 358),
+            ("struct AreaCaptureSelectionResult {", 5),
+            ("enum Kind {", 6),
+            ("final class AreaCaptureSelection {", 46),
+            ("struct WindowTarget {", 49),
+            ("private final class AreaCaptureSelectionPanel: NSPanel {", 639),
+            ("final class AreaCaptureSelectionView: NSView {", 644),
         ],
         "Upshot/AreaSelectionSettingsSection.swift": [
             ("struct AreaSelectionSettingsSection: View {", 3),
@@ -165,9 +165,9 @@ enum StateRenderSource {
             ("final class RecordingAreaHighlightView: NSView {", 113),
         ],
         "Upshot/RecordingAreaSelectionSheet.swift": [
-            ("final class RecordingAreaSelectionSheet: NSView {", 15),
-            ("private enum Drag {", 21),
-            ("private struct RecordingAreaSheetOverlay: View {", 427),
+            ("final class RecordingAreaSelectionSheet: NSView {", 5),
+            ("private enum Drag {", 10),
+            ("private struct RecordingAreaSheetOverlay: View {", 372),
         ],
         "Upshot/RecordingBarPresenter.swift": [
             ("final class RecordingBarPresenter {", 6),
@@ -349,10 +349,10 @@ enum StateRenderSource {
         ],
         "Upshot/UpshotApp.swift": [
             ("enum UpshotMain {", 7),
-            ("struct UpshotApp: App {", 18),
-            ("final class AppDelegate: NSObject, NSApplicationDelegate {", 116),
-            ("let alert = NSAlert()", 191),
-            ("let alert = NSAlert()", 219),
+            ("struct UpshotApp: App {", 21),
+            ("final class AppDelegate: NSObject, NSApplicationDelegate {", 119),
+            ("let alert = NSAlert()", 196),
+            ("let alert = NSAlert()", 224),
         ],
     ]
 
