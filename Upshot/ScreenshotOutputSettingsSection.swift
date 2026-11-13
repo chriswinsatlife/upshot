@@ -16,6 +16,8 @@ struct ScreenshotOutputSettingsSection: View {
     @AppStorage(UpshotPreferences.screenshotWindowPaddingKey) private var windowPadding = 32.0
     @AppStorage(UpshotPreferences.screenshotHideDesktopIconsKey) private var hideDesktopIcons = false
     @State private var desktopIconError: String?
+    @AppStorage(UpshotPreferences.screenshotFilenameTemplateKey) private var filenameTemplate = ScreenshotFileNaming.defaultTemplate
+    @AppStorage(UpshotPreferences.screenshotFilenameCounterKey) private var filenameCounter = 0
 
     var body: some View {
         Section("Screenshot Output") {
@@ -82,10 +84,45 @@ struct ScreenshotOutputSettingsSection: View {
             }
             if windowBackground != WindowScreenshotBackgroundMode.original.rawValue {
                 Stepper("Padding: \(Int(windowPadding)) pt", value: $windowPadding, in: 0...256, step: 4)
-                Text("Transparent padding is preserved in PNG. JPEG exports flatten transparency to white.")
+                Text("Use PNG to preserve transparent padding.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+
+        Section("Screenshot Filename") {
+            TextField("Template", text: $filenameTemplate)
+            HStack {
+                Text("Insert token")
+                Spacer()
+                Menu("Tokens") {
+                    ForEach(ScreenshotFileNaming.tokens, id: \.self) { token in
+                        Button(token) { filenameTemplate.append(token) }
+                    }
+                }
+                .fixedSize()
+            }
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                LabeledContent("Preview") {
+                    Text(ScreenshotFileNaming.captureFileName(
+                        date: timeline.date,
+                        appName: "Safari",
+                        captureType: .window,
+                        outputScale: scaleToOneX ? 1 : 2,
+                        template: filenameTemplate,
+                        counter: filenameCounter < Int.max ? max(0, filenameCounter) + 1 : 1
+                    ))
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+                }
+            }
+            if let error = ScreenshotFileNaming.templateError(filenameTemplate) {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            Text("{date}: local date · {time}: local time · {app}: app name · {type}: capture type · {counter}: capture number")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

@@ -12,6 +12,8 @@ extension UpshotPreferences {
     static let screenshotWindowWallpaperPathKey = "screenshotWindowWallpaperPath"
     static let screenshotWindowPaddingKey = "screenshotWindowPadding"
     static let screenshotHideDesktopIconsKey = "screenshotHideDesktopIcons"
+    static let screenshotFilenameTemplateKey = "screenshotFilenameTemplate"
+    static let screenshotFilenameCounterKey = "screenshotFilenameCounter"
 
     static var screenshotConvertToSRGB: Bool {
         UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
@@ -56,5 +58,9 @@ extension UpshotPreferences {
 
     static var screenshotHideDesktopIcons: Bool {
         UserDefaults.standard.bool(forKey: screenshotHideDesktopIconsKey)
+    }
+
+    static var screenshotFilenameTemplate: String {
+        UserDefaults.standard.string(forKey: screenshotFilenameTemplateKey) ?? ScreenshotFileNaming.defaultTemplate
     }
 }
