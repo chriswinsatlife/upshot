@@ -120,19 +120,25 @@ struct AnnotationEditorWindow: View {
                 isCropping: { model.isCropping }
             ))
             .inspector(isPresented: $isInspectorPresented) {
-                AnnotationEditorInspector(
-                    model: model,
-                    wallpaperStore: wallpaperStore,
-                    backgroundPresetStore: backgroundPresetStore,
-                    focusedField: $focusedField,
-                    onEditorAction: clearInspectorFocus,
-                    onPickWallpaper: pickCustomWallpaper
-                )
-                .disabled(model.isCropping || model.isCommitting)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    AnnotationEditorInspector(
+                        model: model,
+                        wallpaperStore: wallpaperStore,
+                        backgroundPresetStore: backgroundPresetStore,
+                        focusedField: $focusedField,
+                        onEditorAction: clearInspectorFocus,
+                        onPickWallpaper: pickCustomWallpaper
+                    )
+                    .disabled(model.isCropping || model.isCommitting)
+
                     actionFooter
                         .background(.bar)
                 }
+                .inspectorColumnWidth(
+                    min: AnnotationEditorInspector.columnMinimumWidth,
+                    ideal: AnnotationEditorInspector.columnIdealWidth,
+                    max: InspectorMetrics.columnMaxWidth
+                )
             }
     }
 

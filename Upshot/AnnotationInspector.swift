@@ -203,11 +203,6 @@ struct AnnotationEditorInspector: View {
                 }
             }
         }
-        .inspectorColumnWidth(
-            min: Self.columnMinimumWidth,
-            ideal: Self.columnIdealWidth,
-            max: InspectorMetrics.columnMaxWidth
-        )
         .frame(
             minWidth: Self.columnMinimumWidth,
             maxWidth: .infinity,
@@ -392,7 +387,7 @@ private struct AnnotationInspectorDisclosureButton: View {
                 .font(.system(size: IconSize.disclosureChevron, weight: .bold))
                 .foregroundStyle(Palette.secondaryLabel)
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .frame(width: InterfaceMetrics.resetButtonSize, height: InterfaceMetrics.resetButtonSize)
+                .frame(width: InterfaceMetrics.resetButtonSize, height: InterfaceMetrics.resetButtonSize, alignment: .trailing)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

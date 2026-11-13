@@ -11,6 +11,8 @@ struct AnnotationActionFooter: View {
     let onSaveAs: () -> Void
     let onDone: () -> Void
 
+    static let height: CGFloat = InterfaceMetrics.controlHeight + Space.ml * 2
+
     @State private var isShareOptionsPresented = false
 
     var body: some View {
@@ -45,7 +47,7 @@ struct AnnotationActionFooter: View {
         }
         .buttonStyle(.interfaceAction)
         .padding(.horizontal, Space.l)
-        .padding(.vertical, Space.ml)
+        .frame(height: Self.height)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Palette.hairline)
