@@ -61,7 +61,7 @@ enum AnnoShapeDrawing {
         if shape.castsShadow == true {
             let scale = hypot(target.transform.a, target.transform.b)
             context.setShadow(
-                offset: CGSize(width: 0, height: (target.isFlippedContext ? 3 : -3) * scale),
+                offset: CGSize(width: 0, height: -3 * scale),
                 blur: 6 * scale,
                 color: NSColor.black.withAlphaComponent(0.35).cgColor
             )
