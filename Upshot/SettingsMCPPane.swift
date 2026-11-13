@@ -1,17 +1,10 @@
-//
-//  SettingsMCPPane.swift
-//  Upshot
-//
-//  Settings → MCP: the switch for the local MCP server that lets AI agents
-//  edit recordings, and the one-line setup for the agents people use most.
-//
-
 import AppKit
 import SwiftUI
 
 struct MCPSettingsPane: View {
     @AppStorage(UpshotPreferences.agentServerEnabledKey) private var agentServerEnabled = true
-    @State private var copiedSetup: Setup?
+    @State private var copiedSetup: Setup? = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("copied") ? .claudeCode : nil
+    @State private var serverIsRunning = MCPSettingsPane.currentServerIsRunning
 
     private enum Setup: String, CaseIterable, Identifiable {
         case claudeCode = "Claude Code"
@@ -21,8 +14,15 @@ struct MCPSettingsPane: View {
         var id: Self { self }
     }
 
-    /// The relay is this very binary run with `--mcp`, so the command is
-    /// right for whichever copy of the app (release or Dev) is showing it.
+    private static let commandFieldMaximumWidth: CGFloat = 400
+
+    private static var currentServerIsRunning: Bool {
+        if UpshotStorage.isRenderingStates {
+            return !StateRenderer.scenario.contains("failed")
+        }
+        return AgentServer.shared.isRunning
+    }
+
     private var executablePath: String {
         Bundle.main.executableURL?.path ?? "/Applications/Upshot.app/Contents/MacOS/Upshot"
     }
@@ -49,57 +49,88 @@ struct MCPSettingsPane: View {
 
     var body: some View {
         InterfaceFormPage {
-            Section("AI Agents") {
-                Toggle(isOn: $agentServerEnabled) {
-                    InterfaceRowLabel(
-                        "Allow AI agents",
-                        detail: "Let Claude Code, Codex, and other MCP clients read, edit, and export your recordings. Everything stays on this Mac."
-                    )
-                }
+            InterfaceSection("AI Agents") {
+                InterfaceToggleRow(
+                    "Allow AI agents",
+                    detail: "Agents can read, edit, and export recordings on this Mac.",
+                    isOn: $agentServerEnabled
+                )
                 .onChange(of: agentServerEnabled) { _, _ in
                     AgentServer.shared.updateForPreference()
+                    serverIsRunning = Self.currentServerIsRunning
+                }
+                if agentServerEnabled {
+                    InterfaceRow("Server") {
+                        serverStatus
+                    }
+                    .transition(.blurPop)
                 }
             }
 
             if agentServerEnabled {
-                Section {
+                InterfaceSection(
+                    "Connect an Agent",
+                    footer: "Agents start Upshot in the background when they need it."
+                ) {
                     ForEach(Setup.allCases) { setup in
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(setup.rawValue)
-                                Text(command(for: setup))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                    .truncationMode(.middle)
-                                    .textSelection(.enabled)
-                            }
-                            Spacer(minLength: 8)
-                            InterfaceActionButton(
-                                copiedSetup == setup ? "Copied" : "Copy",
-                                systemImage: copiedSetup == setup ? "checkmark" : "doc.on.doc"
-                            ) {
-                                copy(setup)
+                        InterfaceRow(setup.rawValue) {
+                            HStack(spacing: Space.m) {
+                                commandField(for: setup)
+                                copyButton(for: setup)
                             }
                         }
                     }
-                } header: {
-                    Text("Connect an Agent")
-                } footer: {
-                    Text("Run the command in a terminal once. The agent starts Upshot in the background when it needs it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .transition(.blurPop)
             }
         }
         .motion(value: agentServerEnabled)
+        .onAppear { serverIsRunning = Self.currentServerIsRunning }
+    }
+
+    private var serverStatus: some View {
+        HStack(spacing: Space.xs) {
+            Image(systemName: serverIsRunning ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(serverIsRunning ? Palette.success : Palette.destructiveLabel)
+            Text(serverIsRunning ? "Running" : "Could not start")
+                .foregroundStyle(serverIsRunning ? Palette.secondaryLabel : Palette.destructiveLabel)
+        }
+        .font(.dsBody)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func commandField(for setup: Setup) -> some View {
+        let command = command(for: setup)
+        return Text(command)
+            .font(.dsCaption.monospaced())
+            .foregroundStyle(Palette.secondaryLabel)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .frame(maxWidth: Self.commandFieldMaximumWidth, alignment: .leading)
+            .interfaceFieldChrome()
+            .help(command)
+            .layoutPriority(1)
+    }
+
+    private func copyButton(for setup: Setup) -> some View {
+        let isCopied = copiedSetup == setup
+        return Button {
+            copy(setup)
+        } label: {
+            ZStack {
+                Label("Copied", systemImage: "checkmark").hidden()
+                Label(isCopied ? "Copied" : "Copy", systemImage: isCopied ? "checkmark" : "doc.on.doc")
+            }
+        }
+        .accessibilityLabel(isCopied ? "Copied \(setup.rawValue) setup" : "Copy \(setup.rawValue) setup")
     }
 
     private func copy(_ setup: Setup) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command(for: setup), forType: .string)
         copiedSetup = setup
+        AppLog.event("automation", "agent_setup_copied", fields: ["client": setup.rawValue])
         Task {
             try? await Task.sleep(for: .seconds(1.5))
             if copiedSetup == setup { copiedSetup = nil }

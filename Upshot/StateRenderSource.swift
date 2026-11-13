@@ -324,8 +324,8 @@ enum StateRenderSource {
             ("private enum LaunchAtLoginController {", 225),
         ],
         "Upshot/SettingsMCPPane.swift": [
-            ("struct MCPSettingsPane: View {", 12),
-            ("private enum Setup: String, CaseIterable, Identifiable {", 16),
+            ("struct MCPSettingsPane: View {", 4),
+            ("private enum Setup: String, CaseIterable, Identifiable {", 9),
         ],
         "Upshot/SettingsTextRecognitionPane.swift": [
             ("struct SettingsTextRecognitionPane: View {", 3),

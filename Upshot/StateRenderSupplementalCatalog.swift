@@ -68,6 +68,14 @@ enum StateRenderSupplementalCatalog {
             UpshotStorage.defaults.set(true, forKey: AfterCaptureAction.upload.storageKey(for: .recording))
             return AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") })
         }
+        add("settings-mcp-failed", "SettingsMCPPane", "struct MCPSettingsPane", 1000, 820) {
+            SettingsNavigation.shared.selectedTab = .mcp
+            return AnyView(SettingsView())
+        }
+        add("settings-mcp-copied", "SettingsMCPPane", "struct MCPSettingsPane", 1000, 820) {
+            SettingsNavigation.shared.selectedTab = .mcp
+            return AnyView(SettingsView())
+        }
         add("design-gallery", "InterfaceStyleGallery", "struct InterfaceStyleGallery", 1380, 2900) {
             AnyView(InterfaceStyleGallery(backdrop: fixtures.image))
         }
