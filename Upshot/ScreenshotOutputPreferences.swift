@@ -5,6 +5,7 @@ extension UpshotPreferences {
     static let screenshotScaleToOneXKey = "screenshotScaleToOneX"
     static let screenshotBorderKey = "screenshotBorder"
     static let screenshotRetinaSuffixKey = "screenshotRetinaSuffix"
+    static let screenshotShowCursorKey = "screenshotShowCursor"
 
     static var screenshotConvertToSRGB: Bool {
         UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
@@ -20,5 +21,9 @@ extension UpshotPreferences {
 
     static var screenshotRetinaSuffix: Bool {
         UserDefaults.standard.bool(forKey: screenshotRetinaSuffixKey)
+    }
+
+    static var screenshotShowCursor: Bool {
+        UserDefaults.standard.bool(forKey: screenshotShowCursorKey)
     }
 }
