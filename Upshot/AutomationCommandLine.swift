@@ -127,6 +127,7 @@ nonisolated enum AutomationCommandLine {
             var descriptorState = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
             let ready = poll(&descriptorState, 1, Int32(min(remaining * 1000, Double(Int32.max))))
             if ready < 0, errno == EINTR { continue }
+            guard ready >= 0 else { throw AutomationError.message("The socket could not be read.") }
             guard ready > 0 else { continue }
             let count = read(descriptor, &chunk, chunk.count)
             if count < 0, errno == EINTR { continue }
