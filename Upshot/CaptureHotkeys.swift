@@ -1,7 +1,3 @@
-//
-//  CaptureHotkeys.swift
-//  Upshot
-//
 
 import AppKit
 import Carbon.HIToolbox
@@ -60,7 +56,7 @@ struct HotkeyShortcut: Codable, Equatable, Hashable {
     }
 
     var isValid: Bool {
-        !modifiers.isEmpty
+        !modifiers.isEmpty && (0...127).contains(keyCode) && modifiers.rawValue & ~15 == 0
     }
 
     private static func keyLabel(for keyCode: Int) -> String {
@@ -147,133 +143,152 @@ struct HotkeyShortcut: Codable, Equatable, Hashable {
 }
 
 enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
-    case fullscreen
-    case window
-    case area
-    case screenRecording
-    case textCapture
+    case fullscreen, window, area, screenRecording, textCapture
+    case areaCopy, areaSave, areaUpload, selfTimer, previousArea
+    case recordingStart, recordingStop, recordingToggle, recordingPause, recordingResume
+    case recordingRestart, recordingDiscard
+    case editorOpen, recordingEditorOpen
+    case library, libraryScreenshots, libraryRecordings, restoreLastCapture
+    case settings, settingsScreenshots, settingsVideo, settingsOverlay, settingsMCP, settingsCloud, settingsAbout
+    case screenshotsFolder
 
     var id: Self { self }
 
     var hotKeyID: UInt32 {
+        UInt32(Self.allCases.firstIndex(of: self)! + 1)
+    }
+
+    var route: String {
         switch self {
-        case .fullscreen: 1
-        case .window: 2
-        case .area: 3
-        case .screenRecording: 4
-        case .textCapture: 5
+        case .fullscreen: "capture/fullscreen"
+        case .window: "capture/window"
+        case .area: "capture/area"
+        case .textCapture: "capture/text"
+        case .areaCopy: "capture/area-copy"
+        case .areaSave: "capture/area-save"
+        case .areaUpload: "capture/area-upload"
+        case .selfTimer: "capture/self-timer"
+        case .previousArea: "capture/previous-area"
+        case .screenRecording: "recording/picker"
+        case .recordingStart: "recording/start"
+        case .recordingStop: "recording/stop"
+        case .recordingToggle: "recording/toggle"
+        case .recordingPause: "recording/pause"
+        case .recordingResume: "recording/resume"
+        case .recordingRestart: "recording/restart"
+        case .recordingDiscard: "recording/discard"
+        case .editorOpen: "editor/open"
+        case .recordingEditorOpen: "editor/recording"
+        case .library: "library/open"
+        case .libraryScreenshots: "library/screenshots"
+        case .libraryRecordings: "library/recordings"
+        case .restoreLastCapture: "library/restore-last"
+        case .settings: "settings/general"
+        case .settingsScreenshots: "settings/screenshots"
+        case .settingsVideo: "settings/video"
+        case .settingsOverlay: "settings/overlay"
+        case .settingsMCP: "settings/mcp"
+        case .settingsCloud: "settings/cloud"
+        case .settingsAbout: "settings/about"
+        case .screenshotsFolder: "library/folder"
         }
     }
 
     var title: String {
         switch self {
-        case .fullscreen: "Fullscreen"
-        case .window: "Window"
-        case .area: "Area"
-        case .screenRecording: "Screen Recording"
+        case .fullscreen: "Capture Fullscreen"
+        case .window: "Capture Window"
+        case .area: "Capture Area"
         case .textCapture: "Capture Text"
+        case .areaCopy: "Capture Area and Copy"
+        case .areaSave: "Capture Area and Save"
+        case .areaUpload: "Capture Area and Upload"
+        case .selfTimer: "Capture with Self-timer"
+        case .previousArea: "Capture Previous Area"
+        case .screenRecording: "Screen Recording"
+        case .recordingStart: "Start Screen Recording"
+        case .recordingStop: "Stop Screen Recording"
+        case .recordingToggle: "Toggle Screen Recording"
+        case .recordingPause: "Pause Screen Recording"
+        case .recordingResume: "Resume Screen Recording"
+        case .recordingRestart: "Restart Screen Recording"
+        case .recordingDiscard: "Discard Screen Recording"
+        case .editorOpen: "Open Screenshot Editor"
+        case .recordingEditorOpen: "Open Recording Editor"
+        case .library: "Open Library"
+        case .libraryScreenshots: "Open Screenshot Library"
+        case .libraryRecordings: "Open Recording Library"
+        case .restoreLastCapture: "Restore Last Capture"
+        case .settings: "Open General Settings"
+        case .settingsScreenshots: "Open Screenshot Settings"
+        case .settingsVideo: "Open Recording Settings"
+        case .settingsOverlay: "Open Overlay Settings"
+        case .settingsMCP: "Open MCP Settings"
+        case .settingsCloud: "Open Cloud Settings"
+        case .settingsAbout: "Open About"
+        case .screenshotsFolder: "Open Screenshots Folder"
         }
     }
 
-    var defaultShortcut: HotkeyShortcut {
+    var defaultShortcut: HotkeyShortcut? {
         switch self {
-        case .fullscreen:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_1))
-        case .window:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_2))
-        case .area:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_3))
-        case .screenRecording:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_4))
-        case .textCapture:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_5))
+        case .fullscreen: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_1))
+        case .window: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_2))
+        case .area: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_3))
+        case .screenRecording: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_4))
+        case .textCapture: HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_5))
+        default: nil
         }
     }
 
-    var preferencesKey: String {
-        switch self {
-        case .fullscreen:
-            UpshotPreferences.fullscreenHotkeyKey
-        case .window:
-            UpshotPreferences.windowHotkeyKey
-        case .area:
-            UpshotPreferences.areaHotkeyKey
-        case .screenRecording:
-            UpshotPreferences.screenRecordingHotkeyKey
-        case .textCapture:
-            UpshotPreferences.textCaptureHotkeyKey
-        }
-    }
+    var preferencesKey: String { "captureHotkey.\(rawValue)" }
 
     init?(hotKeyID: UInt32) {
-        guard let action = Self.allCases.first(where: { $0.hotKeyID == hotKeyID }) else {
-            return nil
-        }
-
+        guard let action = Self.allCases.first(where: { $0.hotKeyID == hotKeyID }) else { return nil }
         self = action
     }
 
     func perform() {
-        switch self {
-        case .fullscreen:
-            CaptureCoordinator.shared.captureFullscreen()
-        case .window:
-            CaptureCoordinator.shared.captureWindow()
-        case .area:
-            CaptureCoordinator.shared.captureArea()
-        case .screenRecording:
-            Task { @MainActor in
-                RecordingPickerPresenter.shared.toggle()
+        Task { @MainActor in
+            do {
+                _ = try await AutomationActions.perform(self)
+            } catch {
+                NSLog("Automation action failed action=%@ error=%@", route, error.localizedDescription)
+                let alert = NSAlert()
+                alert.messageText = title
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
             }
-        case .textCapture:
-            CaptureCoordinator.shared.captureText()
         }
     }
 }
 
 enum CaptureHotkeyPreferences {
-    static func shortcut(for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> HotkeyShortcut {
-        guard
-            let data = defaults.data(forKey: action.preferencesKey),
-            let shortcut = try? JSONDecoder().decode(HotkeyShortcut.self, from: data),
-            shortcut.isValid
-        else {
-            return action.defaultShortcut
-        }
-
+    static func shortcut(for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> HotkeyShortcut? {
+        if defaults.string(forKey: action.preferencesKey) == "disabled" { return nil }
+        guard let data = defaults.data(forKey: action.preferencesKey),
+              let shortcut = try? JSONDecoder().decode(HotkeyShortcut.self, from: data),
+              shortcut.isValid else { return action.defaultShortcut }
         return shortcut
     }
 
-    static func saveShortcut(
-        _ shortcut: HotkeyShortcut,
-        for action: CaptureHotkeyAction,
-        defaults: UserDefaults = .standard
-    ) {
-        guard shortcut != action.defaultShortcut else {
+    static func saveShortcut(_ shortcut: HotkeyShortcut?, for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) {
+        if shortcut == action.defaultShortcut {
             defaults.removeObject(forKey: action.preferencesKey)
-            return
+        } else if let shortcut, let data = try? JSONEncoder().encode(shortcut) {
+            defaults.set(data, forKey: action.preferencesKey)
+        } else {
+            defaults.set("disabled", forKey: action.preferencesKey)
         }
-
-        guard let data = try? JSONEncoder().encode(shortcut) else { return }
-        defaults.set(data, forKey: action.preferencesKey)
     }
 
-    static func shortcuts(
-        for actions: [CaptureHotkeyAction] = CaptureHotkeyAction.allCases,
-        defaults: UserDefaults = .standard
-    ) -> [CaptureHotkeyAction: HotkeyShortcut] {
-        Dictionary(uniqueKeysWithValues: actions.map { action in
-            (action, shortcut(for: action, defaults: defaults))
+    static func shortcuts(for actions: [CaptureHotkeyAction] = CaptureHotkeyAction.allCases, defaults: UserDefaults = .standard) -> [CaptureHotkeyAction: HotkeyShortcut] {
+        Dictionary(uniqueKeysWithValues: actions.compactMap { action in
+            shortcut(for: action, defaults: defaults).map { (action, $0) }
         })
     }
 
-    static func conflictingAction(
-        for shortcut: HotkeyShortcut,
-        excluding action: CaptureHotkeyAction,
-        defaults: UserDefaults = .standard
-    ) -> CaptureHotkeyAction? {
-        CaptureHotkeyAction.allCases.first { candidate in
-            candidate != action && self.shortcut(for: candidate, defaults: defaults) == shortcut
-        }
+    static func conflictingAction(for shortcut: HotkeyShortcut, excluding action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> CaptureHotkeyAction? {
+        CaptureHotkeyAction.allCases.first { $0 != action && self.shortcut(for: $0, defaults: defaults) == shortcut }
     }
 }

@@ -1,15 +1,8 @@
-//
-//  HotkeyManager.swift
-//  Upshot
-//
-//  Created by Fayaz Ahmed Aralikatti on 26/04/26.
-//
 
 import AppKit
 import Observation
 import Carbon.HIToolbox
 
-/// Registers system-wide global keyboard shortcuts for capture actions.
 @Observable
 final class HotkeyManager {
     
@@ -42,9 +35,9 @@ final class HotkeyManager {
 
         var registeredShortcuts: Set<HotkeyShortcut> = []
         for action in CaptureHotkeyAction.allCases {
-            let shortcut = CaptureHotkeyPreferences.shortcut(for: action)
+            guard let shortcut = CaptureHotkeyPreferences.shortcut(for: action) else { continue }
             guard registeredShortcuts.insert(shortcut).inserted else {
-                print("Skipping duplicate hotkey for \(action.title): \(shortcut.displayString)")
+                registrationErrors[action] = "This shortcut is assigned to another Upshot action."
                 continue
             }
 
@@ -81,16 +74,21 @@ final class HotkeyManager {
         }
     }
     
-    /// Register the replacement before releasing the working shortcut. A
-    /// rejected shortcut never changes either the preference or old binding.
-    func setShortcut(_ shortcut: HotkeyShortcut, for action: CaptureHotkeyAction) throws {
+    func setShortcut(_ shortcut: HotkeyShortcut?, for action: CaptureHotkeyAction) throws {
         if shortcut == CaptureHotkeyPreferences.shortcut(for: action), hotKeyRefs[action] != nil { return }
         installEventHandlerIfNeeded()
-        let newRef = try registerHotKey(action: action, shortcut: shortcut)
+        if let shortcut {
+            guard shortcut.isValid else { throw AutomationError.message("Use a valid key with at least one modifier.") }
+            if let conflict = CaptureHotkeyPreferences.conflictingAction(for: shortcut, excluding: action) {
+                throw AutomationError.message("This shortcut is assigned to \(conflict.title).")
+            }
+        }
+        let newRef = try shortcut.map { try registerHotKey(action: action, shortcut: $0) }
         if let oldRef = hotKeyRefs[action] { UnregisterEventHotKey(oldRef) }
         hotKeyRefs[action] = newRef
         CaptureHotkeyPreferences.saveShortcut(shortcut, for: action)
         registrationErrors[action] = nil
+        NSLog("Shortcut updated action=%@ binding=%@", action.route, shortcut?.displayString ?? "disabled")
     }
 
     private func registerHotKey(action: CaptureHotkeyAction, shortcut: HotkeyShortcut) throws -> EventHotKeyRef {
@@ -126,7 +124,6 @@ final class HotkeyManager {
     }
 }
 
-// MARK: - Carbon Event Handler
 
 private func hotKeyHandler(
     nextHandler: EventHandlerCallRef?,

@@ -1,13 +1,11 @@
-//
-//  CaptureHotkeySettingsSection.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
 
 struct CaptureHotkeySettingsSection: View {
     let actions: [CaptureHotkeyAction]
+    @State private var searchText = ""
+    @State private var showsAllActions = false
 
     @State private var shortcuts = CaptureHotkeyPreferences.shortcuts()
     @State private var recorder = HotkeyShortcutRecorder()
@@ -16,7 +14,10 @@ struct CaptureHotkeySettingsSection: View {
 
     var body: some View {
         Section("Keyboard Shortcuts") {
-            ForEach(actions) { action in
+            TextField("Search all shortcuts", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+            Toggle("Show all actions", isOn: $showsAllActions)
+            ForEach(visibleActions) { action in
                 LabeledContent(action.title) {
                     HStack(spacing: 8) {
                         if shortcut(for: action) != action.defaultShortcut, !isRecording(action) {
@@ -36,11 +37,14 @@ struct CaptureHotkeySettingsSection: View {
                                     } animation: { _ in .easeInOut(duration: 0.7) }
                                     .transition(.blurPop)
                             } else {
-                                KeyCaps(tokens: shortcut(for: action).displayTokens)
+                                KeyCaps(tokens: shortcut(for: action)?.displayTokens ?? ["Unassigned"])
                                     .transition(.blurPop)
                             }
                         }
 
+                        if shortcut(for: action) != nil, !isRecording(action) {
+                            SettingsButton("Clear") { apply(nil, to: action) }
+                        }
                         SettingsButton(isRecording(action) ? "Cancel" : "Record") {
                             toggleRecording(for: action)
                         }
@@ -80,8 +84,13 @@ struct CaptureHotkeySettingsSection: View {
         }
     }
 
-    private func shortcut(for action: CaptureHotkeyAction) -> HotkeyShortcut {
-        shortcuts[action] ?? action.defaultShortcut
+    private var visibleActions: [CaptureHotkeyAction] {
+        let catalog = showsAllActions || !searchText.isEmpty ? CaptureHotkeyAction.allCases : actions
+        return catalog.filter { searchText.isEmpty || $0.title.localizedStandardContains(searchText) || $0.route.localizedStandardContains(searchText) }
+    }
+
+    private func shortcut(for action: CaptureHotkeyAction) -> HotkeyShortcut? {
+        shortcuts[action]
     }
 
     private func isRecording(_ action: CaptureHotkeyAction) -> Bool {
@@ -116,8 +125,8 @@ struct CaptureHotkeySettingsSection: View {
         }
     }
 
-    private func apply(_ shortcut: HotkeyShortcut, to action: CaptureHotkeyAction) {
-        if let conflict = CaptureHotkeyPreferences.conflictingAction(for: shortcut, excluding: action) {
+    private func apply(_ shortcut: HotkeyShortcut?, to action: CaptureHotkeyAction) {
+        if let shortcut, let conflict = CaptureHotkeyPreferences.conflictingAction(for: shortcut, excluding: action) {
             errorMessage = "\(shortcut.displayString) is already assigned to \(conflict.title)."
             NSSound.beep()
             recorder.stop()

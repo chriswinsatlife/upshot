@@ -1,7 +1,3 @@
-//
-//  HotkeyShortcutRecorder.swift
-//  Upshot
-//
 
 import AppKit
 import Carbon.HIToolbox
