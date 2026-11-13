@@ -114,8 +114,8 @@ enum StateRenderSource {
         ],
         "Upshot/CaptureShelfView.swift": [
             ("struct CaptureShelfView: View {", 3),
-            ("private struct CaptureShelfHeader: View {", 103),
-            ("private struct CaptureShelfHandle: View {", 148),
+            ("private struct CaptureShelfHeader: View {", 107),
+            ("private struct CaptureShelfHandle: View {", 160),
         ],
         "Upshot/CaptureTextFeedbackPresenter.swift": [
             ("struct CaptureTextFeedback: Equatable {", 4),

@@ -82,7 +82,6 @@ final class CaptureShelfPresenter {
         return panel
     }
 
-
     private func installMonitors() {
         CaptureShelfKeyboardShortcuts.shared.start()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -142,17 +141,16 @@ enum CaptureShelfMetrics {
         let scale = UpshotPreferences.previewOverlaySize.scale
         return CGSize(width: 168 * scale, height: 118 * scale)
     }
-    static let cardRadius: CGFloat = 14
-    static let cardSpacing: CGFloat = 12
-    static let edgeInset: CGFloat = 20
-    static let bottomInset: CGFloat = 24
-    static let headerHeight: CGFloat = 26
-    static let headerSpacing: CGFloat = 10
-    static let shadowRoom: CGFloat = 28
+    static let cardRadius: CGFloat = Radius.card
+    static let cardSpacing: CGFloat = Space.l
+    static let edgeInset: CGFloat = Space.xxl
+    static let bottomInset: CGFloat = Space.xxl
+    static let headerHeight: CGFloat = InterfaceMetrics.modeSwitchHeight
+    static let shadowRoom: CGFloat = Space.xxxl
     static var panelWidth: CGFloat { edgeInset + cardSize.width + shadowRoom }
 
     static func capacity(forHeight height: CGFloat) -> Int {
-        let usable = height - bottomInset - headerHeight - headerSpacing - edgeInset
+        let usable = height - bottomInset - headerHeight - cardSpacing - edgeInset
         let stride = cardSize.height + cardSpacing
         return max(1, Int((usable + cardSpacing) / stride))
     }
