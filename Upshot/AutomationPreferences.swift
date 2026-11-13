@@ -9,10 +9,17 @@ extension UpshotPreferences {
 }
 
 struct AutomationPreferenceDefinition {
+    enum ArrayKind {
+        case rectangle
+        case strings
+    }
+
     let defaultValue: JSONValue
     var range: ClosedRange<Double>?
     var integral = false
     var choices: [String]?
+    var arrayKind: ArrayKind?
+    var storesJSONData = false
 
     func validate(_ value: JSONValue, key: String) throws {
         let valid: Bool
@@ -21,9 +28,27 @@ struct AutomationPreferenceDefinition {
         case (.string, .string(let text)): valid = choices?.contains(text) ?? true
         case (.number, .number(let number)):
             valid = number.isFinite && (range?.contains(number) ?? true) && (!integral || number.rounded() == number)
+        case (.array, .array(let elements)):
+            switch arrayKind {
+            case .rectangle:
+                let numbers = elements.compactMap { $0.doubleValue }
+                valid = elements.isEmpty || (elements.count == 4 && numbers.count == 4 && numbers.allSatisfy(\.isFinite) && numbers[2] >= 1 && numbers[3] >= 1)
+            case .strings: valid = elements.allSatisfy { $0.stringValue != nil }
+            case nil: valid = false
+            }
         default: valid = false
         }
         guard valid else { throw AutomationError.message("Invalid configuration value for \(key).") }
+        if storesJSONData {
+            guard let string = value.stringValue,
+                  (try? JSONDecoder().decode(RecordingExportDeliveryOptions.self, from: Data(string.utf8))) != nil else {
+                throw AutomationError.message("Invalid recording export defaults JSON.")
+            }
+        }
+        if key == UpshotPreferences.screenshotFilenameTemplateKey,
+           let template = value.stringValue, let error = ScreenshotFileNaming.templateError(template) {
+            throw AutomationError.message(error)
+        }
     }
 
     static var catalog: [String: Self] {
@@ -67,6 +92,7 @@ struct AutomationPreferenceDefinition {
         values[UpshotPreferences.recordingCameraDeviceIDKey] = Self(defaultValue: "")
         values[UpshotPreferences.recordingMicrophoneDeviceIDKey] = Self(defaultValue: "")
         values[UpshotPreferences.recordingTeleprompterScriptKey] = Self(defaultValue: "")
+        values.merge(phaseTwoCatalog) { _, integrated in integrated }
         return values
     }
 }

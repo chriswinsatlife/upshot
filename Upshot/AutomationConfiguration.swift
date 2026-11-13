@@ -70,12 +70,15 @@ final class AutomationConfiguration {
     func snapshot() throws -> AutomationConfigurationDocument {
         var document = AutomationConfigurationDocument()
         for (key, definition) in AutomationPreferenceDefinition.catalog {
-            if let object = UserDefaults.standard.object(forKey: key),
+            if definition.storesJSONData, let data = UserDefaults.standard.data(forKey: key),
+               let string = String(data: data, encoding: .utf8) {
+                document.preferences[key] = .string(string)
+            } else if let object = UserDefaults.standard.object(forKey: key),
                let data = try? JSONSerialization.data(withJSONObject: object, options: [.fragmentsAllowed]),
                let value = try? JSONValue.decoder.decode(JSONValue.self, from: data) {
                 document.preferences[key] = value
             } else { document.preferences[key] = definition.defaultValue }
-            if key == UpshotPreferences.exportDirectoryPathKey,
+            if [UpshotPreferences.exportDirectoryPathKey, UpshotPreferences.screenshotWindowWallpaperPathKey].contains(key),
                let path = document.preferences[key]?.stringValue {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
                 if path == home || path.hasPrefix(home + "/") {
@@ -110,8 +113,19 @@ final class AutomationConfiguration {
             case .bool(let flag): UserDefaults.standard.set(flag, forKey: key)
             case .number(let number): UserDefaults.standard.set(number, forKey: key)
             case .string(let string):
-                let value = key == UpshotPreferences.exportDirectoryPathKey ? (string as NSString).expandingTildeInPath : string
-                UserDefaults.standard.set(value, forKey: key)
+                if definitions[key]?.storesJSONData == true {
+                    UserDefaults.standard.set(Data(string.utf8), forKey: key)
+                } else {
+                    let value = [UpshotPreferences.exportDirectoryPathKey, UpshotPreferences.screenshotWindowWallpaperPathKey].contains(key)
+                        ? (string as NSString).expandingTildeInPath : string
+                    UserDefaults.standard.set(value, forKey: key)
+                }
+            case .array(let values):
+                if definitions[key]?.arrayKind == .rectangle {
+                    UserDefaults.standard.set(values.compactMap(\.doubleValue), forKey: key)
+                } else {
+                    UserDefaults.standard.set(values.compactMap(\.stringValue), forKey: key)
+                }
             default: break
             }
         }

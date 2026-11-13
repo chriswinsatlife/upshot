@@ -22,7 +22,7 @@ nonisolated struct AutomationConfigurationDocument {
                 continue
             }
             guard !section.isEmpty, let separator = Self.assignmentIndex(in: line) else {
-                throw AutomationError.message("Configuration line \(lineNumber): expected a key and scalar value in a table.")
+                throw AutomationError.message("Configuration line \(lineNumber): expected a key and value in a table.")
             }
             let rawKey = line[..<separator].trimmingCharacters(in: .whitespaces)
             let key: String
@@ -76,10 +76,17 @@ nonisolated struct AutomationConfigurationDocument {
             switch value {
             case .string, .bool: return value
             case .number(let number) where number.isFinite: return value
+            case .array(let values) where values.allSatisfy({ value in
+                switch value {
+                case .string: true
+                case .number(let number): number.isFinite
+                default: false
+                }
+            }): return value
             default: break
             }
         }
-        throw AutomationError.message("Configuration line \(line): expected a quoted string, Boolean, or finite decimal number.")
+        throw AutomationError.message("Configuration line \(line): expected a quoted string, Boolean, finite decimal number, or one-line array of strings or numbers.")
     }
 
     private static func removingComment(_ text: String) -> String {
