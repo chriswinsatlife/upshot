@@ -215,6 +215,7 @@ enum AutomationActions {
                 return ["action": .string(action.route), "status": "accepted"]
             }
         case .smartElement: captured = await CaptureCoordinator.shared.captureSmartElementAwaiting()
+        case .scrollingCapture: captured = await CaptureCoordinator.shared.captureScrollingAwaiting()
         case .previousArea:
             captured = await CaptureCoordinator.shared.capturePreviousAreaAwaiting()
         case .areaCopy, .areaSave, .areaUpload, .selfTimer:

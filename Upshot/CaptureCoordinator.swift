@@ -70,7 +70,7 @@ final class CaptureCoordinator {
     @discardableResult
     func captureScrollingAwaiting(selection: AreaCaptureSelectionResult? = nil) async -> URL? {
         guard let result = await ScrollingCaptureSession.shared.capture(selection: selection) else { return nil }
-        return finishCapture(url: result.url, displayID: result.displayID, source: result.source)
+        return await processAndFinishCapture(url: result.url, displayID: result.displayID, source: result.source)
     }
 
     func captureSmartElement() {

@@ -158,6 +158,7 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
 
     case allInOne
     case smartElement
+    case scrollingCapture
     case toggleCrosshair
     case toggleMagnifier
     case toggleDesktopIcons
@@ -196,6 +197,7 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         switch self {
         case .allInOne: "capture/all-in-one"
         case .smartElement: "capture/smart-element"
+        case .scrollingCapture: "capture/scrolling"
         case .toggleCrosshair: "selection/toggle-crosshair"
         case .toggleMagnifier: "selection/toggle-magnifier"
         case .toggleDesktopIcons: "desktop/toggle-icons"
@@ -283,6 +285,7 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         switch self {
         case .allInOne: "Capture All-In-One"
         case .smartElement: "Capture Smart Element"
+        case .scrollingCapture: "Capture Scrolling"
         case .toggleCrosshair: "Toggle Selection Crosshair"
         case .toggleMagnifier: "Toggle Selection Magnifier"
         case .toggleDesktopIcons: "Toggle Desktop Icons"

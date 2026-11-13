@@ -19,6 +19,7 @@ Upshot registers the `upshot` scheme. A route has the form `upshot://capture/are
 - `upshot://capture/self-timer?delay=5`: select an area and capture after the specified delay. The default is five seconds. The accepted range is 1–3600 seconds. The action preserves the saved self-timer preference.
 - `upshot://capture/previous-area`: recapture the last successful screenshot area without selecting it again. A changed display arrangement makes the saved area unavailable.
 - `upshot://capture/smart-element`: select an Accessibility element and capture its frame. Accessibility permission is required.
+- `upshot://capture/scrolling`: select an area, then scroll manually or start Auto-Scroll; Upshot stitches the frames into one tall screenshot. Auto-Scroll requires Accessibility permission.
 - `upshot://capture/all-in-one`: open the shared selector with Area, Window, Fullscreen, Previous Area, Element, Scrolling, and Recording modes. Scrolling retains its unavailable placeholder. Recording opens the recording controls. These two modes return acceptance without a screenshot; an `output` destination requires a screenshot.
 
 Capture routes accept `output`, an absolute destination path. Screenshot destinations require a `.png` extension. Text destinations receive UTF-8. The destination directory must exist, and existing files are preserved. Percent-encode parameter values, including spaces, `#`, `&`, and `+`.
