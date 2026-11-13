@@ -1,5 +1,5 @@
 ---
-review_status: unreviewed
+review_status: agent_written
 approval_status: not_approved
 ---
 
@@ -28,19 +28,43 @@ An appearance suffix selects one PNG:
 ".local/build/Build/Products/Debug Dev/Upshot Dev.app/Contents/MacOS/Upshot Dev" --render-states .local/render-states --state annotation-tool-arrow-dark
 ```
 
-Unknown names and invalid arguments return a nonzero exit status. Each image uses the state name and an appearance suffix, such as `annotation-tool-arrow-light.png`. Each image contains two pixels per layout point.
+Unknown names and invalid arguments return a nonzero exit status. Each image uses the state name and an appearance suffix, such as `annotation-tool-arrow-light.png`. A state whose window content scrolls past the window produces one image per scroll position, named with a `-scroll-N` suffix, such as `settings-screenshots-expanded-scroll-2-light.png`. A frame name with or without the appearance suffix selects that single image.
+
+## Display Frames
+
+Every image is one display-sized frame of 1728 by 1117 points at two pixels per point (3456 by 2234 pixels). The main display must be at least that size at 2x; the renderer fails otherwise.
+
+The wallpaper is the macOS Tahoe default, read from the Neptune One wallpaper extension because the Desktop Pictures folder does not contain the Tahoe images:
+
+- Light: `/System/Library/ExtensionKit/Extensions/NeptuneOneWallpaper.appex/Contents/Resources/TahoeLight.heic`
+- Dark: `/System/Library/ExtensionKit/Extensions/NeptuneOneWallpaper.appex/Contents/Resources/TahoeDark.heic`
+
+The square image fills the display and is centered, as the desktop shows it. The menu bar strip is left clear; its 33-point height comes from the main display's visible frame.
+
+`StateRenderStage` builds each frame from real windows: a borderless wallpaper window, then the state's windows above it. `StateRenderPlacement` assigns each state one placement:
+
+- Settings, Library, Annotate, Studio, Quick Look, and the style gallery use titled windows with the product's style mask and toolbar style, centered with `NSWindow.center()`. Settings has a 700 by 540 content area; Library 1180 by 760; Annotate 1100 by 760; Studio 1360 by 860. These sizes exclude the toolbar, so Settings is 700 by 592 like its autosaved product frame.
+- Floating UI uses a borderless panel at the frame its presenter computes. The presenters expose their frame math as static functions: `CaptureShelfPresenter.panelFrame`, `PinnedScreenshotPresenter.cascadedOrigin`, `CaptureHistoryPresenter.panelFrame`, `RecordingBarPresenter.panelFrame`, `CaptureCountdownPresenter.centeredOrigin`, `CaptureTextFeedbackPresenter.origin`, `CaptureCodeFeedbackPresenter.origin`, `TeleprompterOverlayPresenter.panelFrame`, `CameraRecordingManager.previewFrame`, and `ScrollingCaptureControlPanel.panelFrame`. Scrolling capture controls surround a Library window, and recording bar area states sit over the recording area sheet.
+- Selector, recording source, recording area, and live pen states cover the display. Their frozen screen image is the Tahoe wallpaper with the fixture window centered on it.
+- Alerts use the alert content from `NSAlert` in a window with the alert's glass frame style, positioned near the top of the Library, Annotate, or Studio window they belong to, or centered on the display when they belong to no window. AppKit keeps the real `_NSAlertPanel` off the window server outside a modal session, so the renderer removes those two modal style bits.
+- Popover content appears in an `NSGlassEffectView` panel beside the button that opens it in the Annotate or Studio window. The renderer never shows `NSPopover`, because AppKit can move a popover window onto the display before its level can be lowered.
+- Menu bar menu states draw the menu replica on the `.menu` visual effect material below the menu bar area.
+
+Titled windows report key and main appearance to AppKit, so they draw colored window controls and active sidebars without becoming key. The window server draws no shadow for windows below the desktop level, so `StateRenderShadow` draws each shadow from the window's own shape and the active shadow parameters AppKit assigns to it (density 0.4, radius 20, vertical offset 18, and rim 0.6 at radius 3 for titled windows), in a window directly beneath it.
+
+ScreenCaptureKit captures the frame with `SCScreenshotManager.captureImage` and a display filter that includes only the stage's windows, so window-server materials, Liquid Glass, and vibrancy sample the wallpaper and windows behind them. Before capture, the renderer requires every included window to be ordered in and below the desktop layer according to `SCShareableContent`.
 
 ## Output
 
-- `catalog.json` lists the selected states, source locations, and render status.
-- `manifest.json` records each image’s name, base state, appearance, production source file, source line, pixel dimensions, scale, filename, capture method, and window level.
+- `catalog.json` lists the selected states, source locations, render status, and frame names.
+- `manifest.json` records each image’s name, base state, appearance, scroll frame number, production source file, source line, pixel dimensions, scale, capture method, highest window-server layer, desktop layer, wallpaper path, and filename.
 - `contact_sheet.png` contains every rendered image with its name below its thumbnail.
 - `isolation-before.json` and `isolation-after.json` record protected paths, modification times, and regular file sizes. Paths under the home directory use a tilde.
-- Standard error records fixture creation, each completed capture, the verified window level, and the final isolation result.
+- Standard error records each rendered state with its frame count and duration.
 
-The renderer uses activation policy `prohibited`. Render windows cannot become key or main windows, ignore mouse events, and stay one level below the desktop window. The renderer verifies both its activation policy and the WindowServer level before capture. Standard window states include native title bars and toolbars. Tall expanded states use borderless windows so macOS does not constrain their height to the display.
+The renderer uses activation policy `prohibited`. Render windows cannot become key or main windows, ignore mouse events, and stay below the desktop window level, so the display never shows them. The renderer verifies its activation policy, inactive state, and every window's level before and after each capture.
 
-When Screen Recording access already exists, the renderer captures only its own verified window with `screencapture -l`. It never requests permission or captures a display. Without that access, it uses AppKit `cacheDisplay`. Native vibrancy and video layers have more complete rendering through the window capture method; the manifest identifies the method used.
+Rendering requires existing Screen Recording access for the rendering app. The renderer never requests it and fails when it is missing.
 
 ## Fixture Isolation
 
@@ -70,7 +94,7 @@ Quick Look screenshot and recording previews use generated fixture files in an e
 
 ## Add a State
 
-Add a `StateRenderDefinition` in `StateRenderCatalog` or `StateRenderSupplementalCatalog`. Use a unique filename-safe base name, the production source filename, a source marker, a layout size in points, and a factory returning the production view. The factory may load generated fixture media asynchronously. An optional scroll fraction captures lower portions of a scroll view.
+Add a `StateRenderDefinition` in `StateRenderCatalog` or `StateRenderSupplementalCatalog`. Use a unique filename-safe base name, the production source filename, a source marker, a layout size in points, and a factory returning the production view. The factory may load generated fixture media asynchronously. An optional scroll fraction captures one lower portion of a scroll view. `StateRenderPlacement.resolve` assigns the window, panel, display, alert, or popover placement from the state name; add a case there when a new state needs a placement other than a centered panel. Settings states and `annotation-background` produce one frame per scroll position.
 
 Use fixture models and the existing render-only construction methods. For a new overlay, expose its view separately from the presenter. The factory must not call a presenter that opens windows, captures pixels, activates the app, reads production data, or starts hardware services. Render-only methods must assert `UpshotStorage.isRenderingStates`.
 
