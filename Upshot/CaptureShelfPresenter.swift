@@ -43,13 +43,17 @@ final class CaptureShelfPresenter {
 
     func applyPlacement() {
         guard let panel, let screen = targetScreen() else { return }
-        let visible = screen.visibleFrame.integral
-        let width = CaptureShelfMetrics.panelWidth
-        let x = UpshotPreferences.previewPosition == .left ? visible.minX : visible.maxX - width
-        let frame = CGRect(x: x, y: visible.minY, width: width, height: visible.height)
+        let frame = Self.panelFrame(visibleFrame: screen.visibleFrame, position: UpshotPreferences.previewPosition)
         if panel.frame != frame {
             panel.setFrame(frame, display: panel.isVisible)
         }
+    }
+
+    static func panelFrame(visibleFrame: CGRect, position: PreviewOverlayPosition) -> CGRect {
+        let visible = visibleFrame.integral
+        let width = CaptureShelfMetrics.panelWidth
+        let x = position == .left ? visible.minX : visible.maxX - width
+        return CGRect(x: x, y: visible.minY, width: width, height: visible.height)
     }
 
     private func targetScreen() -> NSScreen? {

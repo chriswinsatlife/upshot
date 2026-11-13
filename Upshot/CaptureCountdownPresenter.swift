@@ -113,7 +113,11 @@ final class CaptureCountdownPresenter {
     private func centeredOrigin(size: NSSize, displayID: CGDirectDisplayID?) -> CGPoint {
         let screen = screen(for: displayID) ?? NSScreen.main
         guard let frame = screen?.frame else { return .zero }
-        return CGPoint(
+        return Self.centeredOrigin(size: size, screenFrame: frame)
+    }
+
+    static func centeredOrigin(size: NSSize, screenFrame frame: CGRect) -> CGPoint {
+        CGPoint(
             x: frame.midX - size.width / 2,
             y: frame.midY - size.height / 2
         )

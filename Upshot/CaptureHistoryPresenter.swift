@@ -82,9 +82,12 @@ final class CaptureHistoryPresenter: NSObject, NSWindowDelegate {
     private func applyPlacement() {
         guard let panel,
               let screen = ActiveDisplayResolver.screen(for: targetDisplayID) ?? ActiveDisplayResolver.activeScreen() else { return }
-        let visible = screen.visibleFrame
+        panel.setFrame(Self.panelFrame(screenFrame: screen.frame, visibleFrame: screen.visibleFrame), display: panel.isVisible)
+    }
+
+    static func panelFrame(screenFrame: CGRect, visibleFrame visible: CGRect) -> CGRect {
         let height = min(CaptureHistoryStrip.preferredHeight, visible.height)
-        panel.setFrame(CGRect(x: screen.frame.minX, y: visible.maxY - height, width: screen.frame.width, height: height), display: panel.isVisible)
+        return CGRect(x: screenFrame.minX, y: visible.maxY - height, width: screenFrame.width, height: height)
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {

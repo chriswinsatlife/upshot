@@ -122,7 +122,10 @@ final class ScrollingCaptureControlPanel {
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
+        panel.setFrameOrigin(Self.panelFrame(size: panel.frame.size, around: rect, visibleFrame: visible).origin)
+    }
+
+    static func panelFrame(size: CGSize, around rect: CGRect, visibleFrame visible: CGRect) -> CGRect {
         let candidates = [
             CGRect(x: rect.midX - size.width / 2, y: rect.minY - size.height - 12, width: size.width, height: size.height),
             CGRect(x: rect.midX - size.width / 2, y: rect.maxY + 12, width: size.width, height: size.height),
@@ -131,8 +134,8 @@ final class ScrollingCaptureControlPanel {
         ]
         let desired = candidates.first { visible.contains($0) }
             ?? CGRect(x: visible.midX - size.width / 2, y: visible.minY + 24, width: size.width, height: size.height)
-        panel.setFrameOrigin(CGPoint(x: max(visible.minX, min(desired.minX, visible.maxX - size.width)),
-                                    y: max(visible.minY, min(desired.minY, visible.maxY - size.height))))
+        return CGRect(origin: CGPoint(x: max(visible.minX, min(desired.minX, visible.maxX - size.width)),
+                                      y: max(visible.minY, min(desired.minY, visible.maxY - size.height))), size: size)
     }
 }
 

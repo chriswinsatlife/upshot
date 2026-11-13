@@ -29,7 +29,7 @@ final class CaptureCodeFeedbackPresenter {
             backing: .buffered,
             defer: false
         )
-        let listHeight = min(Self.maximumListHeight, frame.height - 200)
+        let listHeight = Self.listHeight(visibleFrame: frame)
         let hostingView = NSHostingView(
             rootView: CaptureCodeFeedbackView(detection: detection, maximumListHeight: listHeight) { [weak panel] in
                 panel?.close()
@@ -47,16 +47,25 @@ final class CaptureCodeFeedbackPresenter {
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hostingView
-        let origin = CGPoint(
-            x: frame.midX - size.width / 2,
-            y: min(frame.minY + Self.bottomInset, frame.maxY - size.height - Self.screenMargin)
-        )
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        panel.setFrame(NSRect(origin: Self.origin(size: size, visibleFrame: frame), size: size), display: true)
         PreviewWindowCaptureExclusion.shared.register(window: panel)
         panel.orderFrontRegardless()
         panel.invalidateShadow()
         self.panel = panel
         AppLog.event("capture", "capture_code_prompt_presented", fields: ["codes": String(describing: detection.codes.count), "links": String(describing: detection.links.count)])
+    }
+}
+
+extension CaptureCodeFeedbackPresenter {
+    static func listHeight(visibleFrame frame: CGRect) -> CGFloat {
+        min(maximumListHeight, frame.height - 200)
+    }
+
+    static func origin(size: NSSize, visibleFrame frame: CGRect) -> CGPoint {
+        CGPoint(
+            x: frame.midX - size.width / 2,
+            y: min(frame.minY + bottomInset, frame.maxY - size.height - screenMargin)
+        )
     }
 }
 

@@ -39,7 +39,7 @@ struct CaptureTextFeedback: Equatable {
 final class CaptureTextFeedbackPresenter {
     static let shared = CaptureTextFeedbackPresenter()
 
-    private static let shadowSlack: CGFloat = 24
+    static let shadowSlack: CGFloat = 24
     private static let bottomInset: CGFloat = 96
     private static let entranceRise: CGFloat = 8
     private static let visibleDuration: Duration = .seconds(1.8)
@@ -138,9 +138,13 @@ final class CaptureTextFeedbackPresenter {
     private func origin(size: NSSize, displayID: CGDirectDisplayID?) -> CGPoint {
         let screen = screen(for: displayID) ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return .zero }
-        return CGPoint(
+        return Self.origin(size: size, visibleFrame: frame)
+    }
+
+    static func origin(size: NSSize, visibleFrame frame: CGRect) -> CGPoint {
+        CGPoint(
             x: frame.midX - size.width / 2,
-            y: frame.minY + Self.bottomInset - Self.shadowSlack
+            y: frame.minY + bottomInset - shadowSlack
         )
     }
 

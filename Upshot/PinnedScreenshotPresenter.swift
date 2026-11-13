@@ -19,7 +19,7 @@ final class PinnedScreenshotPresenter {
 
         observeAppearance()
 
-        let contentSize = displaySize(forPixelSize: image.size)
+        let contentSize = Self.displaySize(forPixelSize: image.size, scale: NSScreen.main?.backingScaleFactor ?? 2)
         let panel = PinnedPanel(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.borderless, .resizable, .nonactivatingPanel, .fullSizeContentView],
@@ -88,8 +88,7 @@ final class PinnedScreenshotPresenter {
         AppLog.event("quick_access", "pinned_screenshot_appearance", fields: ["border": String(describing: updated.border.description), "panels": String(describing: panels.count), "roundedCorners": String(describing: updated.roundedCorners.description), "shadow": String(describing: updated.shadow.description)])
     }
 
-    private func displaySize(forPixelSize pixelSize: CGSize) -> NSSize {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
+    static func displaySize(forPixelSize pixelSize: CGSize, scale: CGFloat) -> NSSize {
         var width = pixelSize.width / scale
         var height = pixelSize.height / scale
         guard width > 0, height > 0 else { return NSSize(width: 320, height: 240) }
@@ -105,8 +104,11 @@ final class PinnedScreenshotPresenter {
     }
 
     private func cascadedOrigin(for size: NSSize) -> CGPoint {
-        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 100, y: 100, width: 800, height: 600)
-        let offset = CGFloat(panels.count % 8) * 28
+        Self.cascadedOrigin(for: size, visibleFrame: NSScreen.main?.visibleFrame ?? CGRect(x: 100, y: 100, width: 800, height: 600), index: panels.count)
+    }
+
+    static func cascadedOrigin(for size: NSSize, visibleFrame visible: CGRect, index: Int) -> CGPoint {
+        let offset = CGFloat(index % 8) * 28
         return CGPoint(
             x: visible.midX - size.width / 2 + offset,
             y: visible.midY - size.height / 2 - offset

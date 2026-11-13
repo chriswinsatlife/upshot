@@ -150,16 +150,11 @@ final class CameraRecordingManager {
         }
         hidePreview()
 
-        let diameter: CGFloat = 160
         let screen = ActiveDisplayResolver.screen(for: displayID) ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 800, height: 600)
-        let origin = CGPoint(
-            x: visibleFrame.maxX - diameter - 24,
-            y: visibleFrame.minY + 24
-        )
+        let frame = Self.previewFrame(visibleFrame: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 800, height: 600))
 
         let panel = NSPanel(
-            contentRect: CGRect(origin: origin, size: CGSize(width: diameter, height: diameter)),
+            contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -177,12 +172,17 @@ final class CameraRecordingManager {
 
         let previewLayer = engine.makePreviewLayer()
         previewLayer.videoGravity = .resizeAspectFill
-        let container = Self.previewContent(size: CGSize(width: diameter, height: diameter), layer: previewLayer)
+        let container = Self.previewContent(size: frame.size, layer: previewLayer)
 
         panel.contentView = container
         panel.orderFrontRegardless()
         previewPanel = panel
         activePreviewDisplayID = displayID
+    }
+
+    static func previewFrame(visibleFrame: CGRect) -> CGRect {
+        let diameter: CGFloat = 160
+        return CGRect(x: visibleFrame.maxX - diameter - 24, y: visibleFrame.minY + 24, width: diameter, height: diameter)
     }
 
     static func renderPreview(player: AVPlayer) -> NSView {

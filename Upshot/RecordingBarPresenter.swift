@@ -141,13 +141,16 @@ final class RecordingBarPresenter {
 
     private func position(_ panel: NSPanel, displayID: CGDirectDisplayID?) {
         let screen = ActiveDisplayResolver.screen(for: displayID) ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 800, height: 600)
+        panel.setFrame(Self.panelFrame(visibleFrame: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 800, height: 600)), display: true)
+    }
+
+    static func panelFrame(visibleFrame: CGRect) -> CGRect {
         let size = CGSize(width: BarMetrics.panelWidth, height: BarMetrics.panelHeight)
         let origin = CGPoint(
             x: visibleFrame.midX - size.width / 2,
             y: visibleFrame.minY + 48 - BarMetrics.bottomSlack
         )
-        panel.setFrame(CGRect(origin: origin, size: size), display: true)
+        return CGRect(origin: origin, size: size)
     }
 
     private func warmCameraPreviewIfEnabled() {

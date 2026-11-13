@@ -175,7 +175,7 @@ final class TeleprompterOverlayPresenter {
         model.spokenWordCount = max(model.spokenWordCount, spokenWordCount)
     }
 
-    private static func notchMode(for screen: NSScreen) -> TeleprompterOverlayModel.Mode? {
+    static func notchMode(for screen: NSScreen) -> TeleprompterOverlayModel.Mode? {
         let notchHeight = screen.safeAreaInsets.top
         guard notchHeight > 0 else { return nil }
 
@@ -220,20 +220,14 @@ final class TeleprompterOverlayPresenter {
     }
 
     private func position(_ panel: NSPanel, on screen: NSScreen) {
+        panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        panel.setFrame(Self.panelFrame(model: model, screenFrame: screen.frame), display: false)
+    }
 
+    static func panelFrame(model: TeleprompterOverlayModel, screenFrame: CGRect) -> CGRect {
         let width = model.expandedHousingWidth + 80
         let height = model.expandedHeight + 40
-
-        panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-        panel.setFrame(
-            CGRect(
-                x: screen.frame.midX - width / 2,
-                y: screen.frame.maxY - height,
-                width: width,
-                height: height
-            ),
-            display: false
-        )
+        return CGRect(x: screenFrame.midX - width / 2, y: screenFrame.maxY - height, width: width, height: height)
     }
 }
 
