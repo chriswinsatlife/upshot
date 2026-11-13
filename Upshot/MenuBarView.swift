@@ -323,8 +323,8 @@ extension MenuBarView {
         case .settingsAbout: "About Upshot"
         case .settings: "Settings…"
         case .settingsScreenshots: SettingsTab.screenshots.title
-        case .settingsVideo: SettingsTab.video.title
-        case .settingsOverlay: SettingsTab.overlay.title
+        case .settingsVideo: SettingsTab.screenRecording.title
+        case .settingsOverlay: SettingsTab.quickAccess.title
         case .settingsMCP: SettingsTab.mcp.title
         case .settingsCloud: SettingsTab.cloud.title
         default: action.title

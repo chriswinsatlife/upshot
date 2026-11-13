@@ -4,7 +4,8 @@ enum StateRenderSource {
     private static let locations: [String: [(String, Int)]] = [
         "Upshot/AfterCaptureSettingsSection.swift": [
             ("struct AfterCaptureActionsSection: View {", 3),
-            ("private struct AfterCaptureToggleRow: View {", 16),
+            ("private struct ScreenshotAfterCaptureRow: View {", 25),
+            ("private struct AfterCaptureToggleRow: View {", 50),
         ],
         "Upshot/AnnotationBackgroundInspector.swift": [
             ("private enum AnnotationBackgroundFillLibrary: CaseIterable, Hashable {", 4),
@@ -38,22 +39,20 @@ enum StateRenderSource {
         "Upshot/AreaCaptureSelection.swift": [
             ("struct AreaCaptureSelectionResult {", 5),
             ("enum Kind {", 6),
-            ("final class AreaCaptureSelection {", 46),
-            ("struct WindowTarget {", 49),
-            ("private final class AreaCaptureSelectionPanel: NSPanel {", 639),
-            ("final class AreaCaptureSelectionView: NSView {", 644),
+            ("final class AreaCaptureSelection {", 48),
+            ("struct WindowTarget {", 51),
+            ("private final class AreaCaptureSelectionPanel: NSPanel {", 751),
+            ("final class AreaCaptureSelectionView: NSView {", 756),
+            ("private final class AreaCaptureInstructionHostingView: NSHostingView<AreaCaptureInstructionHint> {", 840),
         ],
         "Upshot/AreaSelectionSettingsSection.swift": [
             ("struct AreaSelectionSettingsSection: View {", 3),
         ],
-        "Upshot/AutomationSettingsSection.swift": [
-            ("struct AutomationSettingsSection: View {", 4),
-        ],
         "Upshot/AutomationURLRouter.swift": [
             ("nonisolated struct AutomationRequest {", 4),
             ("enum AutomationURLRouter {", 28),
-            ("let alert = NSAlert()", 36),
-            ("let alert = NSAlert()", 58),
+            ("AppAlerts.automationConfirmation(actionTitle: action.title).runModal() == .run", 35),
+            ("AppAlerts.automationFailed(error: error).runModal()", 52),
         ],
         "Upshot/CameraRecordingManager.swift": [
             ("nonisolated struct CameraRecordingResult: Sendable {", 7),
@@ -75,13 +74,17 @@ enum StateRenderSource {
             ("final class CaptureCountdownModel {", 132),
             ("struct CaptureCountdownView: View {", 142),
         ],
-        "Upshot/CaptureHistorySettingsSection.swift": [
-            ("struct CaptureHistorySettingsSection: View {", 3),
-        ],
         "Upshot/CaptureHistoryView.swift": [
             ("struct CaptureHistoryView: View {", 3),
             ("struct CaptureHistoryStrip: View {", 23),
             ("private struct CaptureHistoryCard: View {", 125),
+        ],
+        "Upshot/CaptureHotkeys.swift": [
+            ("struct HotkeyShortcut: Codable, Equatable, Hashable {", 5),
+            ("struct Modifiers: OptionSet, Codable, Equatable, Hashable {", 6),
+            ("enum CaptureHotkeyAction: String, CaseIterable, Identifiable {", 144),
+            ("AppAlerts.shortcutActionFailed(actionTitle: title, error: error).runModal()", 393),
+            ("enum CaptureHotkeyPreferences {", 399),
         ],
         "Upshot/CaptureLibraryInspector.swift": [
             ("struct CaptureLibraryInspector: View {", 7),
@@ -99,6 +102,15 @@ enum StateRenderSource {
             ("enum LibraryAppIcons {", 401),
             ("private struct LibrarySortOffer: View {", 416),
             ("private struct LibrarySidebarFooter: View {", 453),
+        ],
+        "Upshot/CaptureShelf.swift": [
+            ("enum PreviewMediaKind: String, Equatable, Codable {", 5),
+            ("enum ShelfActivity: Equatable {", 10),
+            ("enum ShelfFlash: Equatable {", 15),
+            ("struct ShelfItem: Identifiable {", 22),
+            ("final class CaptureShelf {", 35),
+            ("enum TuckReason: Hashable {", 38),
+            ("let alert = NSAlert()", 728),
         ],
         "Upshot/CaptureShelfView.swift": [
             ("struct CaptureShelfView: View {", 3),
@@ -119,9 +131,17 @@ enum StateRenderSource {
             ("struct CloudUploadButton<Label: View>: View {", 98),
         ],
         "Upshot/EditorCloseGuard.swift": [
-            ("final class EditorCloseGuard: NSObject, NSWindowDelegate {", 15),
-            ("enum Decision {", 16),
-            ("let alert = NSAlert()", 101),
+            ("final class EditorCloseGuard: NSObject, NSWindowDelegate {", 4),
+            ("enum Decision {", 5),
+            ("? AppAlerts.editorUnsavedNewRecording(projectName: projectName)", 79),
+            (": AppAlerts.editorUnsavedChanges(projectName: projectName)", 80),
+            ("Self.alert(offersDelete: offersDelete(), projectName: projectName()).beginSheet(for: window) { [weak self, weak window] action in", 84),
+        ],
+        "Upshot/FailureAlert.swift": [
+            ("enum FailureAlert {", 4),
+            ("enum Operation {", 5),
+            ("AppAlerts.operationFailed(title: operation.title, error: error, detail: operation.detail)", 30),
+            ("AppAlerts.operationFailed(title: message, error: error, detail: detail).runModal()", 40),
         ],
         "Upshot/InterfaceStyleGallery.swift": [
             ("struct InterfaceStyleGallery: View {", 4),
@@ -164,7 +184,7 @@ enum StateRenderSource {
         "Upshot/RecordingAreaSelectionSheet.swift": [
             ("final class RecordingAreaSelectionSheet: NSView {", 5),
             ("private enum Drag {", 10),
-            ("private struct RecordingAreaSheetOverlay: View {", 372),
+            ("private struct RecordingAreaSheetOverlay: View {", 342),
         ],
         "Upshot/RecordingBarPresenter.swift": [
             ("final class RecordingBarPresenter {", 6),
@@ -184,7 +204,9 @@ enum StateRenderSource {
         "Upshot/RecordingInputAuthorization.swift": [
             ("enum RecordingInputAuthorization {", 14),
             ("enum Input {", 15),
-            ("let alert = NSAlert()", 83),
+            ("fileprivate var alertInput: AppAlerts.RecordingInput {", 37),
+            ("AppAlerts.recordingInputRestricted(input.alertInput).runModal()", 91),
+            ("if AppAlerts.recordingInputPermission(input.alertInput).runModal() == .openSystemSettings,", 95),
         ],
         "Upshot/RecordingPenPresenter.swift": [
             ("final class RecordingPenPresenter {", 6),
@@ -192,12 +214,12 @@ enum StateRenderSource {
         ],
         "Upshot/RecordingRecoveryCoordinator.swift": [
             ("enum RecordingRecoveryCoordinator {", 15),
-            ("let alert = NSAlert()", 42),
+            ("AppAlerts.recordingsRecovered(count: recoveredCount).runModal()", 41),
         ],
         "Upshot/RecordingSessionRenderer.swift": [
             ("enum RecordingSessionRenderer {", 7),
             ("private enum RenderError: LocalizedError {", 8),
-            ("let alert = NSAlert()", 223),
+            ("AppAlerts.cameraVideoNotAdded(error: error).runModal()", 222),
         ],
         "Upshot/RecordingSourceTargetPresenter.swift": [
             ("final class RecordingSourceTargetPresenter {", 8),
@@ -292,23 +314,30 @@ enum StateRenderSource {
             ("private enum ScreenRecordingFinishAction: Equatable {", 81),
             ("nonisolated struct ScreenRecordingCaptureOptions: Sendable {", 88),
             ("final class ScreenRecordingManager {", 107),
-            ("let alert = NSAlert()", 561),
-            ("let alert = NSAlert()", 571),
-            ("let alert = NSAlert()", 590),
-            ("let alert = NSAlert()", 609),
-            ("private struct ScreenRecordingCaptureTarget {", 828),
-            ("nonisolated enum ScreenRecordingAudioKind: Sendable {", 839),
-            ("nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {", 844),
-            ("nonisolated struct ScreenRecordingWriterResult: Sendable {", 982),
-            ("nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {", 993),
-            ("nonisolated private struct SendableSampleBuffer: @unchecked Sendable {", 1368),
+            ("let warning = AppAlerts.recordingStoppedMessage(error: error)", 448),
+            ("errorMessage = AppAlerts.recordingStoppedMessage(error: error)", 485),
+            ("errorMessage = AppAlerts.recordingStoppedMessage(error: error)", 494),
+            ("AppAlerts.recordingInputsUnavailable(warnings: warnings).runModal()", 560),
+            ("? AppAlerts.recordingEndedEarly(message: message)", 565),
+            (": AppAlerts.recordingNotSaved(message: message)).runModal()", 566),
+            ("if AppAlerts.screenRecordingPermission.runModal() == .openSystemSettings,", 577),
+            ("AppAlerts.recordingStartFailed(error: error).runModal()", 585),
+            ("private struct ScreenRecordingCaptureTarget {", 799),
+            ("nonisolated enum ScreenRecordingAudioKind: Sendable {", 810),
+            ("nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {", 815),
+            ("nonisolated struct ScreenRecordingWriterResult: Sendable {", 953),
+            ("nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {", 964),
+            ("nonisolated private struct SendableSampleBuffer: @unchecked Sendable {", 1339),
         ],
         "Upshot/ScreenshotCaptureNamePrompt.swift": [
             ("enum ScreenshotCaptureNamePrompt {", 4),
-            ("let alert = NSAlert()", 12),
+            ("guard AppAlerts.screenshotName.runModal(accessoryView: field, initialFirstResponder: field) == .save,", 21),
         ],
         "Upshot/ScreenshotOutputSettingsSection.swift": [
             ("struct ScreenshotOutputSettingsSection: View {", 5),
+            ("private struct ScreenshotFileNameTemplateRow: View {", 71),
+            ("struct WindowScreenshotSettingsSection: View {", 131),
+            ("struct ScreenshotBackgroundPresetSettingsSection: View {", 203),
         ],
         "Upshot/ScrollingCaptureControlPanel.swift": [
             ("final class ScrollingCaptureControlPanel {", 5),
@@ -322,15 +351,19 @@ enum StateRenderSource {
             ("private struct ScrollingCaptureHeightReadout: View {", 260),
             ("enum RenderState: String, CaseIterable {", 286),
         ],
+        "Upshot/SettingsAdvancedPane.swift": [
+            ("struct SettingsAdvancedPane: View {", 3),
+        ],
         "Upshot/SettingsAnnotatePane.swift": [
             ("struct SettingsAnnotatePane: View {", 3),
         ],
         "Upshot/SettingsCloudPane.swift": [
             ("struct CloudSettingsPane: View {", 6),
-            ("struct PingResponse: Decodable { let version: String? }", 372),
-            ("private enum ConnectionStatus: Equatable {", 396),
-            ("private struct WorkerVersionManifest: Decodable {", 403),
-            ("private struct SetupVideoPlayer: NSViewRepresentable {", 409),
+            ("struct PingResponse: Decodable { let version: String? }", 377),
+            ("private enum ConnectionStatus: Equatable {", 401),
+            ("private struct WorkerVersionManifest: Decodable {", 408),
+            ("private struct SetupVideoPlayer: NSViewRepresentable {", 414),
+            ("private enum CredentialField: Hashable {", 430),
         ],
         "Upshot/SettingsGeneralPane.swift": [
             ("struct SettingsGeneralPane: View {", 5),
@@ -341,10 +374,6 @@ enum StateRenderSource {
             ("struct MCPSettingsPane: View {", 4),
             ("private enum Setup: String, CaseIterable, Identifiable {", 9),
         ],
-        "Upshot/SettingsTextRecognitionPane.swift": [
-            ("struct SettingsTextRecognitionPane: View {", 3),
-            ("private struct TextRecognitionLibrarySection: View {", 12),
-        ],
         "Upshot/SettingsQuickAccessPane.swift": [
             ("struct SettingsQuickAccessPane: View {", 4),
         ],
@@ -352,6 +381,10 @@ enum StateRenderSource {
             ("enum SettingsShortcutsGroup: String, CaseIterable, Identifiable {", 3),
             ("private struct SettingsShortcutsSubgroup: Identifiable {", 72),
             ("struct SettingsShortcutsPane: View {", 78),
+        ],
+        "Upshot/SettingsTextRecognitionPane.swift": [
+            ("struct SettingsTextRecognitionPane: View {", 3),
+            ("private struct TextRecognitionLibrarySection: View {", 12),
         ],
         "Upshot/SettingsView.swift": [
             ("enum SettingsTab: String, CaseIterable, Identifiable {", 4),
@@ -373,8 +406,8 @@ enum StateRenderSource {
             ("enum UpshotMain {", 7),
             ("struct UpshotApp: App {", 21),
             ("final class AppDelegate: NSObject, NSApplicationDelegate {", 119),
-            ("let alert = NSAlert()", 196),
-            ("let alert = NSAlert()", 224),
+            ("guard AppAlerts.quitDuringRecording(unsavedCaptureCount: unsavedCount).runModal() == .finishAndQuit else {", 194),
+            ("let alert = AppAlerts.quitWithUnsavedCaptures(captureCount: unsavedCount, unsavedProjectCount: unsavedProjectCount)", 211),
         ],
     ]
 

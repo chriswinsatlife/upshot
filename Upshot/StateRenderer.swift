@@ -97,8 +97,9 @@ enum StateRenderer {
         let fixtures = try await StateRenderFixtures.make()
         fixtureVideoURL = fixtures.project.screenURL
         let definitions = StateRenderCatalog.states(fixtures: fixtures)
-        guard Set(definitions.map(\.name)).count == definitions.count else {
-            throw StateRenderFailure(message: "Duplicate state names")
+        let duplicateNames = Dictionary(grouping: definitions, by: \.name).filter { $0.value.count > 1 }.keys.sorted()
+        guard duplicateNames.isEmpty else {
+            throw StateRenderFailure(message: "Duplicate state names: \(duplicateNames.joined(separator: ", "))")
         }
         let selected = definitions.filter { definition in
             requested == nil || requested == definition.name || requested == definition.name + "-light" || requested == definition.name + "-dark"
