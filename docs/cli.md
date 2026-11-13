@@ -83,3 +83,9 @@ The release socket is in `~/Library/Application Support/Upshot/agent.sock`. The 
 Run `upshot --help` without the app to verify CLI dispatch. With the app running, run `upshot actions --json` and compare routes against the shortcut catalog. Capture an area to a new PNG destination and inspect the file, dimensions, and contents. Repeat with the same destination and confirm the existing file remains unchanged. Cancel an area selection and confirm a nonzero exit status. Record briefly, pause, resume, and stop; verify the resulting recording project in the Library.
 
 Successful captures log `Automation capture completed action=<route> path=<path>`. Every successful action logs `Automation action completed action=<route>`. Failed app actions log `Automation action failed action=<route> error=<reason>`.
+
+Library selection commands include `library preview`, `library edit`, `library rename`, `library copy`, `library export`, `library reveal`, `library trash`, and `library refresh`. The current Library selection supplies the captures. Dialog-based commands open the existing dialog and retain its confirmation behavior.
+
+Recording editor commands include `editor recording-save`, `editor recording-undo`, `editor recording-redo`, `editor recording-play`, `editor recording-pause`, `editor recording-export`, `editor recording-export-audio`, and `editor recording-cancel-export`. An optional `--path` chooses an already-open recording. Movie and audio exports continue asynchronously in the editor.
+
+Screenshot editor commands `editor save`, `editor save-copy`, `editor done`, `editor share`, `editor undo`, and `editor redo` require the annotation-editor callback registration described in [URL Scheme](url-scheme.md). These routes report an integration error in the phase-one build until that registration is added.

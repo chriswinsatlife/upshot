@@ -66,3 +66,42 @@ Omitting `path` opens the latest matching capture from history. Paths may begin 
 Unknown routes, duplicate parameters, unknown parameters, invalid output paths, and incompatible action states produce an app alert and a `URL scheme failed error=...` log entry. Successful actions produce `Automation action completed action=<route>`. Captures also log `Automation capture completed action=<route> path=<path>`.
 
 `CaptureHotkeyAction` owns route names, labels, default shortcuts, and registration identifiers. Add a case and its route, label, and execution branch to expose another action to URL routing, the shortcut catalog, and `upshot actions`. The area-selection integration assigns `AutomationActions.capturePreviousArea` to an async closure returning the captured file URL.
+
+## Library Selection Routes
+
+These routes operate on the current Library selection. Open the Library and select captures first. Preview, Edit, and Rename require exactly one selected capture. Other selection routes accept several captures. Busy Library operations reject another command.
+
+- `upshot://library/preview`: show Quick Look.
+- `upshot://library/edit`: open the selected capture's editor.
+- `upshot://library/rename`: open the existing rename dialog.
+- `upshot://library/copy`: copy selected captures.
+- `upshot://library/export`: open the existing export destination dialog.
+- `upshot://library/reveal`: reveal selected captures in Finder.
+- `upshot://library/trash`: open the existing Move to Trash confirmation.
+- `upshot://library/refresh`: refresh the Library without requiring a selection.
+
+Dialog-based actions acknowledge opening the dialog. The dialog retains its existing confirmation and cancellation behavior.
+
+## Recording Editor Controls
+
+These routes require the recording to be open in its editor. An optional `path` selects the open recording project or video. Omitting `path` resolves the latest recording in history. Export actions acknowledge acceptance; the existing editor performs the export asynchronously.
+
+- `upshot://editor/recording-save`: save the recording project.
+- `upshot://editor/recording-undo`: undo an edit.
+- `upshot://editor/recording-redo`: redo an edit.
+- `upshot://editor/recording-play`: play the preview.
+- `upshot://editor/recording-pause`: pause the preview.
+- `upshot://editor/recording-export`: export with current editor settings.
+- `upshot://editor/recording-export-audio`: export audio with current editor settings.
+- `upshot://editor/recording-cancel-export`: cancel the movie export.
+
+## Screenshot Editor Controls
+
+The action registry and window registration API expose these routes. The annotation-editor workstream must register its existing private callbacks with `AutomationEditorActions.register` before the routes can act. An unregistered editor produces an explicit integration error. The frontmost visible registered screenshot editor receives the action. Closed windows remove their registration.
+
+- `upshot://editor/save`: invoke Save.
+- `upshot://editor/save-copy`: invoke Save a Copy As.
+- `upshot://editor/done`: invoke Save and Close.
+- `upshot://editor/share`: invoke the registered sharing callback.
+- `upshot://editor/undo`: invoke Undo.
+- `upshot://editor/redo`: invoke Redo.

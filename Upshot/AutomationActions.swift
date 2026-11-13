@@ -85,6 +85,50 @@ enum AutomationActions {
         case .library: CaptureLibraryModel.shared.show(filter: .all)
         case .libraryScreenshots: CaptureLibraryModel.shared.show(filter: .screenshots)
         case .libraryRecordings: CaptureLibraryModel.shared.show(filter: .recordings)
+        case .libraryRefresh: CaptureLibraryModel.shared.refresh()
+        case .libraryPreview, .libraryEdit, .libraryRename, .libraryCopy, .libraryExport, .libraryReveal, .libraryTrash:
+            let library = CaptureLibraryModel.shared
+            guard !library.isBusy, !library.selectedItems.isEmpty else {
+                throw AutomationError.message("Select captures in an idle Library before using this action.")
+            }
+            let operation: CaptureLibraryAction
+            switch action {
+            case .libraryPreview: operation = .preview
+            case .libraryEdit: operation = .edit
+            case .libraryRename: operation = .rename
+            case .libraryCopy: operation = .copy
+            case .libraryExport: operation = .export
+            case .libraryReveal: operation = .reveal
+            default: operation = .trash
+            }
+            if [.libraryPreview, .libraryEdit, .libraryRename].contains(action), library.selectedItems.count != 1 {
+                throw AutomationError.message("This Library action requires exactly one selected capture.")
+            }
+            library.perform(operation)
+        case .editorSave, .editorSaveCopy, .editorDone, .editorShare, .editorUndo, .editorRedo:
+            try AutomationEditorActions.perform(action)
+        case .recordingEditorSave, .recordingEditorUndo, .recordingEditorRedo, .recordingEditorPlay, .recordingEditorPause,
+             .recordingEditorExport, .recordingEditorExportAudio, .recordingEditorCancelExport:
+            let url = try editorURL(parameters["path"], video: true)
+            guard let model = StudioProjectRegistry.shared.editorModel(for: url), model.isLoaded else {
+                throw AutomationError.message("Open the recording project in its editor before using this action.")
+            }
+            if action != .recordingEditorCancelExport, model.exportState.isExporting || model.shareState.isBusy {
+                throw AutomationError.message("The recording editor is exporting or sharing.")
+            }
+            switch action {
+            case .recordingEditorSave:
+                guard model.saveProject() else { throw AutomationError.message("The recording project could not be saved.") }
+            case .recordingEditorUndo: model.undo()
+            case .recordingEditorRedo: model.redo()
+            case .recordingEditorPlay: model.play()
+            case .recordingEditorPause: model.pause()
+            case .recordingEditorExport: model.export()
+            case .recordingEditorExportAudio:
+                guard model.hasAudio else { throw AutomationError.message("The recording has no audio to export.") }
+                model.exportAudio()
+            default: model.cancelExport()
+            }
         case .restoreLastCapture:
             ScreenshotHistoryStore.shared.reload()
             guard let item = ScreenshotHistoryStore.shared.recentItems.first else { throw AutomationError.message("Capture history is empty.") }

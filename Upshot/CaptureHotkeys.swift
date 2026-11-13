@@ -151,6 +151,10 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
     case library, libraryScreenshots, libraryRecordings, restoreLastCapture
     case settings, settingsScreenshots, settingsVideo, settingsOverlay, settingsMCP, settingsCloud, settingsAbout
     case screenshotsFolder
+    case libraryPreview, libraryEdit, libraryRename, libraryCopy, libraryExport, libraryReveal, libraryTrash, libraryRefresh
+    case editorSave, editorSaveCopy, editorDone, editorShare, editorUndo, editorRedo
+    case recordingEditorSave, recordingEditorUndo, recordingEditorRedo, recordingEditorPlay, recordingEditorPause
+    case recordingEditorExport, recordingEditorExportAudio, recordingEditorCancelExport
 
     var id: Self { self }
 
@@ -191,6 +195,28 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         case .settingsCloud: "settings/cloud"
         case .settingsAbout: "settings/about"
         case .screenshotsFolder: "library/folder"
+        case .libraryPreview: "library/preview"
+        case .libraryEdit: "library/edit"
+        case .libraryRename: "library/rename"
+        case .libraryCopy: "library/copy"
+        case .libraryExport: "library/export"
+        case .libraryReveal: "library/reveal"
+        case .libraryTrash: "library/trash"
+        case .libraryRefresh: "library/refresh"
+        case .editorSave: "editor/save"
+        case .editorSaveCopy: "editor/save-copy"
+        case .editorDone: "editor/done"
+        case .editorShare: "editor/share"
+        case .editorUndo: "editor/undo"
+        case .editorRedo: "editor/redo"
+        case .recordingEditorSave: "editor/recording-save"
+        case .recordingEditorUndo: "editor/recording-undo"
+        case .recordingEditorRedo: "editor/recording-redo"
+        case .recordingEditorPlay: "editor/recording-play"
+        case .recordingEditorPause: "editor/recording-pause"
+        case .recordingEditorExport: "editor/recording-export"
+        case .recordingEditorExportAudio: "editor/recording-export-audio"
+        case .recordingEditorCancelExport: "editor/recording-cancel-export"
         }
     }
 
@@ -227,6 +253,28 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         case .settingsCloud: "Open Cloud Settings"
         case .settingsAbout: "Open About"
         case .screenshotsFolder: "Open Screenshots Folder"
+        case .libraryPreview: "Preview Selected Capture"
+        case .libraryEdit: "Edit Selected Capture"
+        case .libraryRename: "Rename Selected Capture"
+        case .libraryCopy: "Copy Selected Captures"
+        case .libraryExport: "Export Selected Captures"
+        case .libraryReveal: "Reveal Selected Captures"
+        case .libraryTrash: "Trash Selected Captures"
+        case .libraryRefresh: "Refresh Library"
+        case .editorSave: "Save Screenshot Edits"
+        case .editorSaveCopy: "Save Screenshot Copy"
+        case .editorDone: "Save and Close Screenshot"
+        case .editorShare: "Share Edited Screenshot"
+        case .editorUndo: "Undo Screenshot Edit"
+        case .editorRedo: "Redo Screenshot Edit"
+        case .recordingEditorSave: "Save Recording Edits"
+        case .recordingEditorUndo: "Undo Recording Edit"
+        case .recordingEditorRedo: "Redo Recording Edit"
+        case .recordingEditorPlay: "Play Recording Preview"
+        case .recordingEditorPause: "Pause Recording Preview"
+        case .recordingEditorExport: "Export Edited Recording"
+        case .recordingEditorExportAudio: "Export Recording Audio"
+        case .recordingEditorCancelExport: "Cancel Recording Export"
         }
     }
 

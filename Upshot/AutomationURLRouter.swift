@@ -47,7 +47,7 @@ enum AutomationURLRouter {
         }
         let allowed: Set<String> = action == .selfTimer ? ["delay", "output"]
             : action.route.hasPrefix("capture/") ? ["output"]
-            : action == .editorOpen || action == .recordingEditorOpen ? ["path"] : []
+            : action == .editorOpen || action == .recordingEditorOpen || action.route.hasPrefix("editor/recording-") ? ["path"] : []
         guard Set(parameters.keys).isSubset(of: allowed) else { throw AutomationError.message("This action does not accept the supplied parameters.") }
         if let output = parameters["output"] {
             guard output.hasPrefix("/"), !FileManager.default.fileExists(atPath: output),
