@@ -19,45 +19,42 @@ struct CaptureShelfCard: View {
     }
 
     var body: some View {
-        Image(nsImage: item.thumbnail)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .frame(width: cardSize.width, height: cardSize.height)
-            .blur(radius: isFrosted ? 6 : 0, opaque: true)
-            .overlay { overlay }
-            .clipShape(shape)
-            .overlay { shape.strokeBorder(Palette.strongHairline, lineWidth: 1) }
-            .compositingGroup()
-            .shadow(color: .black.opacity(0.2), radius: 14, y: 6)
-            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-            .opacity(isDragging ? 0.35 : 1)
-            .contentShape(shape)
-            .onHover { hovering in
-                isHovered = hovering
-                shelf.setHovered(item.id, hovering)
+        InterfaceCard(padding: 0) {
+            Image(nsImage: item.thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: cardSize.width, height: cardSize.height)
+                .blur(radius: isFrosted ? 6 : 0, opaque: true)
+                .overlay { overlay }
+        }
+        .opacity(isDragging ? 0.35 : 1)
+        .contentShape(shape)
+        .onHover { hovering in
+            isHovered = hovering
+            shelf.setHovered(item.id, hovering)
+        }
+        .motion(.morphQuick, value: showsActions)
+        .motion(.morphQuick, value: item.flash)
+        .motion(.morphQuick, value: item.activity)
+        .simultaneousGesture(TapGesture(count: 2).onEnded { shelf.openEditor(id: item.id) })
+        .draggable(item.url) {
+            Image(nsImage: item.thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: cardSize.width)
+                .clipShape(shape)
+        }
+        .onDragSessionUpdated { session in
+            switch session.phase {
+            case .active: shelf.beginDrag(id: item.id)
+            case .ended(let operation): shelf.endDrag(id: item.id, operation: operation)
+            default: break
             }
-            .motion(.morphQuick, value: showsActions)
-            .motion(.morphQuick, value: item.flash)
-            .motion(.morphQuick, value: item.activity)
-            .simultaneousGesture(TapGesture(count: 2).onEnded { shelf.openEditor(id: item.id) })
-            .draggable(item.url) {
-                Image(nsImage: item.thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: cardSize.width)
-                    .clipShape(shape)
-            }
-            .onDragSessionUpdated { session in
-                switch session.phase {
-                case .active: shelf.beginDrag(id: item.id)
-                case .ended(let operation): shelf.endDrag(id: item.id, operation: operation)
-                default: break
-                }
-            }
-            .contextMenu { contextMenu }
-            .help("\(item.kind == .video ? "Double-click to edit" : "Double-click to annotate") · C copy · S save · E edit · P pin screenshot · Delete close · Option-drag to keep")
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(item.kind == .video ? "Recording" : "Screenshot")
+        }
+        .contextMenu { contextMenu }
+        .help("\(item.kind == .video ? "Double-click to edit" : "Double-click to annotate") · C copy · S save · E edit · P pin screenshot · Delete close · Option-drag to keep")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(item.kind == .video ? "Recording" : "Screenshot")
     }
 
     private var isDragging: Bool { shelf.draggingID == item.id }
@@ -71,133 +68,86 @@ struct CaptureShelfCard: View {
     @ViewBuilder
     private var overlay: some View {
         if let activity = item.activity {
-            status(activity == .compressing ? "Compressing" : "Preparing") {
-                ProgressView().controlSize(.small)
-            }
+            CaptureShelfActivityPanel(title: activity == .compressing ? "Compressing" : "Preparing")
+                .transition(AnyTransition(.blurReplace))
         } else if isUploading {
-            uploadProgress
+            CaptureShelfUploadPanel(progress: uploader.uploadProgress[item.id] ?? 0) {
+                uploader.cancelUpload(for: item.id)
+            }
+            .padding(Space.m)
+            .transition(AnyTransition(.blurReplace))
         } else if let flash = item.flash {
-            flashView(flash)
+            flashToast(flash)
+                .padding(Space.m)
+                .transition(AnyTransition(.blurReplace))
         } else if showsActions {
             actions
                 .transition(.opacity)
         } else if item.kind == .video {
             Image(systemName: "play.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.black.opacity(0.85))
-                .frame(width: 22, height: 22)
-                .background(.white.opacity(0.92), in: .circle)
-                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                .font(.system(size: IconSize.segment, weight: .semibold))
+                .foregroundStyle(Palette.label)
+                .frame(width: InterfaceMetrics.controlHeight, height: InterfaceMetrics.controlHeight)
+                .interfacePanelSurface(.pill)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(8)
+                .padding(Space.s)
+                .accessibilityHidden(true)
                 .transition(.opacity)
         }
     }
 
-    private func status<Icon: View>(_ title: String, @ViewBuilder icon: () -> Icon) -> some View {
-        ZStack {
-            scrim(0.38)
-            VStack(spacing: 7) {
-                icon()
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .multilineTextAlignment(.center)
-            }
-            .foregroundStyle(.white)
-        }
-        .transition(.opacity)
-    }
-
-    private func flashView(_ flash: ShelfFlash) -> some View {
+    @ViewBuilder
+    private func flashToast(_ flash: ShelfFlash) -> some View {
         switch flash {
         case .linkCopied:
-            status("Link Copied") { flashIcon("checkmark") }
+            CaptureShelfFlashToast(title: "Link Copied", systemImage: "checkmark.circle.fill", tone: .success)
         case .uploadFailed:
-            status("Upload Failed") { flashIcon("exclamationmark.triangle.fill", tint: Palette.warning) }
+            CaptureShelfFlashToast(title: "Upload Failed", systemImage: "exclamationmark.triangle.fill", tone: .failure)
         case .compressed(let summary):
-            status("JPG Copied\n\(summary)") { flashIcon("checkmark") }
+            CaptureShelfFlashToast(title: "JPG Copied", detail: summary, systemImage: "checkmark.circle.fill", tone: .success)
         case .actionFailed(let message):
-            status(message) { flashIcon("exclamationmark.triangle.fill", tint: Palette.warning) }
+            CaptureShelfFlashToast(title: message, systemImage: "exclamationmark.triangle.fill", tone: .failure)
         }
-    }
-
-    private func flashIcon(_ systemImage: String, tint: Color = .white) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(tint)
-            .transition(.blurPop)
-    }
-
-    private var uploadProgress: some View {
-        ZStack {
-            scrim(0.38)
-            VStack(spacing: 9) {
-                Text("Uploading")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                ProgressView(value: uploader.uploadProgress[item.id] ?? 0)
-                    .progressViewStyle(.linear)
-                    .tint(.white)
-                    .frame(width: 96)
-            }
-            cornerButton("xmark", help: "Cancel upload") {
-                uploader.cancelUpload(for: item.id)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(8)
-        }
-        .transition(.opacity)
-    }
-
-    private func scrim(_ opacity: Double) -> some View {
-        Rectangle().fill(.black.opacity(opacity))
     }
 
     private var actions: some View {
         let layout = layoutStore.layout
         return ZStack {
-            scrim(0.16)
             corner(layout.topLeading, .topLeading)
             corner(layout.topTrailing, .topTrailing)
             corner(layout.bottomLeading, .bottomLeading)
             corner(layout.bottomTrailing, .bottomTrailing)
 
-            VStack(spacing: 6) {
+            VStack(spacing: Space.s) {
                 ForEach(layout.center.filter(isAvailable)) { action in
-                    ShelfChipButton(help: centerHelp(for: action), width: Self.centerButtonWidth) {
+                    CaptureShelfCardButton(help: centerHelp(for: action), shape: .capsule) {
                         perform(action)
                     } label: {
                         Text(centerTitle(for: action))
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.dsBodyEmphasis)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.75)
                     }
                     .disabled(isBlocked(action))
                 }
             }
+            .fixedSize()
         }
     }
 
     @ViewBuilder
     private func corner(_ action: OverlayCardAction?, _ alignment: Alignment) -> some View {
         if let action, isAvailable(action) {
-            cornerButton(cornerSymbol(for: action), help: cornerHelp(for: action)) {
+            CaptureShelfCardButton(help: cornerHelp(for: action), shape: .circle) {
                 perform(action)
+            } label: {
+                Image(systemName: cornerSymbol(for: action))
+                    .font(.system(size: IconSize.actionButton, weight: .semibold))
             }
             .disabled(isBlocked(action))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-            .padding(7)
+            .padding(Space.s)
         }
     }
-
-    private func cornerButton(_ systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        ShelfChipButton(help: help, width: 26, action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10.5, weight: .bold))
-        }
-    }
-
-    private static let centerButtonWidth: CGFloat = 80
 
     private func isAvailable(_ action: OverlayCardAction) -> Bool {
         switch action {
@@ -272,33 +222,119 @@ struct CaptureShelfCard: View {
     }
 }
 
-private struct ShelfChipButton<Label: View>: View {
+private enum CaptureShelfCardButtonShape {
+    case circle
+    case capsule
+}
+
+private struct CaptureShelfCardButton<Label: View>: View {
     let help: String
-    let width: CGFloat
+    let shape: CaptureShelfCardButtonShape
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
-    @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
 
-    private var isCircle: Bool { width <= 30 }
-    private var height: CGFloat { isCircle ? width : 26 }
+    private static var height: CGFloat { InterfaceMetrics.modeSwitchHeight - Space.xxs * 2 }
 
     var body: some View {
         Button(action: action) {
             label()
-                .foregroundStyle(.black.opacity(isEnabled ? 0.85 : 0.3))
-                .padding(.horizontal, isCircle ? 0 : 8)
-                .frame(width: width, height: height)
-                .background(.white.opacity(isEnabled ? (isHovered ? 1 : 0.88) : 0.6), in: Capsule())
-                .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
-                .scaleEffect(isHovered && isEnabled ? 1.04 : 1)
-                .contentShape(Capsule())
+                .foregroundStyle(isEnabled ? Palette.label : Palette.disabledLabel)
+                .padding(.horizontal, shape == .capsule ? Space.l : 0)
+                .frame(width: shape == .circle ? Self.height : nil, height: Self.height)
+                .frame(maxWidth: shape == .capsule ? .infinity : nil)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .motion(.morphQuick, value: isHovered)
+        .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
+        .interfacePanelSurface(.pill)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+private struct CaptureShelfFlashToast: View {
+    let title: String
+    var detail: String? = nil
+    let systemImage: String
+    let tone: InterfaceToastTone
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            InterfaceToast(title, detail: detail, systemImage: systemImage, tone: tone)
+            InterfacePanel(.flyout, padding: Space.l) {
+                VStack(spacing: Space.s) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: IconSize.toast, weight: .semibold))
+                        .foregroundStyle(tone.color)
+                    Text(title)
+                        .font(.dsBodyEmphasis)
+                        .foregroundStyle(Palette.label)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail {
+                        Text(detail)
+                            .font(.dsCaption)
+                            .foregroundStyle(Palette.secondaryLabel)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+private struct CaptureShelfActivityPanel: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: Space.ml) {
+            ProgressView()
+                .controlSize(.small)
+            Text(title)
+                .font(.dsBodyEmphasis)
+                .foregroundStyle(Palette.label)
+                .lineLimit(1)
+        }
+        .padding(.leading, Space.l)
+        .padding(.trailing, Space.xl)
+        .padding(.vertical, Space.s)
+        .frame(minHeight: InterfaceMetrics.toastMinimumHeight)
+        .fixedSize()
+        .interfacePanelSurface(.flyout)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct CaptureShelfUploadPanel: View {
+    let progress: Double
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: Space.m) {
+            VStack(alignment: .leading, spacing: Space.s) {
+                Text("Uploading")
+                    .font(.dsBodyEmphasis)
+                    .foregroundStyle(Palette.label)
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .controlSize(.small)
+            }
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: IconSize.actionButton, weight: .semibold))
+                    .foregroundStyle(Palette.label)
+                    .frame(width: InterfaceMetrics.modeSwitchHeight, height: InterfaceMetrics.modeSwitchHeight)
+            }
+            .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
+            .help("Cancel upload")
+            .accessibilityLabel("Cancel upload")
+        }
+        .padding(.leading, Space.l)
+        .padding(.trailing, Space.s)
+        .padding(.vertical, Space.m)
+        .frame(maxWidth: .infinity)
+        .interfacePanelSurface(.flyout)
     }
 }
