@@ -34,26 +34,15 @@ struct RecordingStudioStyleStrip: View {
         .task(id: model.screenURL) {
             poster = await Self.poster(for: model.screenURL)
         }
-        .alert(
-            "Delete Style?",
-            isPresented: Binding(
-                get: { presetPendingDeletion != nil },
-                set: { if !$0 { presetPendingDeletion = nil } }
-            ),
-            presenting: presetPendingDeletion
-        ) { preset in
-            Button("Delete", role: .destructive) {
-                presetStore.deletePreset(id: preset.id)
-                if model.appliedStylePresetID == preset.id {
-                    model.appliedStylePresetID = nil
-                }
-                presetPendingDeletion = nil
+        .appAlert(
+            item: $presetPendingDeletion,
+            alert: { AppAlerts.styleDeletion(styleName: $0.name, owner: .recording, wallpaperIsMissing: $0.hasMissingWallpaper) }
+        ) { action, preset in
+            guard action == .delete else { return }
+            presetStore.deletePreset(id: preset.id)
+            if model.appliedStylePresetID == preset.id {
+                model.appliedStylePresetID = nil
             }
-            Button("Cancel", role: .cancel) {
-                presetPendingDeletion = nil
-            }
-        } message: { preset in
-            Text("“\(preset.name)” will be removed from your styles. This recording won’t change.")
         }
     }
 

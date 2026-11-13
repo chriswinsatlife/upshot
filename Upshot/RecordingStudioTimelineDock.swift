@@ -149,15 +149,8 @@ struct StudioTimelineDock: View {
             .keyboardShortcut("z", modifiers: [.command, .shift])
             .disabled(!model.canRedo)
         }
-        .confirmationDialog(
-            "Reset all clip edits?",
-            isPresented: $isResetClipsConfirmationPresented
-        ) {
-            Button("Reset Clips", role: .destructive) {
-                model.resetClips()
-            }
-        } message: {
-            Text("Every split, trim, deletion, and speed change returns to the original recording. Undo restores them.")
+        .appAlert(isPresented: $isResetClipsConfirmationPresented, alert: AppAlerts.studioClipReset) { action in
+            if action == .resetClips { model.resetClips() }
         }
     }
 
@@ -387,17 +380,7 @@ struct StudioTimelineDock: View {
             ))
         }
         .frame(height: StudioTimelineMetrics.headerHeight + StudioTimelineMetrics.trackSpacing + visibleTracksHeight)
-        .alert(
-            "Some files weren't added",
-            isPresented: Binding(
-                get: { model.mediaImportError != nil },
-                set: { if !$0 { model.mediaImportError = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { model.mediaImportError = nil }
-        } message: {
-            Text(model.mediaImportError ?? "")
-        }
+        .appAlert(item: $model.mediaImportError, alert: { AppAlerts.studioMediaImportFailed(message: $0) })
         .onChange(of: model.duration) { _, _ in clampZoom() }
         .onChange(of: model.currentTime) { _, time in followPlayhead(to: time) }
     }
