@@ -152,7 +152,7 @@ enum AreaSelectionMagnifier {
     static func placement(size: CGSize, point: CGPoint, selection: CGRect?, bounds: CGRect) -> CGRect? {
         let available = bounds.insetBy(dx: screenMargin, dy: screenMargin)
         let pointerZone = CGRect(x: point.x - pointerOffset, y: point.y - pointerOffset, width: pointerOffset * 2, height: pointerOffset * 2)
-        let avoided = selection.map { $0.insetBy(dx: -selectionGap, dy: -selectionGap) }
+        let avoided = selection.map { $0.insetBy(dx: -selectionGap, dy: -selectionGap).integral }
         func clamped(_ value: CGFloat, length: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
             min(max(value, minimum), max(minimum, maximum - length))
         }
@@ -167,7 +167,7 @@ enum AreaSelectionMagnifier {
                                width: size.width, height: size.height).integral
             return fits(frame) ? frame : nil
         }
-        let alongX = clamped(point.x + pointerOffset, length: size.width, minimum: available.minX, maximum: available.maxX)
+        let alongX = clamped((point.x + pointerOffset).rounded(.up), length: size.width, minimum: available.minX, maximum: available.maxX)
         let alongY = clamped(point.y - size.height / 2, length: size.height, minimum: available.minY, maximum: available.maxY)
         let below = CGRect(x: alongX, y: avoided.minY - size.height, width: size.width, height: size.height)
         let above = CGRect(x: alongX, y: avoided.maxY, width: size.width, height: size.height)
