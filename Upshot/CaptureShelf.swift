@@ -279,6 +279,41 @@ final class CaptureShelf {
     }
 
 
+    @discardableResult
+    static func performHoveredAction(_ action: OverlayCardAction) -> Bool {
+        let shelf = shared
+        guard !shelf.isTucked, !shelf.isMoving, shelf.draggingID == nil,
+              let item = shelf.hoveredItem else { return false }
+        return shelf.perform(action, id: item.id)
+    }
+
+    @discardableResult
+    func perform(_ action: OverlayCardAction, id: ShelfItem.ID) -> Bool {
+        guard let item = item(id: id), item.activity == nil, draggingID == nil,
+              !CloudUploader.shared.uploadingItems.contains(id) else { return false }
+        if (action == .pin || action == .compress) && item.kind != .image { return false }
+        if action == .delete && isOpenInEditor(id: id) { return false }
+        if action == .upload && !CloudUploader.shared.isConfigured { return false }
+
+        switch action {
+        case .copy: copy(id: id)
+        case .compress: compress(id: id)
+        case .save: save(id: id)
+        case .pin: pin(id: id)
+        case .annotate: openEditor(id: id)
+        case .view: quickLook(id: id)
+        case .upload:
+            if CloudUploader.shared.uploadedURLs[id] == nil {
+                upload(id: id)
+            } else {
+                copyLink(id: id)
+            }
+        case .delete: delete(id: id)
+        case .close: dismiss(id: id)
+        }
+        return true
+    }
+
     func openEditor(id: ShelfItem.ID) {
         guard let item = item(id: id) else { return }
         engage(id)

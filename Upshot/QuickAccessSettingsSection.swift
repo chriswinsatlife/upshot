@@ -22,6 +22,9 @@ struct QuickAccessSettingsSection: View {
                 .foregroundStyle(.secondary)
             Toggle("Close after uploading", isOn: $closeAfterUploading)
                 .toggleStyle(.ink)
+            Text("Hover over a card: C copies, S saves, E edits, P pins a screenshot, Delete closes, and Space opens Quick Look. Hold Option while dragging to keep the card.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

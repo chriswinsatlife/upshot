@@ -109,6 +109,8 @@ final class CaptureShelfPresenter {
     }
 
     private static func handleKey(_ event: NSEvent) -> Bool {
+        guard !event.isARepeat,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
         let shelf = CaptureShelf.shared
         switch event.keyCode {
         case 53 where QuickLookPreviewPresenter.isShown:
@@ -123,7 +125,22 @@ final class CaptureShelfPresenter {
             }
             return true
         default:
-            return false
+            guard !QuickLookPreviewPresenter.isShown else { return false }
+            let action: OverlayCardAction
+            if event.keyCode == 51 || event.keyCode == 117 {
+                action = .close
+            } else {
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                case "c": action = .copy
+                case "s": action = .save
+                case "e": action = .annotate
+                case "p": action = .pin
+                default: return false
+                }
+            }
+            guard let item = shelf.hoveredItem, CaptureShelf.performHoveredAction(action) else { return false }
+            NSLog("Quick Access hover shortcut item=%@ action=%@ outcome=dispatched", item.id.uuidString, action.rawValue)
+            return true
         }
     }
 }

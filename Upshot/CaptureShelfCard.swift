@@ -55,7 +55,7 @@ struct CaptureShelfCard: View {
                 }
             }
             .contextMenu { contextMenu }
-            .help(item.kind == .video ? "Double-click to edit" : "Double-click to annotate")
+            .help("\(item.kind == .video ? "Double-click to edit" : "Double-click to annotate") · C copy · S save · E edit · P pin screenshot · Delete close · Option-drag to keep")
             .accessibilityElement(children: .contain)
             .accessibilityLabel(item.kind == .video ? "Recording" : "Screenshot")
     }
@@ -233,18 +233,7 @@ struct CaptureShelfCard: View {
     }
 
     private func perform(_ action: OverlayCardAction) {
-        let id = item.id
-        switch action {
-        case .copy: shelf.copy(id: id)
-        case .compress: shelf.compress(id: id)
-        case .save: shelf.save(id: id)
-        case .pin: shelf.pin(id: id)
-        case .annotate: shelf.openEditor(id: id)
-        case .view: shelf.quickLook(id: id)
-        case .upload: uploadedLink == nil ? shelf.upload(id: id) : shelf.copyLink(id: id)
-        case .delete: shelf.delete(id: id)
-        case .close: shelf.dismiss(id: id)
-        }
+        shelf.perform(action, id: item.id)
     }
 
 
