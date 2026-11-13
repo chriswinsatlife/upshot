@@ -341,11 +341,11 @@ enum StateRenderSource {
         ],
         "Upshot/TeleprompterOverlayPresenter.swift": [
             ("struct TeleprompterNotchShape: Shape {", 6),
-            ("final class TeleprompterOverlayModel {", 49),
-            ("enum Mode {", 50),
-            ("final class TeleprompterOverlayPresenter {", 98),
-            ("private final class TeleprompterOverlayHostingView<Content: View>: NSHostingView<Content> {", 222),
-            ("struct TeleprompterOverlayView: View {", 228),
+            ("final class TeleprompterOverlayModel {", 51),
+            ("enum Mode {", 52),
+            ("final class TeleprompterOverlayPresenter {", 116),
+            ("private final class TeleprompterOverlayHostingView<Content: View>: NSHostingView<Content> {", 240),
+            ("struct TeleprompterOverlayView: View {", 246),
         ],
         "Upshot/UpshotApp.swift": [
             ("enum UpshotMain {", 7),

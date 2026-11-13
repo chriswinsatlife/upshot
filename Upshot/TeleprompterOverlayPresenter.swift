@@ -4,6 +4,8 @@ import Observation
 import SwiftUI
 
 struct TeleprompterNotchShape: Shape {
+    static let expandedEarRadius: CGFloat = 12
+
     var topCornerRadius: CGFloat
     var bottomCornerRadius: CGFloat
 
@@ -48,9 +50,7 @@ struct TeleprompterNotchShape: Shape {
 @Observable
 final class TeleprompterOverlayModel {
     enum Mode {
-
         case notch(width: CGFloat, height: CGFloat)
-
         case pill
     }
 
@@ -60,11 +60,12 @@ final class TeleprompterOverlayModel {
 
     var spokenWordCount = 0
     var visibleLineCount = 3
-    var expandedWidth: CGFloat = 520
+    var expandedWidth: CGFloat = 320
 
     static let lineHeight: CGFloat = 20
-    static let textHorizontalPadding: CGFloat = 24
-    static let font = Font.system(size: 13, weight: .medium)
+    static let textHorizontalPadding = Space.xl
+    static let textBottomInset = Space.l
+    static let font = Font.dsBodyEmphasis
     static let measuringFont = NSFont.systemFont(ofSize: 13, weight: .medium)
 
     var textWidth: CGFloat {
@@ -75,13 +76,30 @@ final class TeleprompterOverlayModel {
         CGFloat(visibleLineCount) * Self.lineHeight
     }
 
-    var expandedHeight: CGFloat {
+    var textTopInset: CGFloat {
         switch mode {
         case .notch(_, let notchHeight):
-            notchHeight + 6 + textAreaHeight + 24
+            notchHeight + Space.s
         case .pill:
-            16 + textAreaHeight + 16
+            Space.l
         }
+    }
+
+    var expandedHeight: CGFloat {
+        textTopInset + textAreaHeight + Self.textBottomInset
+    }
+
+    var housingEarWidth: CGFloat {
+        switch mode {
+        case .notch:
+            TeleprompterNotchShape.expandedEarRadius
+        case .pill:
+            0
+        }
+    }
+
+    var expandedHousingWidth: CGFloat {
+        expandedWidth + housingEarWidth * 2
     }
 
     var collapsedSize: CGSize {
@@ -203,7 +221,7 @@ final class TeleprompterOverlayPresenter {
 
     private func position(_ panel: NSPanel, on screen: NSScreen) {
 
-        let width = model.expandedWidth + 80
+        let width = model.expandedHousingWidth + 80
         let height = model.expandedHeight + 40
 
         panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
@@ -229,45 +247,37 @@ struct TeleprompterOverlayView: View {
     let model: TeleprompterOverlayModel
 
     var body: some View {
-        island
+        housing
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .environment(\.colorScheme, .dark)
     }
 
-    private var island: some View {
+    private var housing: some View {
         let expanded = model.isExpanded
         let size = expanded
-            ? CGSize(width: model.expandedWidth, height: model.expandedHeight)
+            ? CGSize(width: model.expandedHousingWidth, height: model.expandedHeight)
             : model.collapsedSize
-        let shape = islandShape(expanded: expanded)
+        let shape = housingShape(expanded: expanded)
 
         return textArea
+            .padding(.bottom, TeleprompterOverlayModel.textBottomInset)
             .opacity(expanded ? 1 : 0)
-            .frame(width: size.width, height: size.height, alignment: textAlignment)
+            .frame(width: size.width, height: size.height, alignment: .bottom)
             .background(shape.fill(Color.black))
             .clipShape(shape)
-            .compositingGroup()
-            .shadow(color: .black.opacity(expanded ? 0.45 : 0), radius: 18, y: 8)
     }
 
-    private var textAlignment: Alignment {
-        if case .notch = model.mode {
-            return .bottom
-        }
-        return .center
-    }
-
-    private func islandShape(expanded: Bool) -> TeleprompterNotchShape {
+    private func housingShape(expanded: Bool) -> TeleprompterNotchShape {
         switch model.mode {
         case .notch:
-
             TeleprompterNotchShape(
-                topCornerRadius: expanded ? 12 : 2,
-                bottomCornerRadius: expanded ? 14 : 9
+                topCornerRadius: expanded ? TeleprompterNotchShape.expandedEarRadius : 2,
+                bottomCornerRadius: expanded ? Radius.panel : 9
             )
         case .pill:
             TeleprompterNotchShape(
                 topCornerRadius: 0,
-                bottomCornerRadius: expanded ? 16 : 6
+                bottomCornerRadius: expanded ? Radius.panel : 6
             )
         }
     }
@@ -300,7 +310,6 @@ struct TeleprompterOverlayView: View {
         .frame(width: model.textWidth, height: model.textAreaHeight, alignment: .top)
         .clipped()
         .mask(verticalFade)
-        .padding(.bottom, textAlignment == .bottom ? 16 : 0)
     }
 
     private var verticalFade: LinearGradient {
@@ -329,11 +338,11 @@ struct TeleprompterOverlayView: View {
     private func color(forWord index: Int) -> Color {
         let spoken = model.spokenWordCount
         if index == spoken - 1 {
-            return Color(cgColor: SubtitleBarMetrics.karaokeAccent)
+            return Palette.accent
         }
         if index < spoken {
-            return .white.opacity(0.35)
+            return Palette.tertiaryLabel
         }
-        return .white.opacity(0.95)
+        return Palette.label
     }
 }

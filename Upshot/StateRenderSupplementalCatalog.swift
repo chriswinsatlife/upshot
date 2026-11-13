@@ -147,13 +147,16 @@ enum StateRenderSupplementalCatalog {
                 AnyView(try StateRenderQuickLookPreview(url: variant == "screenshot" ? fixtures.screenshots[0] : fixtures.project.screenURL))
             }
         }
-        for variant in ["pill", "notch"] {
+        for variant in ["pill", "notch", "notch-scrolled"] {
             add("teleprompter-\(variant)", "TeleprompterOverlayPresenter", "struct TeleprompterOverlayView", 620, 230) {
                 let model = TeleprompterOverlayModel()
                 model.isExpanded = true
-                model.mode = variant == "notch" ? .notch(width: 180, height: 32) : .pill
-                model.layout = TeleprompterScriptLayout(script: "Capture a clear view of the work. Annotate the important details. Share a result that the team can review.", maximumLineWidth: model.textWidth, font: TeleprompterOverlayModel.measuringFont)
-                model.spokenWordCount = 7
+                model.mode = variant.hasPrefix("notch") ? .notch(width: 180, height: 32) : .pill
+                let script = variant == "notch-scrolled"
+                    ? "Capture a clear view of the work. Annotate the important details. Share a result that the team can review. Record the walkthrough once, then trim the pauses. Export the final cut for the release notes."
+                    : "Capture a clear view of the work. Annotate the important details. Share a result that the team can review."
+                model.layout = TeleprompterScriptLayout(script: script, maximumLineWidth: model.textWidth, font: TeleprompterOverlayModel.measuringFont)
+                model.spokenWordCount = variant == "notch-scrolled" ? 22 : 7
                 return AnyView(TeleprompterOverlayView(model: model))
             }
         }
