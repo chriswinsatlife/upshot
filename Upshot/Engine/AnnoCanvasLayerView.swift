@@ -132,16 +132,25 @@ final class AnnoCanvasNSView: NSView {
                 guard let sourceImage, self.imageFrame.width > 0, self.imageFrame.height > 0 else { return nil }
                 let sx = CGFloat(sourceImage.width) / self.imageFrame.width
                 let sy = CGFloat(sourceImage.height) / self.imageFrame.height
-                let crop = CGRect(
+                let requested = CGRect(
                     x: (rect.minX - self.imageFrame.minX) * sx,
                     y: (rect.minY - self.imageFrame.minY) * sy,
                     width: rect.width * sx,
                     height: rect.height * sy
-                ).integral.intersection(
-                    CGRect(x: 0, y: 0, width: sourceImage.width, height: sourceImage.height)
-                )
-                guard crop.width >= 1, crop.height >= 1 else { return nil }
-                return sourceImage.cropping(to: crop)
+                ).integral
+                let crop = requested.intersection(CGRect(x: 0, y: 0, width: sourceImage.width, height: sourceImage.height))
+                if crop == requested { return sourceImage.cropping(to: crop) }
+                guard requested.width >= 1, requested.height >= 1,
+                      let sampleContext = CGContext(data: nil, width: Int(requested.width), height: Int(requested.height),
+                                                    bitsPerComponent: 8, bytesPerRow: 0,
+                                                    space: sourceImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                if crop.width >= 1, crop.height >= 1, let cropped = sourceImage.cropping(to: crop) {
+                    sampleContext.interpolationQuality = .none
+                    sampleContext.draw(cropped, in: CGRect(x: crop.minX - requested.minX, y: requested.maxY - crop.maxY,
+                                                          width: crop.width, height: crop.height))
+                }
+                return sampleContext.makeImage()
             },
             spotlightClip: spotlightClip,
             isFlippedContext: true,
