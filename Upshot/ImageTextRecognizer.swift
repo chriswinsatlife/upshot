@@ -148,14 +148,7 @@ nonisolated enum ImageTextRecognizer {
         NSLog("Text recognition Vision initial completed: %ld lines", original.count)
         if !original.isEmpty { return original }
 
-        let controls = CIFilter.colorControls()
-        controls.inputImage = CIImage(cgImage: image)
-        controls.saturation = 0
-        controls.contrast = 2.5
-        guard let output = controls.outputImage,
-              let enhanced = enhancementContext.createCGImage(output, from: output.extent) else {
-            throw TextRecognitionError.enhancementFailed
-        }
+        let enhanced = try contrastEnhancedImage(image)
         let contrast = try visionLines(in: enhanced, language: options.language, orientation: .up, includeCharacterBounds: includeCharacterBounds)
         NSLog("Text recognition contrast retry completed: %ld lines", contrast.count)
         if !contrast.isEmpty { return contrast }
@@ -167,7 +160,7 @@ nonisolated enum ImageTextRecognizer {
             ? ["zh-Hant", "zh-Hans", "ja-JP", "ko-KR"].filter { supported.contains($0) }
             : [options.language].filter { $0.hasPrefix("zh") || $0.hasPrefix("ja") || $0.hasPrefix("ko") }
         for language in languages {
-            for orientation in [CGImagePropertyOrientation.right, .left] {
+            for orientation in [CGImagePropertyOrientation.up, .right, .left] {
                 let vertical = try visionLines(in: enhanced, language: language, orientation: orientation, includeCharacterBounds: includeCharacterBounds)
                 NSLog("Text recognition vertical CJK retry completed: language=%@ orientation=%u lines=%ld", language, orientation.rawValue, vertical.count)
                 if !vertical.isEmpty { return vertical }
@@ -175,6 +168,47 @@ nonisolated enum ImageTextRecognizer {
         }
         NSLog("Text recognition completed: no text found")
         return []
+    }
+
+    private static func contrastEnhancedImage(_ image: CGImage) throws -> CGImage {
+        let controls = CIFilter.colorControls()
+        controls.inputImage = CIImage(cgImage: image)
+        controls.saturation = 0
+        guard let grayscale = controls.outputImage else { throw TextRecognitionError.enhancementFailed }
+        let minimum = CIFilter.areaMinimum()
+        minimum.inputImage = grayscale
+        minimum.extent = grayscale.extent
+        let maximum = CIFilter.areaMaximum()
+        maximum.inputImage = grayscale
+        maximum.extent = grayscale.extent
+        guard let minimumImage = minimum.outputImage, let maximumImage = maximum.outputImage else {
+            throw TextRecognitionError.enhancementFailed
+        }
+        let lower = intensity(of: minimumImage)
+        let upper = intensity(of: maximumImage)
+        let gain = upper - lower > 0.0001 ? 1 / (upper - lower) : 1
+        let matrix = CIFilter.colorMatrix()
+        matrix.inputImage = grayscale
+        matrix.rVector = CIVector(x: gain, y: 0, z: 0, w: 0)
+        matrix.gVector = CIVector(x: 0, y: gain, z: 0, w: 0)
+        matrix.bVector = CIVector(x: 0, y: 0, z: gain, w: 0)
+        let bias = upper - lower > 0.0001 ? -lower * gain : 0
+        matrix.biasVector = CIVector(x: bias, y: bias, z: bias, w: 0)
+        guard let output = matrix.outputImage,
+              let enhanced = enhancementContext.createCGImage(output, from: grayscale.extent) else {
+            throw TextRecognitionError.enhancementFailed
+        }
+        return enhanced
+    }
+
+    private static func intensity(of image: CIImage) -> CGFloat {
+        var components = [Float](repeating: 0, count: 4)
+        components.withUnsafeMutableBytes { buffer in
+            enhancementContext.render(image, toBitmap: buffer.baseAddress!, rowBytes: 16,
+                                      bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf,
+                                      colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+        }
+        return CGFloat(components[0])
     }
 
     private static func visionLines(in image: CGImage, language: String, orientation: CGImagePropertyOrientation, includeCharacterBounds: Bool) throws -> [ImageTextLine] {
