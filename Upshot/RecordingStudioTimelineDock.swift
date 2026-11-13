@@ -49,11 +49,7 @@ struct StudioTimelineDock: View {
     /// How far the tracks are scrolled down, which the gutter follows.
     @State private var scrollY: CGFloat = 0
     @State private var verticalScrollPosition = ScrollPosition(edge: .top)
-    @Namespace private var glass
 
-    /// Below this track width the opened + shows bare glyphs, so the edit
-    /// tools never run under the transport.
-    private static let addLabelsMinimumWidth: CGFloat = 820
     /// Step per zoom button press / keyboard shortcut.
     private static let zoomStep: Double = 1.6
     /// How close to the viewport edge the playhead may drift before the
@@ -71,8 +67,8 @@ struct StudioTimelineDock: View {
     var body: some View {
         VStack(spacing: 0) {
             controlRow
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Space.m)
+                .padding(.vertical, Space.xs)
             // As in the web editor, a hairline closes the tool row off from
             // the tracks edge to edge, and the gutter's own line runs from
             // it to the bottom of the dock.
@@ -84,7 +80,7 @@ struct StudioTimelineDock: View {
                 lanes
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.panel)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color(nsColor: .separatorColor).opacity(0.45))
@@ -166,7 +162,6 @@ struct StudioTimelineDock: View {
 
             transport
         }
-        .frame(height: 38)
         .motion(.morph, value: clusterKey)
     }
 
@@ -177,39 +172,34 @@ struct StudioTimelineDock: View {
     }
 
     private var editCluster: some View {
-        GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
-            HStack(spacing: GlassMetrics.gap) {
-                GlassIconButton(systemImage: "scissors", help: "Split at Playhead (⌘B)") {
-                    model.splitClip(at: model.currentTime)
-                }
-                .keyboardShortcut("b", modifiers: .command)
-                .disabled(!model.isLoaded)
-                .glassEffectID("split", in: glass)
-
-                addTools
-
-                if canDeleteSelection {
-                    GlassIconButton(systemImage: "trash", help: "Delete Selection (⌫)") {
-                        deleteSelection()
-                    }
-                    .glassEffectID("delete", in: glass)
-                }
-
-                GlassIconButton(systemImage: "arrow.uturn.backward", help: "Undo (⌘Z)") {
-                    model.undo()
-                }
-                .keyboardShortcut("z", modifiers: .command)
-                .disabled(!model.canUndo)
-                .glassEffectID("undo", in: glass)
-                .padding(.leading, 6)
-
-                GlassIconButton(systemImage: "arrow.uturn.forward", help: "Redo (⇧⌘Z)") {
-                    model.redo()
-                }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!model.canRedo)
-                .glassEffectID("redo", in: glass)
+        HStack(spacing: Space.xxs) {
+            InterfaceToolbarButton("Split at Playhead (⌘B)", systemImage: "scissors", labelPlacement: .hidden) {
+                model.splitClip(at: model.currentTime)
             }
+            .keyboardShortcut("b", modifiers: .command)
+            .disabled(!model.isLoaded)
+
+            addTools
+
+            if canDeleteSelection {
+                InterfaceToolbarButton("Delete Selection (⌫)", systemImage: "trash", labelPlacement: .hidden) {
+                    deleteSelection()
+                }
+                .transition(.opacity)
+            }
+
+            InterfaceToolbarButton("Undo (⌘Z)", systemImage: "arrow.uturn.backward", labelPlacement: .hidden) {
+                model.undo()
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!model.canUndo)
+            .padding(.leading, Space.m)
+
+            InterfaceToolbarButton("Redo (⇧⌘Z)", systemImage: "arrow.uturn.forward", labelPlacement: .hidden) {
+                model.redo()
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!model.canRedo)
         }
         .confirmationDialog(
             "Reset all clip edits?",
@@ -219,144 +209,118 @@ struct StudioTimelineDock: View {
                 model.resetClips()
             }
         } message: {
-            Text("Every split, trim, deletion and speed change goes back to the original recording. You can undo this.")
+            Text("Every split, trim, deletion, and speed change returns to the original recording. Undo restores them.")
         }
     }
 
-    /// One + that opens into the things that can be added over the video,
-    /// melting out of it the way Delete grows out of Split, and folding
-    /// back once one is picked. Labels show when the row has room for them.
     @ViewBuilder
     private var addTools: some View {
-        GlassIconButton(
+        InterfaceToolbarButton(
+            isAddOpen ? "Close" : "Add Text, Pixelate, or Media",
             systemImage: isAddOpen ? "xmark" : "plus",
-            help: isAddOpen ? "Close" : "Add Text, Pixelate or Media"
+            isSelected: isAddOpen,
+            labelPlacement: .hidden
         ) {
             withAnimation(.morphIfAllowed) { isAddOpen.toggle() }
         }
         .disabled(!model.isLoaded)
-        .motion(.morphQuick, value: isAddOpen)
-        .glassEffectID("add", in: glass)
 
         if isAddOpen {
-            addTool("Text", systemImage: "textformat", help: "Add Text at Playhead") {
+            addTool("Add Text at Playhead", systemImage: "textformat") {
                 model.addText(atEditorTime: model.currentTime)
             }
-            .glassEffectID("text", in: glass)
+            .transition(.opacity)
 
-            addTool("Pixelate", systemImage: "squareshape.split.3x3", help: "Pixelate Part of the Picture") {
+            addTool("Pixelate Part of the Picture", systemImage: "squareshape.split.3x3") {
                 model.addRedaction(atEditorTime: model.currentTime)
             }
-            .glassEffectID("pixelate", in: glass)
+            .transition(.opacity)
 
             addTool(
-                "Media",
-                systemImage: "photo.badge.plus",
-                help: model.mediaDirectoryURL == nil
+                model.mediaDirectoryURL == nil
                     ? "Save this recording as a project to add images and audio"
-                    : "Add Images, GIFs or Audio at Playhead"
+                    : "Add Images, GIFs, or Audio at Playhead",
+                systemImage: "photo.badge.plus"
             ) {
                 pickMedia()
             }
             .disabled(!model.canImportMedia)
-            .glassEffectID("media", in: glass)
+            .transition(.opacity)
         }
     }
 
-    @ViewBuilder
     private func addTool(
         _ title: String,
         systemImage: String,
-        help: String,
         action: @escaping () -> Void
     ) -> some View {
-        let run = {
+        InterfaceToolbarButton(title, systemImage: systemImage, labelPlacement: .hidden) {
             model.pause()
             withAnimation(.morphIfAllowed) {
                 isAddOpen = false
                 action()
             }
         }
-        if viewportWidth >= Self.addLabelsMinimumWidth {
-            GlassCapsuleButton(title: title, systemImage: systemImage, action: run)
-                .help(help)
-        } else {
-            GlassIconButton(systemImage: systemImage, help: help, action: run)
-        }
     }
 
-    /// Current time, the three playback buttons, and the cut's length. The
-    /// play button is the one large shape; its glyph swaps with a symbol
-    /// replace so the glass itself never jumps.
     private var transport: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Space.m) {
             Text(studioPreciseTimecode(model.displayTime))
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.primary.opacity(0.9))
+                .font(.dsNumeric)
+                .foregroundStyle(Palette.label)
                 .frame(width: 58, alignment: .trailing)
 
-            GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
-                HStack(spacing: GlassMetrics.gap) {
-                    GlassIconButton(systemImage: "backward.end.fill", help: "Back to Start") {
-                        model.pause()
-                        model.seek(to: 0)
-                    }
+            HStack(spacing: Space.xxs) {
+                InterfaceToolbarButton("Back to Start", systemImage: "backward.end.fill", labelPlacement: .hidden) {
+                    model.pause()
+                    model.seek(to: 0)
+                }
 
-                    GlassIconButton(
-                        systemImage: model.isPlaying ? "pause.fill" : "play.fill",
-                        help: model.isPlaying ? "Pause (Space)" : "Play (Space)",
-                        size: 38,
-                        symbolSize: 15
-                    ) {
-                        model.togglePlayback()
-                    }
-                    .keyboardShortcut(.space, modifiers: [])
-                    .motion(.morphQuick, value: model.isPlaying)
+                InterfaceToolbarButton(
+                    model.isPlaying ? "Pause (Space)" : "Play (Space)",
+                    systemImage: model.isPlaying ? "pause.fill" : "play.fill",
+                    labelPlacement: .hidden
+                ) {
+                    model.togglePlayback()
+                }
+                .keyboardShortcut(.space, modifiers: [])
+                .contentTransition(.symbolEffect(.replace))
 
-                    GlassIconButton(systemImage: "forward.end.fill", help: "Skip to End") {
-                        model.pause()
-                        model.seek(to: model.duration)
-                    }
+                InterfaceToolbarButton("Skip to End", systemImage: "forward.end.fill", labelPlacement: .hidden) {
+                    model.pause()
+                    model.seek(to: model.duration)
                 }
             }
             .disabled(!model.isLoaded)
 
             Text(studioPreciseTimecode(model.duration))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundStyle(.secondary)
+                .font(.dsNumeric)
+                .foregroundStyle(Palette.secondaryLabel)
                 .frame(width: 58, alignment: .leading)
         }
     }
 
     private var zoomCluster: some View {
-        GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
-            HStack(spacing: GlassMetrics.gap) {
-                if zoom > 1.0001 {
-                    GlassCapsuleButton(
-                        title: String(format: "%.1f×", zoom),
-                        systemImage: "arrow.left.and.right"
-                    ) {
-                        fitTimeline()
-                    }
-                    .keyboardShortcut("0", modifiers: .command)
-                    .help("Fit Timeline (⌘0)")
-                    .glassEffectID("fit", in: glass)
+        HStack(spacing: Space.xxs) {
+            if zoom > 1.0001 {
+                InterfaceToolbarButton("Fit Timeline (⌘0)", systemImage: "arrow.left.and.right", labelPlacement: .hidden) {
+                    fitTimeline()
                 }
-
-                GlassIconButton(systemImage: "minus.magnifyingglass", help: "Zoom Out (⌘-)") {
-                    applyZoom(factor: 1 / Self.zoomStep, anchorTime: buttonZoomAnchor)
-                }
-                .keyboardShortcut("-", modifiers: .command)
-                .disabled(zoom <= 1.0001)
-                .glassEffectID("zoomOut", in: glass)
-
-                GlassIconButton(systemImage: "plus.magnifyingglass", help: "Zoom In (⌘=)") {
-                    applyZoom(factor: Self.zoomStep, anchorTime: buttonZoomAnchor)
-                }
-                .keyboardShortcut("=", modifiers: .command)
-                .disabled(zoom >= scale.maxZoom - 0.0001)
-                .glassEffectID("zoomIn", in: glass)
+                .keyboardShortcut("0", modifiers: .command)
+                .transition(.opacity)
             }
+
+            InterfaceToolbarButton("Zoom Out (⌘-)", systemImage: "minus.magnifyingglass", labelPlacement: .hidden) {
+                applyZoom(factor: 1 / Self.zoomStep, anchorTime: buttonZoomAnchor)
+            }
+            .keyboardShortcut("-", modifiers: .command)
+            .disabled(zoom <= 1.0001)
+
+            InterfaceToolbarButton("Zoom In (⌘=)", systemImage: "plus.magnifyingglass", labelPlacement: .hidden) {
+                applyZoom(factor: Self.zoomStep, anchorTime: buttonZoomAnchor)
+            }
+            .keyboardShortcut("=", modifiers: .command)
+            .disabled(zoom >= scale.maxZoom - 0.0001)
         }
     }
 
