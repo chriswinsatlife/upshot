@@ -6,6 +6,8 @@ extension UpshotPreferences {
     static let screenshotBorderKey = "screenshotBorder"
     static let screenshotRetinaSuffixKey = "screenshotRetinaSuffix"
     static let screenshotShowCursorKey = "screenshotShowCursor"
+    static let screenshotApplyBackgroundPresetKey = "screenshotApplyBackgroundPreset"
+    static let screenshotBackgroundPresetIDKey = "screenshotBackgroundPresetID"
 
     static var screenshotConvertToSRGB: Bool {
         UserDefaults.standard.bool(forKey: screenshotConvertToSRGBKey)
@@ -25,5 +27,13 @@ extension UpshotPreferences {
 
     static var screenshotShowCursor: Bool {
         UserDefaults.standard.bool(forKey: screenshotShowCursorKey)
+    }
+
+    static var screenshotApplyBackgroundPreset: Bool {
+        UserDefaults.standard.bool(forKey: screenshotApplyBackgroundPresetKey)
+    }
+
+    static var screenshotBackgroundPresetID: String {
+        UserDefaults.standard.string(forKey: screenshotBackgroundPresetIDKey) ?? ""
     }
 }
