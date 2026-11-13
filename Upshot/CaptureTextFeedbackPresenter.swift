@@ -1,14 +1,3 @@
-//
-//  CaptureTextFeedbackPresenter.swift
-//  Upshot
-//
-//  Capture Text is the one capture action that leaves nothing behind - no
-//  file, no history entry, no preview card - so the capture sound was its
-//  only signal that anything happened, and users with sounds turned off got
-//  no feedback at all. This is the missing surface: a brief centered toast
-//  that confirms what landed on the clipboard, or says nothing was found.
-//
-
 import AppKit
 import SwiftUI
 
@@ -17,13 +6,10 @@ final class CaptureTextFeedbackPresenter {
     static let shared = CaptureTextFeedbackPresenter()
 
     private static let toastSize = NSSize(width: 300, height: 52)
-    /// Room around the glass for the shadow it casts.
     private static let shadowSlack: CGFloat = 24
     private static var panelSize: NSSize {
         NSSize(width: toastSize.width + 2 * shadowSlack, height: toastSize.height + 2 * shadowSlack)
     }
-    /// Clears the bottom edge by more than the toast is tall, so it reads as
-    /// floating over the work rather than stuck to the screen edge.
     private static let bottomInset: CGFloat = 96
     private static let visibleDuration: Duration = .seconds(1.8)
     private static let fadeOutDuration: TimeInterval = 0.2
@@ -33,8 +19,6 @@ final class CaptureTextFeedbackPresenter {
 
     private init() {}
 
-    /// Confirms the copy, previewing the text itself so the user can tell at a
-    /// glance that the right region was read.
     func showCopied(text: String, displayID: CGDirectDisplayID?) {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
         let title = lines.count == 1
@@ -48,8 +32,6 @@ final class CaptureTextFeedbackPresenter {
         )
     }
 
-    /// The capture succeeded but Vision found nothing. Not a failure worth an
-    /// `NSAlert` - the user just picked an empty region and will try again.
     func showNoTextFound(displayID: CGDirectDisplayID?) {
         present(
             symbol: "text.viewfinder",
@@ -60,7 +42,15 @@ final class CaptureTextFeedbackPresenter {
     }
 
     func showFailure(title: String, displayID: CGDirectDisplayID?) {
-        present(symbol: "exclamationmark.triangle", title: title, detail: "Try capturing again.", displayID: displayID)
+        NSLog("Text recognition feedback presented: %@", title)
+        present(
+            symbol: "exclamationmark.triangle",
+            title: title,
+            detail: title == "Capture failed"
+                ? "The screenshot could not be captured or read."
+                : "The capture succeeded, but recognition failed.",
+            displayID: displayID
+        )
     }
 
     private func present(
@@ -82,8 +72,6 @@ final class CaptureTextFeedbackPresenter {
             )
             .padding(Self.shadowSlack)
         )
-        // The panel is framed by hand below, so the hosting view must not try
-        // to resize the window to its own intrinsic content size.
         hostingView.sizingOptions = []
 
         let panel = NSPanel(
@@ -106,7 +94,6 @@ final class CaptureTextFeedbackPresenter {
         panel.alphaValue = 0
         panel.orderFrontRegardless()
 
-        // A back-to-back capture should not photograph the previous toast.
         PreviewWindowCaptureExclusion.shared.register(window: panel)
 
         NSAnimationContext.runAnimationGroup { context in
@@ -122,8 +109,6 @@ final class CaptureTextFeedbackPresenter {
         }
     }
 
-    /// Awaits the fade rather than tearing down in an animation completion
-    /// handler, which would run outside this type's MainActor isolation.
     private func fadeOutAndDismiss() async {
         guard let panel else { return }
 
@@ -132,8 +117,6 @@ final class CaptureTextFeedbackPresenter {
             panel.animator().alphaValue = 0
         }
 
-        // A newer toast may have replaced this one mid-fade, in which case it
-        // has already ordered this panel out.
         guard self.panel === panel else { return }
         dismiss()
     }

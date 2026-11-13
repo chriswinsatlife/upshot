@@ -1,52 +1,51 @@
-//
-//  CaptureLibraryAnalyzer.swift
-//  Upshot
-//
-
 @preconcurrency import AVFoundation
 import CoreGraphics
 import FoundationModels
 import ImageIO
 import Vision
 
-/// Looks at captures entirely on device, in two steps the index schedules
-/// separately. `read` is quick (~0.15s): Vision reads the text and makes a
-/// feature print for Similar, and the rules in `CaptureCategoryRules` give a
-/// first category. `sort` is slow (~1–2s): Apple's language model files the
-/// capture into a category with a short title and keywords.
 nonisolated enum CaptureLibraryAnalyzer {
     struct Result: Sendable {
         var analysis: CaptureAnalysis
-        /// An archived `VNFeaturePrintObservation`.
         var featurePrint: Data?
     }
 
-    /// Screenshots are read at up to this many pixels on the long side.
-    /// Retina UI text stays legible well below full 5K, and Vision's time
-    /// grows with the pixel count.
     private static let readingSize = 3200
     private static let promptTextLimit = 1800
     private static let promptTranscriptLimit = 600
 
-    /// `previous` is the capture's last analysis, if any: a model's sorting
-    /// carries over when an edit changes the pixels, rather than falling back
-    /// to the rules until it's sorted again.
     static func read(_ item: CaptureLibraryItem, previous: CaptureAnalysis?) async -> Result? {
-        let frames = await readFrames(item)
+        let frames: [CGImage]
+        do {
+            frames = try await readFrames(item)
+        } catch is CancellationError {
+            return nil
+        } catch {
+            NSLog("Capture Library capture failed: id=%@ error=%@", item.id, String(describing: error))
+            return nil
+        }
         guard let primary = frames.first else { return nil }
         guard !Task.isCancelled else { return nil }
 
-        var lines = (try? recognizeText(in: primary)) ?? []
-        // Later frames add searchable text; only the first frame matches the
-        // thumbnail, so their lines carry no boxes.
-        var seen = Set(lines.map(\.text))
-        for frame in frames.dropFirst() {
-            guard !Task.isCancelled else { return nil }
-            for line in (try? recognizeText(in: frame)) ?? [] where seen.insert(line.text).inserted {
-                lines.append(CaptureTextLine(text: line.text, box: nil))
+        var lines: [CaptureTextLine] = []
+        do {
+            var seen = Set<String>()
+            for (index, frame) in frames.enumerated() {
+                try Task.checkCancellation()
+                let recognized = try await ImageTextRecognizer.recognizeLines(in: frame, requiresBounds: true)
+                for line in recognized where index == 0 || seen.insert(line.text).inserted {
+                    lines.append(CaptureTextLine(text: line.text, box: index == 0 ? line.bounds : nil))
+                    seen.insert(line.text)
+                }
             }
+        } catch is CancellationError {
+            return nil
+        } catch {
+            NSLog("Capture Library text recognition failed: id=%@ error=%@", item.id, String(describing: error))
+            return nil
         }
         guard !Task.isCancelled else { return nil }
+        NSLog("Capture Library text recognition completed: id=%@ lines=%ld", item.id, lines.count)
 
         let featurePrint = try? makeFeaturePrint(of: primary)
         var analysis = CaptureAnalysis(id: item.id, fingerprint: item.thumbnailKey)
@@ -65,11 +64,17 @@ nonisolated enum CaptureLibraryAnalyzer {
         return Result(analysis: analysis, featurePrint: featurePrint)
     }
 
-    /// Asks the model to sort a capture that has already been read. Text and
-    /// the feature print are kept.
     static func sort(_ analysis: CaptureAnalysis, item: CaptureLibraryItem) async -> CaptureAnalysis {
         var analysis = analysis
-        let image = await readFrames(item, framesForVideo: 1).first
+        let image: CGImage?
+        do {
+            image = try await readFrames(item, framesForVideo: 1).first
+        } catch is CancellationError {
+            return analysis
+        } catch {
+            NSLog("Capture Library capture failed during classification: id=%@ error=%@", item.id, String(describing: error))
+            image = nil
+        }
         await classify(&analysis, item: item, image: image)
         return analysis
     }
@@ -78,9 +83,8 @@ nonisolated enum CaptureLibraryAnalyzer {
         SystemLanguageModel.default.availability == .available
     }
 
-    // MARK: Frames
 
-    private static func readFrames(_ item: CaptureLibraryItem, framesForVideo: Int = 3) async -> [CGImage] {
+    private static func readFrames(_ item: CaptureLibraryItem, framesForVideo: Int = 3) async throws -> [CGImage] {
         if item.isVideo {
             let asset = AVURLAsset(url: item.fileURL)
             let generator = AVAssetImageGenerator(asset: asset)
@@ -90,14 +94,12 @@ nonisolated enum CaptureLibraryAnalyzer {
             generator.requestedTimeToleranceBefore = tolerance
             generator.requestedTimeToleranceAfter = tolerance
             let duration = item.duration ?? 0
-            // The first frame is what the thumbnail shows; the rest sample
-            // the middle and the end for more text.
             let fractions = [0, 0.5, 0.9].prefix(duration > 2 ? framesForVideo : 1)
             var frames: [CGImage] = []
             for fraction in fractions {
-                guard !Task.isCancelled else { break }
+                try Task.checkCancellation()
                 let time = CMTime(seconds: duration * fraction, preferredTimescale: 600)
-                if let image = try? await generator.image(at: time).image { frames.append(image) }
+                frames.append(try await generator.image(at: time).image)
             }
             return frames
         }
@@ -107,26 +109,10 @@ nonisolated enum CaptureLibraryAnalyzer {
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: readingSize
-              ] as CFDictionary) else { return [] }
+              ] as CFDictionary) else { throw TextRecognitionError.imageUnavailable }
         return [image]
     }
 
-    // MARK: Vision
-
-    private static func recognizeText(in image: CGImage) throws -> [CaptureTextLine] {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        request.automaticallyDetectsLanguage = true
-        try VNImageRequestHandler(cgImage: image).perform([request])
-        return ImageTextRecognizer.readingOrder(request.results ?? []).compactMap { observation in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
-            let box = observation.boundingBox
-            return CaptureTextLine(text: text, box: CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height))
-        }
-    }
 
     private static func makeFeaturePrint(of image: CGImage) throws -> Data? {
         let request = VNGenerateImageFeaturePrintRequest()
@@ -135,7 +121,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         return try NSKeyedArchiver.archivedData(withRootObject: observation, requiringSecureCoding: true)
     }
 
-    /// The spoken words of a recording, from its saved or draft captions.
     private static func transcript(_ session: RecordingSession) -> String? {
         struct Captions: Decodable {
             struct Cue: Decodable { var text: String }
@@ -150,7 +135,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         return nil
     }
 
-    // MARK: Classification
 
     @Generable
     struct Insight {
@@ -184,7 +168,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         let prompt = promptText(analysis: analysis, item: item)
         let seenImage = visionCapable ? image : nil
         var insight = await respond(prompt: prompt, image: seenImage)
-        // An image can overflow the context window; the text alone still works.
         if insight == nil, seenImage != nil { insight = await respond(prompt: prompt, image: nil) }
         if let insight {
             analysis.category = CaptureCategory(rawValue: String(describing: insight.category)) ?? rules
@@ -194,8 +177,6 @@ nonisolated enum CaptureLibraryAnalyzer {
                 .filter { !$0.isEmpty })).sorted()
             analysis.classifier = .model
         } else {
-            // Guardrails or an unsupported language: file it by the rules,
-            // and don't ask again for this version of the pipeline.
             analysis.category = rules
             analysis.classifier = .rules
             analysis.modelDeclined = true
@@ -219,7 +200,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         return parts.joined(separator: "\n\n")
     }
 
-    /// One fresh session per capture, so one capture never colors the next.
     private static func respond(prompt: String, image: CGImage?) async -> Insight? {
         let session = LanguageModelSession(instructions: instructions)
         let options = GenerationOptions(temperature: 0.2)
@@ -236,7 +216,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         }
     }
 
-    /// Whether the system model accepts images (macOS 27 and later).
     private static var visionCapable: Bool {
         if #available(macOS 27.0, *) {
             return SystemLanguageModel.default.capabilities.contains(.vision)

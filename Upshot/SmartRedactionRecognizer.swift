@@ -1,88 +1,42 @@
-//
-//  SmartRedactionRecognizer.swift
-//  Upshot
-//
-
 import CoreGraphics
 import Foundation
-import ImageIO
-import Vision
 
 nonisolated struct SmartRedactionRegion: Equatable, Sendable {
     var text: String
-    /// Normalized annotation-space bounds: origin is top-left, size is relative
-    /// to the image dimensions.
     var bounds: CGRect
 }
 
 nonisolated enum SmartRedactionRecognizer {
     private static let unitRect = CGRect(x: 0, y: 0, width: 1, height: 1)
 
-    nonisolated static func sensitiveRegions(at url: URL) async -> [SmartRedactionRegion] {
-        let cancellation = RecognitionCancellation()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let regions = autoreleasepool {
-                        recognizeSensitiveRegions(at: url, cancellation: cancellation)
-                    }
-                    continuation.resume(returning: regions)
-                }
-            }
-        } onCancel: {
-            cancellation.cancel()
+    static func sensitiveRegions(at url: URL) async -> [SmartRedactionRegion] {
+        do {
+            return try await recognizeSensitiveRegions(at: url)
+        } catch is CancellationError {
+            return []
+        } catch {
+            NSLog("Smart Redaction %@: %@", ImageTextRecognizer.failureTitle(for: error), String(describing: error))
+            await CaptureTextFeedbackPresenter.shared.showFailure(title: ImageTextRecognizer.failureTitle(for: error), displayID: nil)
+            return []
         }
     }
 
-    nonisolated private static func recognizeSensitiveRegions(
-        at url: URL, cancellation: RecognitionCancellation
-    ) -> [SmartRedactionRegion] {
-        guard !cancellation.isCancelled,
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            return []
-        }
-
-        let request = VNRecognizeTextRequest()
-        guard cancellation.install(request) else { return [] }
-        defer { cancellation.clearRequest() }
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        do {
-            try handler.perform([request])
-        } catch {
-            return []
-        }
-
-        guard !cancellation.isCancelled else { return [] }
-        let observations = request.results ?? []
-        let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
-        let padding = normalizedPadding(for: imageSize)
-
-        return uniqued(
-            observations.flatMap { observation -> [SmartRedactionRegion] in
-                guard let candidate = observation.topCandidates(1).first else { return [] }
-                let text = candidate.string
-                let ranges = sensitiveRanges(in: text)
-                guard !ranges.isEmpty else { return [] }
-
-                return ranges.compactMap { range in
-                    let textObservation = try? candidate.boundingBox(for: range)
-                    let visionBounds = textObservation?.boundingBox ?? observation.boundingBox
-                    let bounds = annotationBounds(from: visionBounds, padding: padding)
-                    guard bounds.width >= 0.001, bounds.height >= 0.001 else {
-                        return nil
-                    }
-
-                    return SmartRedactionRegion(
-                        text: String(text[range]),
-                        bounds: bounds
-                    )
-                }
+    static func recognizeSensitiveRegions(at url: URL) async throws -> [SmartRedactionRegion] {
+        let image = try await ImageTextRecognizer.loadImage(at: url)
+        let lines = try await ImageTextRecognizer.recognizeLines(in: image, requiresBounds: true, includeCharacterBounds: true)
+        try Task.checkCancellation()
+        let padding = normalizedPadding(for: CGSize(width: image.width, height: image.height))
+        let regions = uniqued(lines.flatMap { line -> [SmartRedactionRegion] in
+            sensitiveRanges(in: line.text).compactMap { range in
+                guard let lineBounds = line.bounds(for: range) else { return nil }
+                let bounds = lineBounds.insetBy(dx: -padding.width, dy: -padding.height)
+                    .intersection(unitRect).standardized
+                guard bounds.width >= 0.001, bounds.height >= 0.001 else { return nil }
+                return SmartRedactionRegion(text: String(line.text[range]), bounds: bounds)
             }
-        )
+        })
+        NSLog("Smart Redaction recognition completed: lines=%ld regions=%ld", lines.count, regions.count)
+        return regions
     }
 
     nonisolated private static func sensitiveRanges(in text: String) -> [Range<String.Index>] {
@@ -144,21 +98,6 @@ nonisolated enum SmartRedactionRecognizer {
         }
 
         return trimmedStart..<matchRange.upperBound
-    }
-
-    nonisolated private static func annotationBounds(from visionBounds: CGRect, padding: CGSize) -> CGRect {
-        let standardized = visionBounds.standardized
-        let topLeftRect = CGRect(
-            x: standardized.minX,
-            y: 1 - standardized.maxY,
-            width: standardized.width,
-            height: standardized.height
-        )
-
-        return topLeftRect
-            .insetBy(dx: -padding.width, dy: -padding.height)
-            .intersection(unitRect)
-            .standardized
     }
 
     nonisolated private static func normalizedPadding(for imageSize: CGSize) -> CGSize {
@@ -259,34 +198,6 @@ nonisolated enum SmartRedactionRecognizer {
         }
 
         return sum % 10 == 0
-    }
-}
-
-/// Cancellation can arrive before the image decode or during Vision's
-/// synchronous perform. Never hold the lock while asking Vision to cancel.
-nonisolated private final class RecognitionCancellation: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cancelled = false
-    private var request: VNRequest?
-
-    var isCancelled: Bool { lock.withLock { cancelled } }
-
-    func install(_ request: VNRequest) -> Bool {
-        lock.withLock {
-            guard !cancelled else { return false }
-            self.request = request
-            return true
-        }
-    }
-
-    func clearRequest() { lock.withLock { request = nil } }
-
-    func cancel() {
-        let active = lock.withLock {
-            cancelled = true
-            return request
-        }
-        active?.cancel()
     }
 }
 

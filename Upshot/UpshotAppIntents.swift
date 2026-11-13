@@ -1,27 +1,11 @@
-//
-//  UpshotAppIntents.swift
-//  Upshot
-//
-//  Exposes capture and recording actions to Shortcuts, Siri, and Spotlight
-//  via the App Intents framework. Every intent funnels through the same
-//  coordinators the menu bar and global hotkeys already drive, so behavior
-//  (history import, sounds, the preview overlay) is identical no matter how
-//  the action was triggered.
-//
-//  These types are deliberately `nonisolated`: AppIntents' static metadata
-//  (title, description, the shortcuts list) must be readable without a
-//  MainActor hop, since the framework can index it from a background
-//  context. Only `perform()` - which touches the app's MainActor-isolated
-//  capture/recording state - is annotated `@MainActor`.
-//
-
 import AppIntents
 import ScreenCaptureKit
 
-// MARK: - Errors
 
 nonisolated enum UpshotIntentError: Error, CustomLocalizedStringResourceConvertible {
     case captureCancelled
+    case captureFailed
+    case recognitionFailed
     case noTextRecognized
     case recordingAlreadyActive
     case noActiveRecording
@@ -31,6 +15,10 @@ nonisolated enum UpshotIntentError: Error, CustomLocalizedStringResourceConverti
         switch self {
         case .captureCancelled:
             "The screenshot was cancelled before it could be captured."
+        case .captureFailed:
+            "Capture failed. The selected area could not be captured."
+        case .recognitionFailed:
+            "Text recognition failed. The captured image could not be recognized."
         case .noTextRecognized:
             "No text was recognized in the captured area."
         case .recordingAlreadyActive:
@@ -43,7 +31,6 @@ nonisolated enum UpshotIntentError: Error, CustomLocalizedStringResourceConverti
     }
 }
 
-// MARK: - Screenshots
 
 nonisolated struct TakeFullScreenScreenshotIntent: AppIntent {
     static var title: LocalizedStringResource = "Take Full Screen Screenshot"
@@ -103,19 +90,19 @@ nonisolated struct CaptureTextIntent: AppIntent {
             throw UpshotIntentError.captureCancelled
         case .noTextFound:
             throw UpshotIntentError.noTextRecognized
-        case .captureFailed, .recognitionFailed:
-            throw NSError(domain: "Upshot.CaptureText", code: 1, userInfo: [NSLocalizedDescriptionKey: "Capture Text failed."])
+        case .captureFailed:
+            NSLog("Capture Text intent failed: capture failed")
+            throw UpshotIntentError.captureFailed
+        case .recognitionFailed:
+            NSLog("Capture Text intent failed: text recognition failed")
+            throw UpshotIntentError.recognitionFailed
         case .copied(let text):
             return .result(value: text)
         }
     }
 }
 
-// MARK: - Screen Recording
 
-/// Shared by the recording intents: resolves the active display to an
-/// `SCDisplay` and starts a fullscreen recording, bypassing the interactive
-/// source-picker bar so automation stays deterministic.
 @MainActor
 private func startFullScreenRecording() async throws {
     guard !ScreenRecordingManager.shared.isActive else {
@@ -176,7 +163,6 @@ nonisolated struct ToggleScreenRecordingIntent: AppIntent {
     }
 }
 
-// MARK: - Shortcuts
 
 nonisolated struct UpshotShortcuts: AppShortcutsProvider {
     @AppShortcutsBuilder
