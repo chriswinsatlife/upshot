@@ -1,19 +1,10 @@
 import AppKit
 import Foundation
 
-/// The annotation editor: the document, the selection, the current tool and the in-flight
-/// interaction. Ported from the drawing-app's `Editor/Editor.swift`.
-///
-/// Page space is the screenshot's own pixel space. The canvas hands the editor a `viewport`
-/// describing where the image sits on screen and at what scale, and every screen/page conversion
-/// goes through that - so panning, zooming and the background layout stay owned by the existing
-/// Upshot chrome while the engine stays a pure model.
 
-/// Which part of the selection the pointer grabbed.
 enum AnnoSelectionHandle: Equatable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     case rotate(corner: Int)
-    /// An arrow's own handles.
     case arrowStart, arrowMiddle, arrowEnd
 
     var isCorner: Bool {
@@ -28,7 +19,6 @@ enum AnnoSelectionHandle: Equatable {
         return false
     }
 
-    /// The point of the selection box that stays put while this handle is dragged, in 0...1.
     var anchor: Vec? {
         switch self {
         case .topLeft: Vec(1, 1)
@@ -43,7 +33,6 @@ enum AnnoSelectionHandle: Equatable {
         }
     }
 
-    /// Which axes this handle scales.
     var scalesX: Bool {
         switch self {
         case .top, .bottom: false
@@ -61,8 +50,6 @@ enum AnnoSelectionHandle: Equatable {
     }
 }
 
-/// The selection's frame: a box in some space, plus the transform from that space to the page.
-/// For a single shape that's the shape's own space, so a rotated shape gets a rotated frame.
 struct AnnoSelectionBounds {
     var box: Box
     var transform: Mat
@@ -75,7 +62,6 @@ struct AnnoSelectionBounds {
     }
 }
 
-/// The interaction state machine. Each case holds what the drag needs to keep going.
 enum AnnoInteraction {
     case idle
     case drawing(id: AnnoShapeID, origin: Vec)
@@ -88,7 +74,6 @@ enum AnnoInteraction {
     case draggingArrowHandle(id: AnnoShapeID, handle: AnnoSelectionHandle)
 }
 
-/// What the canvas view knows about a pointer event.
 struct PointerInfo {
     var screenPoint: Vec
     var pagePoint: Vec
@@ -99,14 +84,10 @@ struct PointerInfo {
     var command = false
 }
 
-/// Where the page sits on screen.
 struct AnnoViewport {
-    /// The image's frame in view coordinates.
     var imageFrame: CGRect = .zero
-    /// The image's size in pixels - the extent of page space.
     var imageSize: CGSize = .zero
 
-    /// View points per page unit.
     var scale: Double {
         guard imageSize.width > 0, imageFrame.width > 0 else { return 1 }
         return Double(imageFrame.width / imageSize.width)
@@ -127,10 +108,9 @@ final class AnnoEditor {
         }
     }
 
-    /// The styles applied to newly created shapes.
     var currentSwatch: AnnotationSwatch = .red
-    /// Stroke width as the inspector's slider value; converted to page units on creation.
     var currentStrokeWidth: Double = 4
+    var currentRedactionKind: RedactionKind = .blur
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
     var currentFontFamily: AnnoFontFamily = .pro
@@ -141,26 +121,18 @@ final class AnnoEditor {
     var currentArrowheadStart: Arrowhead = .none
     var currentArrowheadEnd: Arrowhead = .arrow
 
-    /// The text shape currently being typed into. The canvas puts a text view over it and skips
-    /// drawing it, so the two don't double up.
     var editingTextId: AnnoShapeID?
     var onEditingTextChanged: ((AnnoShapeID?) -> Void)?
 
-    /// The part of page space an export contains: the image, or the whole
-    /// canvas when it has a background. Shapes are kept inside it while
-    /// they are moved, resized or reshaped. `nil` leaves them free.
     var pageLimits: Box?
 
     private(set) var interaction: AnnoInteraction = .idle
-    /// The brush rectangle while box-selecting, in page space.
     private(set) var brush: Box?
-    /// The shape an arrow terminal would bind to if the pointer were released now.
     private(set) var hintedBindingId: AnnoShapeID?
 
     private var undoStack: [AnnoDocument.Snapshot] = []
     private var redoStack: [AnnoDocument.Snapshot] = []
 
-    /// Called after every change, for the canvas to redraw itself.
     var onChange: (() -> Void)?
 
     func notifyChanged() { onChange?() }
@@ -169,7 +141,6 @@ final class AnnoEditor {
     func setBrush(_ brush: Box?) { self.brush = brush }
     func setHintedBinding(_ id: AnnoShapeID?) { hintedBindingId = id }
 
-    // MARK: - Camera
 
     func pageToScreen(_ p: Vec) -> Vec {
         let s = viewport.scale
@@ -188,14 +159,11 @@ final class AnnoEditor {
         )
     }
 
-    /// A screen-space distance expressed in page units, so hit margins and handle sizes stay a
-    /// constant number of points no matter how far the canvas is zoomed.
     func pageDistance(forScreen distance: Double) -> Double {
         let s = viewport.scale
         return s == 0 ? distance : distance / s
     }
 
-    // MARK: - Document access
 
     func replaceDocument(shapes: [AnnoShape], bindings: [ArrowBinding] = []) {
         document.restore(AnnoDocument.Snapshot(shapes: shapes, bindings: bindings))
@@ -209,7 +177,6 @@ final class AnnoEditor {
 
     var shapes: [AnnoShape] { document.shapes }
 
-    // MARK: - Undo
 
     func markUndo() {
         undoStack.append(document.snapshot())
@@ -238,14 +205,11 @@ final class AnnoEditor {
         notifyChanged()
     }
 
-    // MARK: - Selection
 
     var selectedShapes: [AnnoShape] {
         document.shapes.filter { selectedIds.contains($0.id) }
     }
 
-    /// The selection frame. A lone shape keeps its own rotated frame; several shapes share an
-    /// axis-aligned page-space frame.
     var selectionBounds: AnnoSelectionBounds? {
         let selected = selectedShapes
         guard !selected.isEmpty else { return nil }
@@ -258,8 +222,6 @@ final class AnnoEditor {
         return AnnoSelectionBounds(box: Box.common(boxes), transform: .identity)
     }
 
-    /// The shape under a page point, topmost first, with a margin that grows as you zoom out so
-    /// thin strokes stay clickable.
     func hitShape(at pagePoint: Vec) -> AnnoShape? {
         let margin = Swift.max(4, pageDistance(forScreen: 8))
         for shape in document.shapes.reversed() {
@@ -272,7 +234,6 @@ final class AnnoEditor {
         return nil
     }
 
-    /// Shapes overlapping a page-space box, for brush selection.
     func shapes(in box: Box) -> [AnnoShape] {
         let polygon = box.corners
         return document.shapes.filter { shape in
@@ -300,7 +261,6 @@ final class AnnoEditor {
         guard !selectedIds.isEmpty else { return }
         var dx = dx
         var dy = dy
-        // Arrow keys stop at the boundary too.
         if let limits = pageLimits {
             let boxes = selectedIds.compactMap { document.pageBounds($0) }
             if !boxes.isEmpty {
@@ -320,13 +280,10 @@ final class AnnoEditor {
         notifyChanged()
     }
 
-    /// Which selection handle, if any, is under a screen point. Handles are tested in screen space
-    /// so they stay the same size to grab at every zoom level.
     func handle(at screenPoint: Vec) -> AnnoSelectionHandle? {
         guard let bounds = selectionBounds else { return nil }
         let hitRadius = 9.0
 
-        // A lone arrow gets its own three handles instead of a resize frame.
         if selectedIds.count == 1, let shape = selectedShapes.first, shape.isArrow,
            let info = document.arrowInfo(shape.id) {
             let transform = shape.pageTransform
@@ -352,7 +309,6 @@ final class AnnoEditor {
             if Vec.dist(screen, screenPoint) <= hitRadius { return handle }
         }
 
-        // The rotate handles sit just outside each corner.
         let corners = [Vec(0, 0), Vec(1, 0), Vec(1, 1), Vec(0, 1)]
         let center = pageToScreen(bounds.pageCenter)
         for (i, normalized) in corners.enumerated() {
@@ -364,10 +320,7 @@ final class AnnoEditor {
         return nil
     }
 
-    // MARK: - Style
 
-    /// Stroke width in page units. The inspector's slider is authored against a 900px image, the
-    /// same reference the old renderer used, so existing presets keep their look.
     func pageStrokeWidth(_ sliderValue: Double) -> Double {
         let edge = Swift.max(Double(viewport.imageSize.width), Double(viewport.imageSize.height))
         guard edge > 0 else { return sliderValue }

@@ -112,6 +112,25 @@ struct TextProps: Codable, Equatable, Hashable {
 enum RedactionKind: String, CaseIterable, Codable {
     case blur
     case pixelate
+    case box
+    case disc
+    case motionHorizontal
+    case motionVertical
+    case zoom
+    case hexagonal
+
+    var title: String {
+        switch self {
+        case .blur: "Gaussian"
+        case .pixelate: "Pixelate"
+        case .box: "Box"
+        case .disc: "Disc"
+        case .motionHorizontal: "Horizontal motion"
+        case .motionVertical: "Vertical motion"
+        case .zoom: "Zoom"
+        case .hexagonal: "Hexagonal"
+        }
+    }
 }
 
 struct RedactionProps: Codable, Equatable {
@@ -195,7 +214,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .arrow(p):
             p.arrowheadStart == .none && p.arrowheadEnd == .none ? .line : .arrow
         case .text: .text
-        case let .redaction(p): p.kind == .blur ? .blur : .pixelate
+        case let .redaction(p): p.kind == .pixelate ? .pixelate : .blur
         case .highlight: .highlight
         case .numbered: .numberedCircle
         }

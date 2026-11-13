@@ -186,10 +186,9 @@ enum AnnoShapeDrawing {
         let render = {
             guard let sampled = sample(contextBounds) else { return nil as CGImage? }
             return autoreleasepool {
-                switch props.kind {
-                case .blur: blurred(sampled, density: props.density)
-                case .pixelate: pixelated(sampled, density: props.density)
-                }
+                let targetScale = hypot(target.transform.a, target.transform.b)
+                let sampleScale = Double(sampled.width) / max(1, contextBounds.width / max(targetScale, 0.0001))
+                return AnnotationRedactionFilters.render(sampled, kind: props.kind, density: props.density, scale: sampleScale)
             }
         }
         let processed: CGImage?
@@ -214,30 +213,4 @@ enum AnnoShapeDrawing {
         context.restoreGState()
     }
 
-    private static func blurred(_ image: CGImage, density: Double) -> CGImage? {
-        let input = CIImage(cgImage: image)
-        let filter = CIFilter.gaussianBlur()
-        filter.inputImage = input.clampedToExtent()
-        filter.radius = Float(RedactionImageProcessor.blurRadius(for: CGFloat(density)))
-        guard let output = filter.outputImage else { return nil }
-        return ciContext.createCGImage(output, from: input.extent)
-    }
-
-    private static func pixelated(_ image: CGImage, density: Double) -> CGImage? {
-        let block = RedactionImageProcessor.pixelBlockSize(for: CGFloat(density))
-        let lowWidth = Swift.max(1, Int(CGFloat(image.width) / block))
-        let lowHeight = Swift.max(1, Int(CGFloat(image.height) / block))
-        guard let low = CGContext(
-            data: nil,
-            width: lowWidth,
-            height: lowHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        low.interpolationQuality = .medium
-        low.draw(image, in: CGRect(x: 0, y: 0, width: lowWidth, height: lowHeight))
-        return low.makeImage()
-    }
 }

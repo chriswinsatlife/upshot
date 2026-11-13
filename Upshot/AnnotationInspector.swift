@@ -320,6 +320,14 @@ struct AnnotationEditorInspector: View {
             }
 
             if model.isRedactionStyleAvailable {
+                Picker("Style", selection: Binding(
+                    get: { model.redactionKind },
+                    set: { model.setRedactionKind($0) }
+                )) {
+                    ForEach(RedactionKind.allCases, id: \.self) { kind in
+                        Text(kind.title).tag(kind)
+                    }
+                }
                 InspectorSlider(
                     "Strength",
                     value: Binding(

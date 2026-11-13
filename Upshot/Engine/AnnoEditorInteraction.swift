@@ -126,7 +126,7 @@ extension AnnoEditor {
             kind = .highlight(HighlightProps(w: 1, h: 1))
         default:
             var props = RedactionProps()
-            props.kind = tool == .blur ? .blur : .pixelate
+            props.kind = tool == .blur ? currentRedactionKind : .pixelate
             props.density = currentRedactionDensity
             props.w = 1
             props.h = 1
@@ -231,6 +231,9 @@ extension AnnoEditor {
             }
 
         case let .creatingGeo(id, _):
+            if let props = document.shape(id)?.redactionProps {
+                NSLog("Annotation redaction committed style=%@ density=%.2f", props.kind.rawValue, props.density)
+            }
             if let shape = document.shape(id), let size = boxSize(of: shape), size.width <= 2, size.height <= 2 {
                 let fallback = Swift.max(48, Double(Swift.max(viewport.imageSize.width, viewport.imageSize.height)) * 0.08)
                 setBoxSize(id, width: fallback, height: fallback)
