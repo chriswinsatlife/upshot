@@ -47,7 +47,8 @@ The commands and actions correspond directly to the routes in [URL Scheme](url-s
 ## Options
 
 - `--output FILE`: write the completed capture to a new destination. Screenshot paths require `.png`; text captures write UTF-8. Relative paths resolve against the CLI's current directory. The parent directory must exist. Existing files are preserved.
-- `--path FILE`: open an image, video, or recording project in its editor. Relative paths resolve against the CLI's current directory.
+- `--path FILE`: choose an image, video, recording project, image to combine, or watermark image for the corresponding command. Relative paths resolve against the CLI's current directory.
+- `--value VALUE`: supply an editor style, numeric value, Boolean, or JSON settings object. Shell-quote JSON objects to preserve their punctuation.
 - `--delay SECONDS`: set the self-timer delay for one self-timer capture. The accepted range is 1–3600 seconds; the default is five seconds.
 - `--dev`: use the existing `agent-dev.sock` socket.
 - `--socket FILE`: use a specified Unix socket. This overrides earlier socket options.
@@ -64,7 +65,7 @@ Recording start, stop, restart, and discard acknowledge acceptance. Recording pr
 
 A successful command exits with status 0. Invalid arguments, app errors, cancellation, unavailable sockets, and disconnected sockets exit with status 1 and print the error to standard error. CLI commands never retry a request automatically.
 
-Capture Previous Area has a registry entry in phase one. The area-selection integration must install `AutomationActions.capturePreviousArea` before that command can capture a previous selection.
+Capture Previous Area uses the coordinator's saved screenshot rectangle and normal output processing. Capture All-In-One opens the shared selector; its Recording and Scrolling modes return acceptance without a screenshot. An output destination requires a screenshot.
 
 ## Socket Protocol
 
@@ -88,4 +89,47 @@ Library selection commands include `library preview`, `library edit`, `library r
 
 Recording editor commands include `editor recording-save`, `editor recording-undo`, `editor recording-redo`, `editor recording-play`, `editor recording-pause`, `editor recording-export`, `editor recording-export-audio`, and `editor recording-cancel-export`. An optional `--path` chooses an already-open recording. Movie and audio exports continue asynchronously in the editor.
 
-Screenshot editor commands `editor save`, `editor save-copy`, `editor done`, `editor share`, `editor undo`, and `editor redo` require the annotation-editor callback registration described in [URL Scheme](url-scheme.md). These routes report an integration error in the phase-one build until that registration is added.
+Screenshot editor commands `editor save`, `editor save-copy`, `editor done`, `editor share`, `editor undo`, and `editor redo` use the registered callbacks of the frontmost visible screenshot editor. The editor must be idle and outside cropping mode.
+
+## Integrated Commands
+
+Every command below also appears in `upshot actions` and the searchable shortcut catalog. Parameter semantics and all accepted values are in [URL Scheme](url-scheme.md).
+
+```sh
+upshot capture previous-area
+upshot capture all-in-one
+upshot capture smart-element
+upshot selection toggle-crosshair
+upshot selection toggle-magnifier
+upshot desktop toggle-icons
+upshot library history
+upshot library restore-last
+upshot library copy-text
+upshot library detect-codes
+upshot recording toggle-pen
+upshot recording clear-pen
+upshot editor recording-export-gif
+upshot editor highlighter
+upshot editor measure
+upshot editor text-plain
+upshot editor text-label
+upshot editor text-callout
+upshot editor redaction-style --value hexagonal
+upshot editor rotate-clockwise
+upshot editor rotate-counterclockwise
+upshot editor flip-horizontal
+upshot editor flip-vertical
+upshot editor combine-side-by-side --path "$HOME/Pictures/second.png"
+upshot editor combine-stacked --path "$HOME/Pictures/second.png"
+upshot editor drawing-smoothing --value 0.62
+upshot editor object-shadows --value true
+upshot editor expand-canvas --value true
+upshot editor always-on-top --value true
+upshot editor color-adjustments --value '{"exposure":0,"contrast":1,"saturation":0.5,"temperature":0}'
+upshot editor watermark --value '{"text":"Upshot","position":"bottomRight","opacity":0.5,"rotationDegrees":0}'
+upshot editor watermark --path "$HOME/Pictures/watermark.png"
+```
+
+Live pen commands require an active, unpaused recording. GIF export requires an open recording editor. Library recognition commands require one selected screenshot. Annotation actions require an idle screenshot editor. Combining without `--path` opens the image chooser. Watermark, smoothing, shadows, canvas expansion, and always-on-top actions support parameterless toggling as documented in URL Scheme.
+
+All screenshot-producing commands apply screenshot output preferences before history import. Capture Text bypasses screenshot output processing. Failed processing retains the raw capture and reports Capture failed.
