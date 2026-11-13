@@ -70,8 +70,8 @@ enum StateRenderSource {
         ],
         "Upshot/CaptureCountdownPresenter.swift": [
             ("final class CaptureCountdownPresenter {", 6),
-            ("final class CaptureCountdownModel {", 135),
-            ("struct CaptureCountdownView: View {", 145),
+            ("final class CaptureCountdownModel {", 132),
+            ("struct CaptureCountdownView: View {", 142),
         ],
         "Upshot/CaptureHistorySettingsSection.swift": [
             ("struct CaptureHistorySettingsSection: View {", 3),

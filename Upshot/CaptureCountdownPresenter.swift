@@ -84,10 +84,7 @@ final class CaptureCountdownPresenter {
 
         let hostingView = NSHostingView(rootView: CaptureCountdownView(model: model, onCancel: { [weak self] in self?.cancel() }))
         hostingView.sizingOptions = []
-        let size = NSSize(
-            width: CaptureCountdownView.size + 2 * CaptureCountdownView.shadowSlack,
-            height: CaptureCountdownView.size + 2 * CaptureCountdownView.shadowSlack
-        )
+        let size = hostingView.fittingSize
 
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -143,8 +140,7 @@ final class CaptureCountdownModel {
 }
 
 struct CaptureCountdownView: View {
-    static let size: CGFloat = 140
-    static let shadowSlack: CGFloat = 32
+    static let windowMargin: CGFloat = 32
 
     @State var model: CaptureCountdownModel
     let onCancel: () -> Void
@@ -153,40 +149,37 @@ struct CaptureCountdownView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 9) {
-            ZStack {
-                Circle()
-                    .stroke(Palette.hairline, lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: ring)
-                    .stroke(Palette.label, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-
-                Text("\(model.remaining)")
-                    .font(.system(size: 44, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.label)
-                    .contentTransition(.numericText(countsDown: true))
-                    .motion(.morphQuick, value: model.remaining)
+        InterfacePanel(.panel) {
+            HStack(spacing: 0) {
+                dial
+                InterfaceToolbarDivider()
+                InterfaceToolbarButton("Cancel", systemImage: "xmark", action: onCancel)
             }
-            .frame(width: 84, height: 84)
-
-            Button(action: onCancel) {
-                HStack(spacing: 5) {
-                    KeyCap(label: "esc", isSmall: true)
-                    Text("to cancel")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Palette.secondaryLabel)
-                }
-            }
-            .buttonStyle(.plain)
-            .help("Cancel countdown (Esc)")
+            .fixedSize()
         }
-        .frame(width: Self.size, height: Self.size)
-        .interfacePanelSurface(cornerRadius: Radius.hud)
-        .padding(Self.shadowSlack)
+        .padding(Self.windowMargin)
         .onAppear { drain(from: model.remaining) }
         .onChange(of: model.remaining) { _, value in drain(from: value) }
-        .accessibilityElement(children: .combine)
+    }
+
+    private var dial: some View {
+        ZStack {
+            Circle()
+                .stroke(Palette.floatingDivider, lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: ring)
+                .stroke(Palette.label, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(model.remaining)")
+                .font(.dsDisplay)
+                .monospacedDigit()
+                .foregroundStyle(Palette.label)
+                .contentTransition(.numericText(countsDown: true))
+                .motion(.morphQuick, value: model.remaining)
+        }
+        .padding(Space.xs)
+        .frame(width: InterfaceMetrics.toolbarButtonMinimumWidth, height: InterfaceMetrics.toolbarButtonHeight)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Capturing in \(model.remaining)")
     }
 
