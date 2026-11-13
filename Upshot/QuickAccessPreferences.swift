@@ -40,10 +40,42 @@ enum QuickAccessAutoCloseAction: String, CaseIterable, Identifiable {
     }
 }
 
+enum QuickAccessSwipeAction: String, CaseIterable, Identifiable {
+    case none
+    case tuck
+    case copy
+    case save
+    case annotate
+    case pin
+    case view
+    case upload
+    case compress
+    case close
+    case delete
+
+    var id: String { rawValue }
+
+    var cardAction: OverlayCardAction? {
+        OverlayCardAction(rawValue: rawValue)
+    }
+
+    var title: String {
+        switch self {
+        case .none: "Do Nothing"
+        case .tuck: "Tuck Shelf"
+        case .annotate: "Edit"
+        case .close: "Close"
+        default: cardAction?.label() ?? rawValue
+        }
+    }
+}
+
 extension UpshotPreferences {
     static let previewOverlaySizeKey = "previewOverlaySize"
     static let previewAutoCloseActionKey = "previewAutoCloseAction"
     static let previewCloseAfterUploadingKey = "previewCloseAfterUploading"
+    static let previewSwipeTowardEdgeActionKey = "previewSwipeTowardEdgeAction"
+    static let previewSwipeAwayFromEdgeActionKey = "previewSwipeAwayFromEdgeAction"
 
     static var previewOverlaySize: QuickAccessOverlaySize {
         QuickAccessOverlaySize(rawValue: UserDefaults.standard.string(forKey: previewOverlaySizeKey) ?? "") ?? .small
@@ -55,5 +87,13 @@ extension UpshotPreferences {
 
     static var previewCloseAfterUploading: Bool {
         UserDefaults.standard.bool(forKey: previewCloseAfterUploadingKey)
+    }
+
+    static var previewSwipeTowardEdgeAction: QuickAccessSwipeAction {
+        QuickAccessSwipeAction(rawValue: UserDefaults.standard.string(forKey: previewSwipeTowardEdgeActionKey) ?? "") ?? .tuck
+    }
+
+    static var previewSwipeAwayFromEdgeAction: QuickAccessSwipeAction {
+        QuickAccessSwipeAction(rawValue: UserDefaults.standard.string(forKey: previewSwipeAwayFromEdgeActionKey) ?? "") ?? .none
     }
 }

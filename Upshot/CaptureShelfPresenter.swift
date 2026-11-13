@@ -172,8 +172,9 @@ private final class CaptureShelfPanel: NSPanel {
 }
 
 private final class CaptureShelfHostingView<Content: View>: NSHostingView<Content> {
-    private var swipeDistance: CGFloat = 0
-    private var didSwipe = false
+    private var swipeDistance = CGSize.zero
+    private var swipeItemID: ShelfItem.ID?
+    private var swipeStartedTucked = false
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
@@ -190,21 +191,51 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
 
     override func scrollWheel(with event: NSEvent) {
         guard event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else { return }
-        if event.phase == .began {
-            swipeDistance = 0
-            didSwipe = false
+        let shelf = CaptureShelf.shared
+        if event.phase.contains(.began) || event.phase.contains(.mayBegin) {
+            swipeDistance = .zero
+            swipeItemID = shelf.hoveredID
+            swipeStartedTucked = shelf.isTucked
         }
-        guard !didSwipe, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
+        if event.phase.contains(.cancelled) {
+            swipeDistance = .zero
+            swipeItemID = nil
+            NSLog("Quick Access swipe outcome=cancelled")
+            return
+        }
+
+        swipeDistance.width += event.scrollingDeltaX
+        swipeDistance.height += event.scrollingDeltaY
+        guard event.phase.contains(.ended) else { return }
+        let distance = swipeDistance
+        let itemID = swipeItemID
+        swipeDistance = .zero
+        swipeItemID = nil
+        guard abs(distance.width) > 36, abs(distance.width) > abs(distance.height),
+              shelf.isTucked == swipeStartedTucked, !shelf.isMoving, shelf.draggingID == nil else { return }
 
         let towardEdge: CGFloat = UpshotPreferences.previewPosition == .left ? -1 : 1
-        swipeDistance += event.scrollingDeltaX * towardEdge
-        let shelf = CaptureShelf.shared
-        if swipeDistance > 36, !shelf.isTucked {
-            didSwipe = true
-            shelf.tuck(.user)
-        } else if swipeDistance < -36, shelf.isTucked {
-            didSwipe = true
-            shelf.open()
+        let swipedTowardEdge = distance.width * towardEdge > 0
+        if shelf.isTucked {
+            if !swipedTowardEdge {
+                shelf.open()
+                NSLog("Quick Access swipe action=openShelf outcome=dispatched")
+            }
+            return
         }
+
+        let action = swipedTowardEdge
+            ? UpshotPreferences.previewSwipeTowardEdgeAction
+            : UpshotPreferences.previewSwipeAwayFromEdgeAction
+        let performed: Bool
+        if action == .tuck {
+            shelf.tuck(.user)
+            performed = true
+        } else if let itemID, let cardAction = action.cardAction {
+            performed = shelf.perform(cardAction, id: itemID)
+        } else {
+            performed = false
+        }
+        NSLog("Quick Access swipe item=%@ direction=%@ action=%@ outcome=%@", itemID?.uuidString ?? "none", swipedTowardEdge ? "towardEdge" : "awayFromEdge", action.rawValue, performed ? "dispatched" : "ignored")
     }
 }
