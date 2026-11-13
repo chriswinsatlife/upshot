@@ -23,6 +23,7 @@ struct RecordingPickerControls: View {
     @State private var sources = RecordingSourceCatalog.shared
     @State private var target = RecordingSourceTargetPresenter.shared
     @State private var area = RecordingAreaSelectionPresenter.shared
+    @State private var countdown = CaptureCountdownPresenter.shared
     @State private var cameras = UpshotStorage.isRenderingStates ? [] : RecordingDeviceCatalog.cameras()
     @AppStorage(UpshotPreferences.recordingCameraDeviceIDKey) private var cameraID = ""
     @AppStorage(UpshotPreferences.recordingMicrophoneDeviceIDKey) private var microphoneID = ""
@@ -33,63 +34,52 @@ struct RecordingPickerControls: View {
     private static let timerOptions = [0, 1, 3, 5]
 
     var body: some View {
-        HStack(spacing: BarMetrics.itemSpacing) {
-            displaySource.disabled(CaptureCountdownPresenter.shared.isRunning)
-            windowSource.disabled(CaptureCountdownPresenter.shared.isRunning || sources.isLoading)
-            BarActionButton(
-                id: .area,
-                title: "Drag to select a region",
-                systemImage: "rectangle.dashed",
-                isSelected: area.isActive,
-                accessibility: "Area - drag to select the region to record"
-            ) {
+        HStack(spacing: Space.xxs) {
+            displaySource.disabled(countdown.isRunning)
+            windowSource.disabled(countdown.isRunning || sources.isLoading)
+            InterfaceToolbarButton("Area", systemImage: "rectangle.dashed", isSelected: area.isActive) {
                 area.toggle()
             }
             .disabled(!canSelectSource)
+            .accessibilityLabel("Area - drag to select the region to record")
 
-            BarDivider()
+            InterfaceToolbarDivider()
 
             cameraPicker
-
             microphonePicker
 
-            inputToggle(
-                id: .systemAudio,
-                title: systemAudio ? "System audio on" : "System audio off",
-                isOn: systemAudio,
-                onIcon: "speaker.wave.2.fill",
-                offIcon: "speaker.slash",
-                accessibility: systemAudio
-                    ? "System audio on - click to stop capturing what you hear"
-                    : "System audio off - click to capture what you hear"
+            InterfaceToolbarButton(
+                "System Audio",
+                systemImage: systemAudio ? "speaker.wave.2" : "speaker.slash",
+                isSelected: systemAudio
             ) {
                 systemAudio.toggle()
             }
+            .accessibilityLabel(systemAudio
+                ? "System audio on - click to stop capturing what you hear"
+                : "System audio off - click to capture what you hear")
 
-            inputToggle(
-                id: .teleprompter,
-                title: teleprompterEnabled ? "Teleprompter on" : "Teleprompter off",
-                isOn: teleprompterEnabled,
-                onIcon: "text.pad.header",
-                offIcon: "text.pad.header",
-                accessibility: teleprompterEnabled
-                    ? "Teleprompter on - click to edit the script"
-                    : "Teleprompter off - click to write a script"
+            InterfaceToolbarButton(
+                "Teleprompter",
+                systemImage: "text.pad.header",
+                isSelected: teleprompterEnabled
             ) {
                 RecordingBarPresenter.shared.toggleTeleprompter()
             }
+            .accessibilityLabel(teleprompterEnabled
+                ? "Teleprompter on - click to edit the script"
+                : "Teleprompter off - click to write a script")
 
             timerMenu
 
-            BarActionButton(
-                id: .close,
-                title: "Close",
-                systemImage: "xmark",
-                accessibility: "Close the recorder - Esc"
-            ) {
+            InterfaceToolbarDivider()
+
+            InterfaceToolbarButton("Close", systemImage: "xmark") {
                 dismissPicker()
             }
+            .accessibilityLabel("Close the recorder - Esc")
         }
+        .fixedSize()
         .task {
             guard !UpshotStorage.isRenderingStates else { return }
             cameras = RecordingDeviceCatalog.cameras()
@@ -106,19 +96,31 @@ struct RecordingPickerControls: View {
     }
 
     private var canSelectSource: Bool {
-        !sources.isLoading && !sources.displays.isEmpty && !CaptureCountdownPresenter.shared.isRunning
+        !sources.isLoading && !sources.displays.isEmpty && !countdown.isRunning
     }
 
     @ViewBuilder
     private var displaySource: some View {
         if sources.isLoading {
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: BarMetrics.controlSize, height: BarMetrics.controlSize)
-                .help("Finding screens and windows…")
-                .accessibilityLabel("Finding screens and windows")
+            VStack(spacing: InterfaceMetrics.toolbarIconToLabelSpacing) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(height: 20)
+                Text("Display")
+                    .font(.dsToolbarLabel)
+                    .foregroundStyle(Palette.disabledLabel)
+                    .fixedSize()
+            }
+            .frame(minWidth: InterfaceMetrics.toolbarButtonMinimumWidth, minHeight: InterfaceMetrics.toolbarButtonHeight)
+            .help("Finding screens and windows…")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Finding screens and windows")
         } else if !UpshotStorage.isRenderingStates && (sources.errorMessage != nil || sources.displays.isEmpty) {
-            Menu {
+            RecordingBarMenuButton(
+                title: "Display",
+                systemImage: "exclamationmark.triangle",
+                accessibility: "Recording sources unavailable - retry or open permissions"
+            ) {
                 Text(sources.errorMessage ?? "No screens are available.")
                 Button("Retry") { Task { await sources.refresh() } }
                 if !CGPreflightScreenCaptureAccess() {
@@ -128,37 +130,20 @@ struct RecordingPickerControls: View {
                         }
                     }
                 }
-            } label: {
-                BarActionLabel(id: .display, title: "Recording sources unavailable - click to retry",
-                               systemImage: "exclamationmark.triangle")
             }
-            .menuStyle(.button)
-            .buttonStyle(BarButtonStyle())
-            .menuIndicator(.hidden)
-            .accessibilityLabel("Recording sources unavailable - retry or open permissions")
         } else {
-            BarActionButton(
-                id: .display,
-                title: "Point at a screen to record",
-                systemImage: "menubar.rectangle",
-                isSelected: target.mode == .display,
-                accessibility: "Display - point at the screen to record, then click it"
-            ) {
+            InterfaceToolbarButton("Display", systemImage: "menubar.rectangle", isSelected: target.mode == .display) {
                 target.toggle(.display)
             }
+            .accessibilityLabel("Display - point at the screen to record, then click it")
         }
     }
 
     private var windowSource: some View {
-        BarActionButton(
-            id: .window,
-            title: "Point at a window to record",
-            systemImage: "macwindow",
-            isSelected: target.mode == .window,
-            accessibility: "Window - point at the window to record, then click it"
-        ) {
+        InterfaceToolbarButton("Window", systemImage: "macwindow", isSelected: target.mode == .window) {
             target.toggle(.window)
         }
+        .accessibilityLabel("Window - point at the window to record, then click it")
         .contextMenu {
             if let errorMessage = sources.errorMessage {
                 Text("Could not load windows: \(errorMessage)")
@@ -186,12 +171,6 @@ struct RecordingPickerControls: View {
         Task { await CameraRecordingManager.shared.stopPreview() }
     }
 
-    private var cameraTooltip: String {
-        guard !cameraID.isEmpty else { return "Camera off" }
-        guard let camera = cameras.first(where: { $0.uniqueID == cameraID }) else { return "Camera unavailable" }
-        return "Camera: \(camera.localizedName)"
-    }
-
     private var cameraAccessibilityLabel: String {
         guard !cameraID.isEmpty else {
             return "Camera off - click to choose a camera"
@@ -200,14 +179,6 @@ struct RecordingPickerControls: View {
             return "Camera unavailable - click to choose another camera"
         }
         return "Camera on - \(camera.localizedName), click to switch"
-    }
-
-    private var microphoneTooltip: String {
-        guard !microphoneID.isEmpty else { return "Microphone off" }
-        guard RecordingDeviceCatalog.microphone(withID: microphoneID) != nil else {
-            return "Microphone unavailable"
-        }
-        return "Microphone on"
     }
 
     private var microphoneAccessibilityLabel: String {
@@ -221,7 +192,12 @@ struct RecordingPickerControls: View {
     }
 
     private var cameraPicker: some View {
-        Menu {
+        RecordingBarMenuButton(
+            title: "Camera",
+            systemImage: cameraID.isEmpty ? "video.slash" : "video",
+            isSelected: !cameraID.isEmpty,
+            accessibility: cameraAccessibilityLabel
+        ) {
             Button {
                 cameraID = ""
                 Task { await CameraRecordingManager.shared.stopPreview() }
@@ -242,22 +218,16 @@ struct RecordingPickerControls: View {
                     menuSelectionLabel(device.localizedName, isSelected: cameraID == device.uniqueID)
                 }
             }
-        } label: {
-            BarActionLabel(
-                id: .camera,
-                title: cameraTooltip,
-                systemImage: cameraID.isEmpty ? "video.slash" : "video.fill",
-                tint: cameraID.isEmpty ? BarMetrics.inactiveTint : BarMetrics.activeTint
-            )
         }
-        .menuStyle(.button)
-        .buttonStyle(BarButtonStyle())
-        .menuIndicator(.hidden)
-        .accessibilityLabel(cameraAccessibilityLabel)
     }
 
     private var microphonePicker: some View {
-        Menu {
+        RecordingBarMenuButton(
+            title: "Microphone",
+            systemImage: microphoneID.isEmpty ? "mic.slash" : "mic",
+            isSelected: !microphoneID.isEmpty,
+            accessibility: microphoneAccessibilityLabel
+        ) {
             Button {
                 microphoneID = ""
             } label: {
@@ -276,22 +246,16 @@ struct RecordingPickerControls: View {
                     )
                 }
             }
-        } label: {
-            BarActionLabel(
-                id: .microphone,
-                title: microphoneTooltip,
-                systemImage: microphoneID.isEmpty ? "mic.slash" : "mic.fill",
-                tint: microphoneID.isEmpty ? BarMetrics.inactiveTint : BarMetrics.activeTint
-            )
         }
-        .menuStyle(.button)
-        .buttonStyle(BarButtonStyle())
-        .menuIndicator(.hidden)
-        .accessibilityLabel(microphoneAccessibilityLabel)
     }
 
     private var timerMenu: some View {
-        Menu {
+        RecordingBarMenuButton(
+            title: startDelaySeconds == 0 ? "Timer" : "\(startDelaySeconds)s",
+            systemImage: "timer",
+            isSelected: startDelaySeconds != 0,
+            accessibility: timerAccessibilityLabel
+        ) {
             ForEach(Self.timerOptions, id: \.self) { seconds in
                 Button {
                     startDelaySeconds = seconds
@@ -299,26 +263,11 @@ struct RecordingPickerControls: View {
                     menuSelectionLabel(timerLabel(seconds), isSelected: startDelaySeconds == seconds)
                 }
             }
-        } label: {
-            BarActionLabel(
-                id: .timer,
-                title: timerTooltip,
-                systemImage: "timer",
-                tint: startDelaySeconds == 0 ? BarMetrics.inactiveTint : BarMetrics.activeTint
-            )
         }
-        .menuStyle(.button)
-        .buttonStyle(BarButtonStyle())
-        .menuIndicator(.hidden)
-        .accessibilityLabel(timerAccessibilityLabel)
     }
 
     private func timerLabel(_ seconds: Int) -> String {
         seconds == 0 ? "None" : "\(seconds) second\(seconds == 1 ? "" : "s")"
-    }
-
-    private var timerTooltip: String {
-        startDelaySeconds == 0 ? "Timer off" : "Timer \(startDelaySeconds)s"
     }
 
     private var timerAccessibilityLabel: String {
@@ -358,24 +307,5 @@ struct RecordingPickerControls: View {
         Task { @MainActor in
             microphoneID = await RecordingInputAuthorization.ensureAccess(for: .microphone) ? deviceID : ""
         }
-    }
-
-    private func inputToggle(
-        id: BarTooltipID,
-        title: String,
-        isOn: Bool,
-        onIcon: String,
-        offIcon: String,
-        accessibility: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        BarActionButton(
-            id: id,
-            title: title,
-            systemImage: isOn ? onIcon : offIcon,
-            tint: isOn ? BarMetrics.activeTint : BarMetrics.inactiveTint,
-            accessibility: accessibility,
-            action: action
-        )
     }
 }

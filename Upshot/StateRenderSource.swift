@@ -171,9 +171,9 @@ enum StateRenderSource {
         "Upshot/RecordingBarPresenter.swift": [
             ("final class RecordingBarPresenter {", 6),
             ("enum Mode: Equatable {", 9),
-            ("private final class RecordingBarPanel: NSPanel {", 196),
-            ("private final class RecordingBarHostingView<Content: View>: NSHostingView<Content> {", 224),
-            ("struct RecordingBarView: View {", 237),
+            ("private final class RecordingBarPanel: NSPanel {", 203),
+            ("private final class RecordingBarHostingView<Content: View>: NSHostingView<Content> {", 231),
+            ("struct RecordingBarView: View {", 244),
         ],
         "Upshot/RecordingExportOptions.swift": [
             ("enum RecordingExportPreferences {", 3),

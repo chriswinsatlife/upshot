@@ -13,17 +13,20 @@ final class RecordingBarPresenter {
 
     private(set) var mode: Mode = .picker
     private(set) var isTeleprompterOpen = false
+    private(set) var renderHoveredOutputMode: RecordingOutputMode?
 
     var barFrameInPanel: CGRect = .zero
-    var visibilityBannerFrameInPanel: CGRect = .zero
+    var visibilityToastFrameInPanel: CGRect = .zero
     var areaPillFrameInPanel: CGRect?
+    var startFlyoutFrameInPanel: CGRect?
 
     func containsPanelPoint(_ point: CGPoint) -> Bool {
         if barFrameInPanel.contains(point) { return true }
         if let areaPillFrameInPanel, areaPillFrameInPanel.contains(point) { return true }
+        if let startFlyoutFrameInPanel, startFlyoutFrameInPanel.contains(point) { return true }
         return mode == .picker
             && UpshotPreferences.includeAppWindowsInCaptures
-            && visibilityBannerFrameInPanel.contains(point)
+            && visibilityToastFrameInPanel.contains(point)
     }
 
     @ObservationIgnored private var panel: NSPanel?
@@ -54,6 +57,7 @@ final class RecordingBarPresenter {
         Task {
             await RecordingSourceCatalog.shared.refresh()
         }
+        RecordingOutputModeCoordinator.shared.clearPendingMode()
         mode = .picker
         panel.level = .floating
         position(panel, displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: false))
@@ -68,10 +72,13 @@ final class RecordingBarPresenter {
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
         RecordingSourceTargetPresenter.shared.cancel()
         RecordingAreaSelectionPresenter.shared.cancel()
+        if mode != .recording {
+            RecordingOutputModeCoordinator.shared.beginSession()
+        }
 
         let isMorphing = panel.isVisible && isPositioned(panel, onDisplayID: displayID)
         if isMorphing {
-                withAnimation(BarMetrics.modeChange) {
+            withAnimation(BarMetrics.modeChange) {
                 mode = .recording
                 isTeleprompterOpen = false
             }
@@ -88,7 +95,6 @@ final class RecordingBarPresenter {
         if mode == .picker { CaptureCountdownPresenter.shared.cancel() }
         RecordingSourceTargetPresenter.shared.cancel()
         RecordingAreaSelectionPresenter.shared.cancel()
-        BarControlHoverView.endActiveHover()
         panel?.orderOut(nil)
         mode = .picker
         isTeleprompterOpen = false
@@ -109,21 +115,22 @@ final class RecordingBarPresenter {
 
     var barFrame: CGRect? {
         guard let panel, panel.isVisible, barFrameInPanel != .zero else { return nil }
-        return CGRect(
-            x: panel.frame.minX + barFrameInPanel.minX,
-            y: panel.frame.maxY - barFrameInPanel.maxY,
-            width: barFrameInPanel.width,
-            height: barFrameInPanel.height
-        )
+        return screenFrame(for: barFrameInPanel, in: panel)
     }
 
     var areaPillFrame: CGRect? {
-        guard let panel, panel.isVisible, let frame = areaPillFrameInPanel else { return nil }
-        return CGRect(
-            x: panel.frame.minX + frame.minX,
-            y: panel.frame.maxY - frame.maxY,
-            width: frame.width,
-            height: frame.height
+        guard let panel, panel.isVisible else { return nil }
+        let frames = [areaPillFrameInPanel, startFlyoutFrameInPanel].compactMap { $0 }
+        guard let first = frames.first else { return nil }
+        return screenFrame(for: frames.dropFirst().reduce(first) { $0.union($1) }, in: panel)
+    }
+
+    private func screenFrame(for frameInPanel: CGRect, in panel: NSPanel) -> CGRect {
+        CGRect(
+            x: panel.frame.minX + frameInPanel.minX,
+            y: panel.frame.maxY - frameInPanel.maxY,
+            width: frameInPanel.width,
+            height: frameInPanel.height
         )
     }
 
@@ -237,8 +244,8 @@ private final class RecordingBarHostingView<Content: View>: NSHostingView<Conten
 struct RecordingBarView: View {
     @State private var presenter = RecordingBarPresenter.shared
     @State private var area = RecordingAreaSelectionPresenter.shared
-    @State private var tooltip = BarTooltipModel()
     @State private var rowWidth: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(UpshotPreferences.includeAppWindowsInCapturesKey)
     private var includeAppWindowsInCaptures = false
 
@@ -247,7 +254,6 @@ struct RecordingBarView: View {
             .padding(.bottom, BarMetrics.bottomSlack)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .coordinateSpace(.named(BarCoordinateSpace.panel))
-            .environment(tooltip)
             .onChange(of: includeAppWindowsInCaptures) { _, _ in
                 guard !UpshotStorage.isRenderingStates else { return }
                 PreviewWindowCaptureExclusion.shared.refreshRegisteredWindows()
@@ -259,55 +265,83 @@ struct RecordingBarView: View {
         presenter.mode == .picker && presenter.isTeleprompterOpen
     }
 
+    private var showsAreaControls: Bool {
+        presenter.mode == .picker && area.isActive
+    }
+
+    private var showsStartFlyout: Bool {
+        showsAreaControls && area.selection != nil
+    }
+
+    private var accessoryTransition: AnyTransition {
+        reduceMotion
+            ? .opacity.animation(.easeOut(duration: 0.15))
+            : .opacity.combined(with: .offset(x: -Space.l)).animation(.easeOut(duration: 0.18))
+    }
+
     private var bar: some View {
         VStack(spacing: 0) {
             if showsTeleprompter {
                 RecordingBarTeleprompter()
                     .frame(width: rowWidth)
                     .transition(.opacity)
+                InterfaceFlyoutDivider()
+                    .frame(width: rowWidth)
             }
 
             controlRow
         }
-        .clipShape(barShape)
-        .glassEffect(.regular, in: barShape)
-        .overlay {
-            barShape.strokeBorder(BarMetrics.edge, lineWidth: 0.5)
-        }
-        .background(alignment: .bottom) {
+        .padding(InterfaceMetrics.floatingPanelPadding)
+        .interfacePanelSurface(.panel)
+        .background(alignment: .top) {
             if presenter.mode == .picker && includeAppWindowsInCaptures {
-                visibilityBanner
-                    .padding(.horizontal, BarMetrics.visibilityBannerInset)
-                    .offset(y: BarMetrics.visibilityBannerHeight - BarMetrics.visibilityBannerOverlap)
+                visibilityToast
+                    .padding(.top, presenter.barFrameInPanel.height + BarMetrics.accessoryGap)
+                    .fixedSize()
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            if presenter.mode == .picker && area.isActive {
-                RecordingAreaBarPill()
-                    .alignmentGuide(.trailing) { $0[.leading] - BarMetrics.pillGap }
-                    .transition(
-                        .opacity.combined(with: .offset(x: -12))
-                            .animation(.easeOut(duration: 0.18))
-                    )
-                    .onGeometryChange(for: CGRect.self) {
-                        $0.frame(in: .named(BarCoordinateSpace.panel))
-                    } action: {
-                        presenter.areaPillFrameInPanel = $0
-                    }
-                    .onDisappear {
-                        presenter.areaPillFrameInPanel = nil
-                    }
+        .overlay(alignment: .bottomLeading) {
+            if showsAreaControls {
+                areaAccessories
+                    .padding(.leading, presenter.barFrameInPanel.width + BarMetrics.accessoryGap)
+                    .fixedSize()
+                    .transition(accessoryTransition)
             }
         }
-        .overlay(alignment: .bottom) {
-            tooltipLayer.frame(height: BarMetrics.height)
-        }
-        .coordinateSpace(.named(BarCoordinateSpace.bar))
         .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .named(BarCoordinateSpace.panel))
         } action: {
             presenter.barFrameInPanel = $0
         }
+    }
+
+    private var areaAccessories: some View {
+        VStack(alignment: .leading, spacing: BarMetrics.accessoryGap) {
+            if showsStartFlyout {
+                RecordingStartFlyout(presentedHoverMode: presenter.renderHoveredOutputMode)
+                    .transition(.opacity.animation(.easeOut(duration: 0.15)))
+                    .onGeometryChange(for: CGRect.self) {
+                        $0.frame(in: .named(BarCoordinateSpace.panel))
+                    } action: {
+                        presenter.startFlyoutFrameInPanel = $0
+                    }
+                    .onDisappear {
+                        presenter.startFlyoutFrameInPanel = nil
+                    }
+            }
+
+            RecordingAreaBarPill()
+                .frame(height: BarMetrics.height)
+                .onGeometryChange(for: CGRect.self) {
+                    $0.frame(in: .named(BarCoordinateSpace.panel))
+                } action: {
+                    presenter.areaPillFrameInPanel = $0
+                }
+                .onDisappear {
+                    presenter.areaPillFrameInPanel = nil
+                }
+        }
+        .fixedSize()
     }
 
     private var controlRow: some View {
@@ -324,77 +358,32 @@ struct RecordingBarView: View {
             }
             .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
-        .padding(.leading, 2)
-        .padding(.trailing, BarMetrics.horizontalPadding)
-        .frame(height: BarMetrics.height)
+        .fixedSize()
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
     }
 
-    private var visibilityBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Palette.warning)
-                .accessibilityHidden(true)
-            Text("Upshot windows will be captured")
-                .foregroundStyle(BarMetrics.activeTint)
-            Spacer(minLength: 8)
-            InspectorToggle("Include Upshot windows in captures", isOn: $includeAppWindowsInCaptures)
-                .accessibilityHint("Turn off to hide Upshot windows from screenshots and recordings")
+    private var visibilityToast: some View {
+        InterfaceToast(
+            "Upshot windows will be captured",
+            systemImage: "exclamationmark.triangle.fill",
+            actionTitle: "Exclude"
+        ) {
+            includeAppWindowsInCaptures = false
         }
-        .font(.system(size: 11, weight: .medium))
-        .padding(.horizontal, 12)
-        .padding(.top, BarMetrics.visibilityBannerOverlap)
-        .frame(maxWidth: .infinity)
-        .frame(height: BarMetrics.visibilityBannerHeight)
-        .glassEffect(.regular, in: visibilityBannerShape)
-        .overlay {
-            visibilityBannerShape
-                .strokeBorder(BarMetrics.edge, lineWidth: 0.5)
-        }
+        .accessibilityHint("Hides Upshot windows from screenshots and recordings")
         .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .named(BarCoordinateSpace.panel))
         } action: {
-            presenter.visibilityBannerFrameInPanel = $0
+            presenter.visibilityToastFrameInPanel = $0
         }
-    }
-
-    private var visibilityBannerShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 12,
-            bottomTrailingRadius: 12,
-            topTrailingRadius: 0,
-            style: .continuous
-        )
-    }
-
-    private var tooltipLayer: some View {
-        GeometryReader { _ in
-            if let target = tooltip.visible {
-                BarTooltipPill(text: target.text)
-                    .position(
-                        x: target.frame.midX,
-                        y: -(BarTooltip.gap + BarTooltip.pillHeight / 2)
-                    )
-            }
-        }
-        .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.12), value: tooltip.visible?.id)
-        .animation(.easeOut(duration: 0.12), value: tooltip.visible?.text)
-    }
-
-    private var barShape: RoundedRectangle {
-        RoundedRectangle(
-            cornerRadius: showsTeleprompter ? BarMetrics.expandedCornerRadius : BarMetrics.cornerRadius,
-            style: .continuous
-        )
     }
 }
 
 extension RecordingBarPresenter {
-    func installRenderMode(recording: Bool, teleprompter: Bool = false) {
+    func installRenderMode(recording: Bool, teleprompter: Bool = false, hoveredOutputMode: RecordingOutputMode? = nil) {
         precondition(UpshotStorage.isRenderingStates)
         mode = recording ? .recording : .picker
         isTeleprompterOpen = teleprompter
+        renderHoveredOutputMode = hoveredOutputMode
     }
 }

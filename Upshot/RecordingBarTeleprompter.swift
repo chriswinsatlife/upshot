@@ -1,18 +1,7 @@
-//
-//  RecordingBarTeleprompter.swift
-//  Upshot
-//
-//  The teleprompter as part of the recording bar. Its button unfolds the bar
-//  upward into a script editor, so the bar becomes one island holding the
-//  source, the inputs and the script; pressing it again, starting a
-//  recording or Esc folds it back.
-//
-
 import AppKit
 import SwiftUI
 
 struct RecordingBarTeleprompter: View {
-    /// The section's height, which the bar's panel reserves above the bar.
     static let height: CGFloat = 252
 
     @AppStorage(UpshotPreferences.recordingTeleprompterEnabledKey) private var isEnabled = false
@@ -22,21 +11,19 @@ struct RecordingBarTeleprompter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+                .padding(.horizontal, Space.m)
+                .padding(.top, Space.s)
+                .padding(.bottom, Space.xs)
 
-            hairline
+            InterfaceFlyoutDivider()
 
             editor
 
-            hairline
+            InterfaceFlyoutDivider()
 
             footer
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-
-            hairline
+                .padding(.horizontal, Space.m)
+                .padding(.vertical, Space.xs)
         }
         .frame(height: Self.height)
         .onChange(of: isEnabled) { _, enabled in
@@ -46,45 +33,37 @@ struct RecordingBarTeleprompter: View {
         }
     }
 
-    private var hairline: some View {
-        Rectangle().fill(BarMetrics.edge).frame(height: 0.5)
-    }
-
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Teleprompter")
-                    .font(.dsHeadline)
-                    .foregroundStyle(BarMetrics.activeTint)
-                Text(isEnabled ? "Shown under the notch while you record" : "Turn on to show it under the notch")
-                    .font(.dsCaption)
-                    .foregroundStyle(BarMetrics.inactiveTint)
-                    .contentTransition(.interpolate)
-            }
-
-            Spacer(minLength: 8)
-
-            InspectorToggle("Show while recording", isOn: $isEnabled)
+        HStack(spacing: Space.m) {
+            Text("Teleprompter")
+                .font(.dsHeadline)
+                .foregroundStyle(Palette.label)
+            Spacer(minLength: Space.m)
+            Toggle("Show While Recording", isOn: $isEnabled)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+                .help("Show While Recording")
         }
-        .motion(.morphQuick, value: isEnabled)
+        .frame(height: InterfaceMetrics.modeSwitchHeight)
     }
 
     private var editor: some View {
         ZStack(alignment: .topLeading) {
             TextEditor(text: $script)
-                .font(.system(size: 13))
+                .font(.dsBody)
                 .lineSpacing(3)
-                .foregroundStyle(BarMetrics.activeTint)
+                .foregroundStyle(Palette.label)
                 .scrollContentBackground(.hidden)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Space.xs)
+                .padding(.vertical, Space.s)
 
             if script.isEmpty {
-                Text("Type or paste your script…")
-                    .font(.system(size: 13))
-                    .foregroundStyle(BarMetrics.inactiveTint)
-                    .padding(.top, 8)
-                    .padding(.leading, 14)
+                Text("Type or paste your script")
+                    .font(.dsBody)
+                    .foregroundStyle(Palette.tertiaryLabel)
+                    .padding(.top, Space.s)
+                    .padding(.leading, Space.ml)
                     .allowsHitTesting(false)
             }
         }
@@ -92,39 +71,35 @@ struct RecordingBarTeleprompter: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.m) {
             Text(readingSummary)
                 .font(.dsCaption)
                 .monospacedDigit()
-                .foregroundStyle(BarMetrics.inactiveTint)
+                .foregroundStyle(Palette.secondaryLabel)
                 .contentTransition(.numericText())
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.m)
 
-            Text("Lines")
-                .font(.dsCaption)
-                .foregroundStyle(BarMetrics.inactiveTint)
-
-            InspectorSegmented(
-                options: Array(UpshotPreferences.teleprompterLineCountRange),
-                isSelected: { $0 == lineCount },
-                onTap: { lineCount = $0 },
-                label: { count in
-                    Text("\(count)")
-                        .font(.inspectorSegment)
-                        .monospacedDigit()
-                },
-                height: 26
-            )
-            .frame(width: 128)
-            .help("How many lines the notch shows at once")
+            HStack(spacing: Space.s) {
+                Text("Lines")
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.secondaryLabel)
+                InterfaceModeSwitch(
+                    "Lines",
+                    selection: $lineCount,
+                    options: UpshotPreferences.teleprompterLineCountRange.map {
+                        InterfaceModeSwitchOption(value: $0, title: "\($0)")
+                    },
+                    surface: .window
+                )
+            }
+            .help("Lines shown at once")
         }
     }
 
-    /// Word count and a rough speaking time, at about 150 words a minute.
     private var readingSummary: String {
         let words = script.split { $0.isWhitespace || $0.isNewline }.count
-        guard words > 0 else { return "No script yet" }
+        guard words > 0 else { return "No script" }
         let seconds = Int((Double(words) / 150 * 60).rounded())
         let time: String
         if seconds < 60 {

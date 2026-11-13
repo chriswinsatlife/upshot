@@ -257,14 +257,21 @@ enum StateRenderCatalog {
                 AnyView(StateRenderAppKitView { ScrollingCaptureControlPanel.renderContent(running: variant == "running", automatic: variant == "automatic-ready", finishing: variant == "finishing") })
             }
         }
-        for variant in ["picker", "picker-teleprompter", "recording", "paused", "starting", "finishing", "picker-visible-windows", "picker-area"] {
-            add("recording-bar-\(variant)", "RecordingBarPresenter", "struct RecordingBarView", 1000, variant == "picker-teleprompter" ? 430 : 190) {
-                RecordingAreaSelectionPresenter.shared.installRenderSelection(active: variant == "picker-area", selected: variant == "picker-area", interacting: false)
+        for variant in ["picker", "picker-teleprompter", "recording", "paused", "starting", "finishing", "picker-visible-windows", "picker-area", "picker-area-empty", "picker-area-teleprompter", "flyout", "flyout-hover-gif"] {
+            let showsArea = variant.hasPrefix("picker-area") || variant.hasPrefix("flyout")
+            let isTall = showsArea || variant.hasSuffix("teleprompter")
+            add("recording-bar-\(variant)", "RecordingBarPresenter", "struct RecordingBarView", BarMetrics.panelWidth, isTall ? BarMetrics.panelHeight : 200) {
+                RecordingAreaSelectionPresenter.shared.installRenderSelection(active: showsArea, selected: showsArea && variant != "picker-area-empty", interacting: false)
                 UpshotStorage.defaults.set(variant == "picker-visible-windows", forKey: UpshotPreferences.includeAppWindowsInCapturesKey)
-                RecordingBarPresenter.shared.installRenderMode(recording: !variant.hasPrefix("picker"), teleprompter: variant == "picker-teleprompter")
+                RecordingBarPresenter.shared.installRenderMode(
+                    recording: !variant.hasPrefix("picker") && !variant.hasPrefix("flyout"),
+                    teleprompter: variant.hasSuffix("teleprompter"),
+                    hoveredOutputMode: variant == "flyout-hover-gif" ? .gif : nil
+                )
                 ScreenRecordingManager.shared.state = variant == "paused" ? .paused : variant == "starting" ? .starting : variant == "finishing" ? .finishing : .recording
                 ScreenRecordingManager.shared.elapsedTime = 83
-                return AnyView(RecordingBarView())
+                guard variant.hasPrefix("flyout") else { return AnyView(RecordingBarView()) }
+                return AnyView(RecordingBarView().background { Image(nsImage: fixtures.image).resizable().scaledToFill() }.clipped())
             }
         }
         for count in [3, 2, 1] {
