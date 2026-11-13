@@ -32,7 +32,7 @@ nonisolated enum AppLog {
     }
 
     static func installExceptionHandler() {
-        _ = shared
+        shared.prepareCrashCapture()
         NSSetUncaughtExceptionHandler { exception in
             AppLog.shared.recordCrash(event: "uncaught_exception", fields: [
                 "name": exception.name.rawValue,
@@ -68,6 +68,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
     let sessionID = UUID().uuidString
     let processStart = Date()
     private let bufferLock = NSLock()
+    private let crashWriter: CrashLogWriter
     private let writerQueue = DispatchQueue(label: "co.chrisyork.upshot.logging", qos: .utility)
     private let dropped = Atomic<UInt64>(0)
     private let unreportedDrops = Atomic<UInt64>(0)
@@ -87,6 +88,7 @@ nonisolated final class AppLogStore: @unchecked Sendable {
 
     init(directory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Upshot", isDirectory: true), maximumBytes: Int = 5 * 1024 * 1024, backupCount: Int = 3, queueCapacity: Int = 1024) {
         fileURL = directory.appendingPathComponent("upshot.log")
+        crashWriter = CrashLogWriter(directory: directory, sessionID: sessionID)
         self.maximumBytes = maximumBytes
         self.backupCount = backupCount
         self.queueCapacity = queueCapacity
@@ -96,7 +98,10 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         writerQueue.async { [self] in
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-                previousEvents = Self.readPreviousEvents(fileURL: fileURL, backupCount: backupCount)
+                let restored = Self.readPreviousEvents(fileURL: fileURL, backupCount: backupCount)
+                bufferLock.lock()
+                previousEvents = restored
+                bufferLock.unlock()
                 lockDescriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
                 openFile()
             } catch {
@@ -151,23 +156,51 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         }
     }
 
-    func recordCrash(event: String, fields: [String: String], previousSession: Bool = false) {
-        writerQueue.sync {
-            bufferLock.lock()
-            let snapshot = (0..<breadcrumbs.count).compactMap { breadcrumbs[(breadcrumbPosition + $0) % breadcrumbs.count] }
-            bufferLock.unlock()
-            let trail = previousSession ? previousEvents : snapshot.map { format($0) }
+    var crashFileURL: URL { crashWriter.fileURL }
+
+    func prepareCrashCapture() {
+        crashWriter.prepare()
+    }
+
+    @discardableResult
+    func recordCrash(event: String, fields: [String: String], previousSession: Bool = false) -> Bool {
+        crashWriter.write { deadline in
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            var snapshot: [Event] = []
+            var restored: [String] = []
+            var status = "available"
+            if bufferLock.try() {
+                snapshot = (0..<breadcrumbs.count).compactMap { breadcrumbs[(breadcrumbPosition + $0) % breadcrumbs.count] }
+                restored = previousEvents
+                bufferLock.unlock()
+            } else {
+                status = "snapshot_busy"
+            }
+            var trail: [String] = []
+            if previousSession {
+                trail = restored
+            } else {
+                for input in snapshot {
+                    guard DispatchTime.now().uptimeNanoseconds + 1_000_000 < deadline else { status = "deadline_exceeded"; break }
+                    trail.append(format(input, using: dateFormatter))
+                }
+            }
             let crashID = UUID().uuidString
             var values = fields
             values["crash_id"] = crashID
             values["breadcrumb_count"] = String(trail.count)
+            values["breadcrumb_status"] = status
             values["breadcrumb_source"] = previousSession ? "previous_logged_process" : "current_process"
-            let crash = format(Event(timestamp: Date(), area: "crash", name: event, fields: values, persists: true))
-            let lines = [crash] + trail.enumerated().map { index, line in
-                format(Event(timestamp: Date(), area: "crash", name: "crash_breadcrumb", fields: ["crash_id": crashID, "index": String(index), "original": line], persists: true))
+            values["write_budget_ms"] = "25"
+            var lines: [String] = []
+            for (index, line) in trail.enumerated() {
+                guard DispatchTime.now().uptimeNanoseconds + 500_000 < deadline else { values["breadcrumb_status"] = "deadline_exceeded"; break }
+                lines.append(format(Event(timestamp: Date(), area: "crash", name: "crash_breadcrumb", fields: ["crash_id": crashID, "index": String(index), "original": line], persists: true), using: dateFormatter))
             }
-            append(Data((lines.joined(separator: "\n") + "\n").utf8), synchronize: true)
-            logger(area: "crash").fault("\(crash, privacy: .public)")
+            values["breadcrumb_count"] = String(lines.count)
+            let crash = format(Event(timestamp: Date(), area: "crash", name: event, fields: values, persists: true), using: dateFormatter)
+            return Data(([crash] + lines).joined(separator: "\n").appending("\n").utf8)
         }
     }
 
@@ -182,13 +215,13 @@ nonisolated final class AppLogStore: @unchecked Sendable {
         return completion.wait(timeout: .now() + timeout) == .success
     }
 
-    private func format(_ event: Event) -> String {
+    private func format(_ event: Event, using dateFormatter: ISO8601DateFormatter? = nil) -> String {
         var values = event.fields
         values["session_id"] = sessionID
         values["pid"] = String(getpid())
         values["process_start"] = String(processStart.timeIntervalSince1970)
         let encoded = values.keys.sorted().map { key in "\(token(key))=\(quote(AppLog.path(values[key] ?? "")))" }.joined(separator: " ")
-        return "\(formatter.string(from: event.timestamp)) area=\(token(event.area)) event=\(token(event.name)) \(encoded)"
+        return "\((dateFormatter ?? formatter).string(from: event.timestamp)) area=\(token(event.area)) event=\(token(event.name)) \(encoded)"
     }
 
     private func token(_ value: String) -> String {

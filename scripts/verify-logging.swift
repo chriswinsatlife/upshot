@@ -5,6 +5,7 @@ import MetricKit
 @main
 struct LoggingVerification {
     static func main() throws {
+        AppLog.installExceptionHandler()
         let arguments = Array(CommandLine.arguments.dropFirst())
         let mode = arguments.first ?? "file"
         switch mode {
@@ -50,6 +51,31 @@ struct LoggingVerification {
             acceptedCosts.sort()
             precondition(!acceptedCosts.isEmpty)
             print("queue_verification outcome=verified events=20000 process_lock=held dropped=\(store.droppedEventCount) mean_ns=\(costs.reduce(0, +) / UInt64(costs.count)) p50_ns=\(costs[10000]) p95_ns=\(costs[19000]) p99_ns=\(costs[19800]) maximum_ns=\(costs.last ?? 0) accepted=\(acceptedCosts.count) accepted_mean_ns=\(acceptedCosts.reduce(0, +) / UInt64(acceptedCosts.count)) accepted_p50_ns=\(acceptedCosts[acceptedCosts.count / 2]) accepted_p99_ns=\(acceptedCosts[acceptedCosts.count * 99 / 100]) unified_only_file=absent")
+        case "blocked-crash":
+            guard arguments.count == 2 else { throw VerificationFailure.argument }
+            let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
+            let store = AppLogStore(directory: directory)
+            store.prepareCrashCapture()
+            precondition(store.flush())
+            for index in 0..<225 {
+                store.record(area: "verification", event: "breadcrumb_probe", fields: ["index": String(index)])
+                precondition(store.flush())
+            }
+            let descriptor = Darwin.open(directory.appendingPathComponent(".upshot-log.lock").path, O_WRONLY)
+            precondition(descriptor >= 0 && flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+            store.record(area: "verification", event: "writer_lock_probe")
+            let started = DispatchTime.now().uptimeNanoseconds
+            let written = store.recordCrash(event: "blocked_writer_crash", fields: ["reason": "verification"])
+            let elapsed = DispatchTime.now().uptimeNanoseconds - started
+            precondition(written)
+            let text = try String(contentsOf: store.crashFileURL, encoding: .utf8)
+            precondition(text.contains("event=blocked_writer_crash "))
+            precondition(text.contains("breadcrumb_count=\"200\""))
+            precondition(elapsed < 100_000_000)
+            _ = flock(descriptor, LOCK_UN)
+            Darwin.close(descriptor)
+            precondition(store.flush())
+            print("blocked_crash_verification outcome=verified process_lock=held breadcrumbs=200 elapsed_ns=\(elapsed) independent_file=present")
         case "exception":
             AppLog.installExceptionHandler()
             for index in 0..<225 {
@@ -99,12 +125,12 @@ struct LoggingVerification {
             precondition(CrashDiagnostics.crashReportFields(text.replacingOccurrences(of: AppLog.subsystem, with: "com.other.application"), filename: "Upshot-other.ips") == nil)
             precondition(CrashDiagnostics.crashReportFields("invalid", filename: "Upshot-invalid.ips") == nil)
             let service = CrashDiagnostics(stateDirectory: state)
-            let before = try String(contentsOf: AppLog.shared.fileURL, encoding: .utf8).components(separatedBy: "event=system_crash_report ").count
+            let before = (try? String(contentsOf: AppLog.shared.crashFileURL, encoding: .utf8))?.components(separatedBy: "event=system_crash_report ").count ?? 1
             let now = Date().addingTimeInterval(1)
             service.importCrashReports(from: reports, stateDirectory: state, now: now)
             service.importCrashReports(from: reports, stateDirectory: state, now: now.addingTimeInterval(1))
             precondition(AppLog.shared.flush())
-            let after = try String(contentsOf: AppLog.shared.fileURL, encoding: .utf8).components(separatedBy: "event=system_crash_report ").count
+            let after = try String(contentsOf: AppLog.shared.crashFileURL, encoding: .utf8).components(separatedBy: "event=system_crash_report ").count
             precondition(after - before == 2)
             print("scan_verification outcome=verified ips=1 legacy=1 unrelated=rejected malformed=rejected second_scan=0")
         case "metrickit":

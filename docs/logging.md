@@ -9,7 +9,9 @@ approval_status: not_approved
 
 Upshot writes application events to `~/Library/Logs/Upshot/upshot.log` and Apple's unified log. The subsystem is `co.chrisyork.upshot`. Categories identify application, capture, annotation, recording, library, quick_access, settings, automation, rendering, crash, logging, and verification events.
 
-The file rotates before an append would exceed 5 MiB. Three backups, `upshot.log.1` through `upshot.log.3`, retain earlier events. The newest backup is `.1`. A crash and its breadcrumbs remain together in one append; a single crash record larger than 5 MiB can exceed the rotation threshold. Files use owner-only permissions. A process lock coordinates concurrent writers and rotation.
+Crash records use a separate preopened file, `~/Library/Logs/Upshot/upshot-crash-<pid>-<session_id>.log`. This descriptor is independent of the background event writer and its process lock.
+
+The file rotates before an append would exceed 5 MiB. Three backups, `upshot.log.1` through `upshot.log.3`, retain earlier events. The newest backup is `.1`. Crash files retain the independently written exception and breadcrumbs; ordinary log rotation does not move or remove their descriptors. Files use owner-only permissions. A process lock coordinates concurrent writers and rotation.
 
 ```bash
 /usr/bin/log show --last 30m --style compact --predicate 'subsystem == "co.chrisyork.upshot"'
@@ -32,7 +34,7 @@ Screenshot pixels, recognized text, clipboard contents, keystroke contents, cred
 
 ## Crash Records
 
-`event=uncaught_exception` contains the Objective-C exception name, sanitized reason, call stack, and `crash_id`. The handler appends and synchronizes the crash record before normal exception termination continues. It does not catch the exception or resume execution.
+`event=uncaught_exception` contains the Objective-C exception name, sanitized reason, call stack, and `crash_id`. The handler attempts its own try-lock, snapshots breadcrumbs with a try-lock, and writes the crash record directly to the preopened crash descriptor. It never waits for the event writer, its process lock, or a flush. A 25 ms cooperative budget limits breadcrumb formatting and write retries. A kernel write can exceed that budget; the handler uses no fsync. `breadcrumb_status` records an unavailable snapshot or exceeded formatting budget. It does not catch the exception or resume execution.
 
 The process retains its last 200 events in memory. The exception handler copies these events into `event=crash_breadcrumb` lines with the same `crash_id`. The breadcrumb `index` increases from oldest to newest. The `original` field contains the original event with its original timestamp, session identifier, and process identifier.
 
@@ -51,19 +53,20 @@ These commands compile a separate executable with the production logger and cras
 ```bash
 mkdir -p .local/crash-logging
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
-  Upshot/AppLog.swift Upshot/CrashDiagnostics.swift scripts/verify-logging.swift \
+  Upshot/AppLog.swift Upshot/CrashLogWriter.swift Upshot/CrashDiagnostics.swift scripts/verify-logging.swift \
   -o .local/crash-logging/verify-logging
 .local/crash-logging/verify-logging file verification-marker
 /usr/bin/log show --last 3m --style compact --predicate 'subsystem == "co.chrisyork.upshot"'
 .local/crash-logging/verify-logging rotation .local/crash-logging/rotation
 .local/crash-logging/verify-logging scan .local/crash-logging/scan
 .local/crash-logging/verify-logging metrickit .local/crash-logging/metrickit
+.local/crash-logging/verify-logging blocked-crash .local/crash-logging/blocked-crash
 .local/crash-logging/verify-logging exception
 ```
 
 The file command verifies a readable marker and a home-directory path written with `~`. Rotation verifies concurrent writes and four readable files at a reduced threshold. Scan verifies modern and legacy report imports, bundle filtering, malformed input, and duplicate prevention; use a fresh scan directory for each run. The MetricKit command registers the production subscriber and consumes available past payloads. An empty payload array verifies registration without exercising crash ingestion.
 
-The exception command intentionally exits with SIGABRT. The final `uncaught_exception` line must contain `name="NSInvalidArgumentException"`, `reason="Upshot logging verification exception"`, a call stack, and `breadcrumb_count="200"`. Its 200 breadcrumb lines must contain original event indices 25 through 224. This verifies that the oldest 25 events were discarded.
+The exception command intentionally exits with SIGABRT. The crash file’s `uncaught_exception` line must contain `name="NSInvalidArgumentException"`, `reason="Upshot logging verification exception"`, a call stack, and `breadcrumb_count="200"`. Its 200 breadcrumb lines must contain original event indices 25 through 224. This verifies that the oldest 25 events were discarded.
 
 ## References
 
