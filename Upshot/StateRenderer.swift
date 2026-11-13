@@ -319,7 +319,7 @@ enum StateRenderer {
         NSGraphicsContext.current = context
         NSColor(calibratedWhite: 0.16, alpha: 1).setFill()
         NSRect(origin: .zero, size: size).fill()
-        for (index, entry) in entries.enumerated() {
+        for (index, entry) in entries.enumerated() { try autoreleasepool {
             guard let source = CGImageSourceCreateWithURL(output.appendingPathComponent(entry.filename) as CFURL, nil),
                   let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 720] as CFDictionary) else {
                 throw StateRenderFailure(message: "Contact sheet image missing: \(entry.filename)")
@@ -334,7 +334,7 @@ enum StateRenderer {
             paragraph.alignment = .center
             (entry.name as NSString).draw(in: CGRect(x: origin.x + 6, y: origin.y + 6, width: cell.width - 12, height: 30),
                                           withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white, .paragraphStyle: paragraph])
-        }
+        } }
         NSGraphicsContext.restoreGraphicsState()
         guard let data = bitmap.representation(using: .png, properties: [:]) else { throw StateRenderFailure(message: "Contact sheet encoding failed") }
         try data.write(to: output.appendingPathComponent("contact_sheet.png"), options: .atomic)
