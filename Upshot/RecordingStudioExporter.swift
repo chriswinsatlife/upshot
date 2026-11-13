@@ -180,7 +180,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        let timing = RecordingExportTiming(settings: configuration.exportSettings)
+        let timing = RecordingExportTiming(settings: configuration.exportSettings, motionBlurLevel: configuration.deliveryOptions.motionBlurLevel)
         let sourceAsset = AVURLAsset(url: configuration.screenURL)
         let sourceDuration = try await sourceAsset.load(.duration).seconds
         let clipTimeline = configuration.clipTimeline.normalized(to: sourceDuration)
@@ -495,7 +495,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         var cameraSeconds = 0.0
         var renderedFrames = 0
         defer {
-            Self.logger.info("Export frames=\(renderedFrames) fps=\(timing.framesPerSecond) motionBlur=\(timing.motionBlurEnabled) Metal blur frames=\(compositor.metalFrameCount) reusedScreenFrames=\(compositor.reusedScreenFrameCount) reusedComposedFrames=\(compositor.reusedComposedFrameCount) renderSeconds=\(renderSeconds) metalSeconds=\(compositor.metalSeconds) cutoutWaitSeconds=\(compositor.cutoutWaitSeconds) decodeSeconds=\(decodeSeconds) cameraSeconds=\(cameraSeconds) writerWaitSeconds=\(writerWaitSeconds)")
+            Self.logger.info("Export frames=\(renderedFrames) fps=\(timing.framesPerSecond) motionBlur=\(timing.motionBlurLevel.rawValue) Metal blur frames=\(compositor.metalFrameCount) reusedScreenFrames=\(compositor.reusedScreenFrameCount) reusedComposedFrames=\(compositor.reusedComposedFrameCount) renderSeconds=\(renderSeconds) metalSeconds=\(compositor.metalSeconds) cutoutWaitSeconds=\(compositor.cutoutWaitSeconds) decodeSeconds=\(decodeSeconds) cameraSeconds=\(cameraSeconds) writerWaitSeconds=\(writerWaitSeconds)")
         }
 
         var cachedPool: CVPixelBufferPool?

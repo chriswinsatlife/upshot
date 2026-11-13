@@ -280,7 +280,7 @@ enum AgentTools {
                 properties: [
                     "recording": recordingProperty,
                     "output_path": ["type": "string", "description": "Absolute file path to move the finished video to. Its extension should match the container."],
-                    "options": ["type": "object", "description": "Merge patch for additional export options. format: Video or GIF; gifFrameRate: 10, 15, 20, 25, or 30; gifQuality: Low, Medium, or High; optimizesGIF, scalesRetinaToOne, monoAudio, separateAudioTracks: booleans. Resolution uses settings.resolution. GIF contains no audio. Saved per project."],
+                    "options": ["type": "object", "description": "Merge patch for additional export options. format: Video or GIF; gifFrameRate: 10, 15, 20, 25, or 30; gifQuality: Low, Medium, or High; optimizesGIF, scalesRetinaToOne, monoAudio, separateAudioTracks: booleans. motionBlurLevel: Off, Low, Medium, or High. Resolution uses settings.resolution. GIF contains no audio. Saved per project."],
                     "settings": ["type": "object", "description": "Merge patch for the export settings: quality, speed, codec, resolution, container, frameRate, motionBlurEnabled, removeAudio. See get_editing_guide for values. Saved into the project."],
                     "wait": ["type": "boolean", "description": "Wait for the export to finish. Defaults to true."],
                 ],

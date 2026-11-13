@@ -2,15 +2,14 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 
-/// One source of truth for output timestamps and the compositor's shutter.
-/// Capture and interactive preview keep their independent 60 fps clocks.
 nonisolated struct RecordingExportTiming: Sendable {
     let framesPerSecond: Double
-    let motionBlurEnabled: Bool
+    let motionBlurLevel: RecordingMotionBlurLevel
+    var motionBlurEnabled: Bool { motionBlurLevel != .off }
 
-    init(settings: VideoCompressionSettings) {
+    init(settings: VideoCompressionSettings, motionBlurLevel: RecordingMotionBlurLevel? = nil) {
         framesPerSecond = settings.effectiveFrameRate.framesPerSecond
-        motionBlurEnabled = settings.effectiveMotionBlurEnabled
+        self.motionBlurLevel = motionBlurLevel ?? (settings.effectiveMotionBlurEnabled ? .high : .off)
     }
 
     var frameInterval: TimeInterval { 1 / framesPerSecond }
@@ -22,8 +21,6 @@ nonisolated struct RecordingExportTiming: Sendable {
     func time(forFrame frame: Int) -> TimeInterval { Double(frame) / framesPerSecond }
 
     func presentationTime(forFrame frame: Int) -> CMTime {
-        // Integer ticks avoid the one-tick rounding jitter introduced by
-        // converting a floating-point second value back into CMTime.
         CMTime(value: Int64(frame), timescale: CMTimeScale(framesPerSecond))
     }
 
@@ -31,14 +28,10 @@ nonisolated struct RecordingExportTiming: Sendable {
         sampleTimes(at: time, frameRect: frameRect).map(frameRect)
     }
 
-    /// The instants a frame averages: one when nothing moves, or up to 24
-    /// spread across the shutter, by how far `frameRect` travels in it.
     func sampleTimes(at time: TimeInterval, frameRect: (TimeInterval) -> CGRect) -> [TimeInterval] {
         guard motionBlurEnabled else { return [time] }
 
-        // Preserve the one-frame shutter and adaptive 1–24-sample policy.
-        // Sampling spans 1/30 s at 30 fps and 1/60 s at 60 fps.
-        let shutter = frameInterval
+        let shutter = frameInterval * motionBlurLevel.shutterFraction
         let a = frameRect(time - shutter / 2)
         let b = frameRect(time + shutter / 2)
         let displacement = max(

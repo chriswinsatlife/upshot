@@ -43,6 +43,22 @@ nonisolated enum RecordingGIFQuality: String, Codable, CaseIterable, Sendable {
     }
 }
 
+nonisolated enum RecordingMotionBlurLevel: String, Codable, CaseIterable, Sendable {
+    case off = "Off"
+    case low = "Low"
+    case medium = "Medium"
+    case high = "High"
+
+    var shutterFraction: Double {
+        switch self {
+        case .off: 0
+        case .low: 0.25
+        case .medium: 0.5
+        case .high: 1
+        }
+    }
+}
+
 nonisolated struct RecordingExportDeliveryOptions: Codable, Equatable, Sendable {
     var format: RecordingExportFormat = .video
     var gifFrameRate: RecordingGIFFrameRate = .fps15
@@ -51,6 +67,7 @@ nonisolated struct RecordingExportDeliveryOptions: Codable, Equatable, Sendable 
     var scalesRetinaToOne = false
     var monoAudio = false
     var separateAudioTracks = false
+    var motionBlurLevel: RecordingMotionBlurLevel?
 }
 
 nonisolated enum RecordingExportOptionStore {

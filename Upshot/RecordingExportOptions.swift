@@ -85,11 +85,14 @@ struct RecordingExportOptionsPopover: View {
                     )
                 )
 
-                toggle("Motion blur", isOn: Binding(
-                    get: { settings.effectiveMotionBlurEnabled },
-                    set: { settings.motionBlurEnabled = $0 }
-                ))
-                .help("Soften motion during zooms and pans. Turn off for faster exports with sharper motion.")
+                segmented(
+                    "Motion blur",
+                    options: RecordingMotionBlurLevel.allCases,
+                    selection: Binding(
+                        get: { delivery.motionBlurLevel ?? (settings.effectiveMotionBlurEnabled ? .high : .off) },
+                        set: { delivery.motionBlurLevel = $0 }
+                    )
+                )
 
                 segmented(
                     "Format",
