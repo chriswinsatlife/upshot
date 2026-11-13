@@ -259,11 +259,6 @@ struct AnnotationStyleStrip: View {
         .padding(Space.xl)
         .frame(width: Self.nameEditorWidth)
         .presentationBackground(Palette.panel)
-        .onAppear {
-            Task { @MainActor in
-                isNameFieldFocused = true
-            }
-        }
     }
 
     private func savePreset() {
