@@ -1,15 +1,7 @@
-//
-//  CaptureCountdownPresenter.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
 
-/// Shows a brief centered countdown before a capture is taken, so the user can
-/// arrange hover states, menus, etc. Driven by the `captureDelaySeconds`
-/// preference. The overlay is fully torn down before the capture fires, so it
-/// never appears in the screenshot.
 @MainActor
 @Observable
 final class CaptureCountdownPresenter {
@@ -25,11 +17,11 @@ final class CaptureCountdownPresenter {
     private var escapeMonitor: Any?
     private var globalEscapeMonitor: Any?
 
-    /// False means cancelled or another countdown is already in progress.
     func runIfNeeded(seconds: Int, displayID: CGDirectDisplayID?) async -> Bool {
         guard !isRunning, !Task.isCancelled else { return false }
         guard seconds > 0 else { return true }
         let id = UUID()
+        NSLog("Capture countdown started: seconds=%ld", seconds)
         runID = id
         isRunning = true
         installEscapeMonitors()
@@ -58,6 +50,7 @@ final class CaptureCountdownPresenter {
             task.cancel()
         }
         guard runID == id else { return false }
+        NSLog("Capture countdown finished: completed=%d", completed)
         cancel()
         return completed && !Task.isCancelled
     }
@@ -91,7 +84,6 @@ final class CaptureCountdownPresenter {
 
         let hostingView = NSHostingView(rootView: CaptureCountdownView(model: model, onCancel: { [weak self] in self?.cancel() }))
         hostingView.sizingOptions = []
-        // Room around the glass for the shadow it casts.
         let size = NSSize(
             width: CaptureCountdownView.size + 2 * CaptureCountdownView.shadowSlack,
             height: CaptureCountdownView.size + 2 * CaptureCountdownView.shadowSlack
@@ -150,8 +142,6 @@ private final class CaptureCountdownModel {
     }
 }
 
-/// A glass square in the middle of the screen: the seconds left, a ring
-/// that drains through each second, and how to call it off.
 private struct CaptureCountdownView: View {
     static let size: CGFloat = 140
     static let shadowSlack: CGFloat = 32
@@ -200,7 +190,6 @@ private struct CaptureCountdownView: View {
         .accessibilityLabel("Capturing in \(model.remaining)")
     }
 
-    /// Sets the ring to this second's start, then drains it to the next.
     private func drain(from value: Int) {
         let start = Double(value) / Double(model.total)
         let end = Double(value - 1) / Double(model.total)

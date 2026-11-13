@@ -1,9 +1,3 @@
-//
-//  ActiveDisplayResolver.swift
-//  Upshot
-//
-//  Created by Codex on 30/04/26.
-//
 
 import AppKit
 import CoreGraphics
@@ -73,20 +67,16 @@ enum ActiveDisplayResolver {
         return nil
     }
 
+    static func quartzPoint(fromAppKit point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - point.y)
+    }
+
+    static func appKitRect(fromQuartz rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX, y: (NSScreen.screens.first?.frame.maxY ?? 0) - rect.maxY, width: rect.width, height: rect.height)
+    }
+
     private static func bestScreen(forWindowBounds windowBounds: CGRect) -> NSScreen? {
-        let desktopFrame = NSScreen.screens.reduce(CGRect.null) { partialResult, screen in
-            partialResult.union(screen.frame)
-        }
-
-        let appKitCandidate = windowBounds
-        let quartzCandidate = CGRect(
-            x: windowBounds.minX,
-            y: desktopFrame.maxY - windowBounds.maxY,
-            width: windowBounds.width,
-            height: windowBounds.height
-        )
-
-        return bestScreen(forCandidates: [appKitCandidate, quartzCandidate])
+        bestScreen(forCandidates: [appKitRect(fromQuartz: windowBounds)])
     }
 
     private static func bestScreen(forCandidates candidates: [CGRect]) -> NSScreen? {

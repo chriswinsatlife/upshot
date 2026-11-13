@@ -1,44 +1,27 @@
-//
-//  ScreenshotManager.swift
-//  Upshot
-//
-//  Created by Fayaz Ahmed Aralikatti on 26/04/26.
-//
 
 import SwiftUI
 import CoreGraphics
 import ImageIO
 
-/// Manages all screenshot capture operations at native Retina resolution.
 @Observable
 final class ScreenshotManager {
-    
+
     static let shared = ScreenshotManager()
-    
+
     private init() {}
-    
-    // MARK: - Fullscreen Capture
-    
-    /// Captures the requested display at full native (Retina) resolution using
-    /// the native `screencapture` tool.
-    ///
-    /// ScreenCaptureKit's display capture re-composites windows itself and drops
-    /// the WindowServer's inter-window drop shadows, so windows over a light
-    /// background lose their edges. `screencapture` captures the real on-screen
-    /// composite (shadows included), matching the window/area capture paths.
+
+    private(set) var lastAreaCaptureDisplayID: CGDirectDisplayID?
+    private(set) var lastAreaCaptureSource: CaptureSource?
+
+
     func captureFullscreen(displayID: CGDirectDisplayID?) async -> URL? {
         let displayIndex = Self.screencaptureDisplayIndex(for: displayID)
         guard let url = await runScreencapture(args: ["-D", "\(displayIndex)"]) else { return nil }
 
-        // On notched Macs, a fullscreen capture with the menu bar hidden leaves a
-        // solid black strip across the top. Trim it (no-op when it isn't black).
         trimEmptyMenuBarIfNeeded(at: url, displayID: displayID)
         return url
     }
 
-    /// Maps a `CGDirectDisplayID` to the 1-based index `screencapture -D`
-    /// expects (1 = main display, 2 = secondary, …). `CGGetActiveDisplayList`
-    /// returns the main display first, matching that ordering.
     private static func screencaptureDisplayIndex(for displayID: CGDirectDisplayID?) -> Int {
         guard let displayID else { return 1 }
 
@@ -53,13 +36,8 @@ final class ScreenshotManager {
         }
         return 1
     }
-    
-    // MARK: - Window Capture
-    
-    /// Uses the native macOS screencapture tool for interactive window selection.
-    /// `-w` = click a window, `-o` = no shadow, `-t png` = lossless PNG.
-    /// `delaySeconds` maps to screencapture's `-T`, which (like the system
-    /// Screenshot app) fires *after* the window has been picked.
+
+
     func captureWindow(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
         var args = ["-w"]
         if !includeShadow {
@@ -68,48 +46,90 @@ final class ScreenshotManager {
         args.append(contentsOf: delayArguments(delaySeconds))
         return await runScreencapture(args: args)
     }
-    
-    // MARK: - Area Capture
-    
-    /// Uses the native macOS screencapture tool for interactive area drag selection.
-    /// `-i` = interactive mode (starts in area selection mode and supports pressing Space to switch to window selection),
-    /// `-o` = no shadow, `-t png` = lossless PNG. `delaySeconds` maps
-    /// to `-T`, firing after the area/window has been chosen.
+
+
     func captureArea(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
-        var args = ["-i"]
-        if !includeShadow {
-            args.append("-o")
+        do {
+            lastAreaCaptureDisplayID = nil
+            lastAreaCaptureSource = nil
+            guard let selection = try await AreaCaptureSelection.shared.select() else { return nil }
+            lastAreaCaptureDisplayID = selection.snapshots.max {
+                let left = $0.frame.intersection(selection.rect)
+                let right = $1.frame.intersection(selection.rect)
+                return (left.isNull ? 0 : left.width * left.height) < (right.isNull ? 0 : right.width * right.height)
+            }?.displayID
+            lastAreaCaptureSource = selection.source
+            if case .window(let windowID) = selection.kind {
+                guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
+                var arguments = ["-l", "\(windowID)"]
+                if !includeShadow { arguments.append("-o") }
+                NSLog("Area window capture started: window=%u shadow=%d", windowID, includeShadow)
+                return await runScreencapture(args: arguments)
+            }
+            guard let image = try await image(for: selection, delaySeconds: delaySeconds) else { return nil }
+            return try writeAreaImage(image)
+        } catch {
+            NSLog("Area capture failed: %@", String(describing: error))
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
         }
-        args.append(contentsOf: delayArguments(delaySeconds))
-        return await runScreencapture(args: args)
     }
 
-    /// Builds the `-T <seconds>` delay arguments, or none when the timer is off.
+    func image(for selection: AreaCaptureSelectionResult, delaySeconds: Int) async throws -> CGImage? {
+        guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
+        let snapshots: [AreaCaptureSnapshot]
+        if selection.frozen && delaySeconds == 0 {
+            snapshots = selection.snapshots
+        } else {
+            snapshots = try await AreaCaptureSnapshot.captureAll()
+        }
+        return try AreaCaptureSnapshot.composite(snapshots, in: selection.rect)
+    }
+
+    private func prepareCapture(_ selection: AreaCaptureSelectionResult, delaySeconds: Int) async -> Bool {
+        let displayID = selection.snapshots.first { $0.frame.contains(CGPoint(x: selection.rect.midX, y: selection.rect.midY)) }?.displayID
+            ?? selection.snapshots.first { $0.frame.intersects(selection.rect) }?.displayID
+        guard await CaptureCountdownPresenter.shared.runIfNeeded(seconds: delaySeconds, displayID: displayID) else { return false }
+        do {
+            try await Task.sleep(for: .milliseconds(120))
+            try Task.checkCancellation()
+            return true
+        } catch { return false }
+    }
+
+    private func writeAreaImage(_ image: CGImage) throws -> URL {
+        let url = URL(fileURLWithPath: generateTempPath(extension: "png"))
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+        NSLog("Area capture saved: pixels=%ldx%ld file=%@", image.width, image.height, url.lastPathComponent)
+        return url
+    }
+
     private func delayArguments(_ seconds: Int) -> [String] {
         seconds > 0 ? ["-T", "\(seconds)"] : []
     }
-    
-    // MARK: - screencapture CLI runner
-    
-    /// Runs `/usr/sbin/screencapture` silently off the main thread and returns the file URL on success.
+
+
     private func runScreencapture(args: [String]) async -> URL? {
         let filePath = generateTempPath(extension: "png")
-        
+
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
                 process.arguments = args + ["-x", "-t", "png", filePath]
-                
+
                 do {
                     try process.run()
                     process.waitUntilExit()
-                    
+
                     if process.terminationStatus == 0,
                        FileManager.default.fileExists(atPath: filePath) {
                         continuation.resume(returning: URL(fileURLWithPath: filePath))
                     } else {
-                        // User cancelled the selection
                         continuation.resume(returning: nil)
                     }
                 } catch {
@@ -119,14 +139,8 @@ final class ScreenshotManager {
             }
         }
     }
-    
-    // MARK: - Notch trimming
 
-    /// Loads the PNG at `url`, trims the empty black menu-bar strip left on
-    /// notched displays, and rewrites the file in place when a trim happened.
-    /// Preserves the original image properties (e.g. DPI) written by
-    /// `screencapture`. A no-op when there's nothing to trim or the feature is
-    /// disabled.
+
     private func trimEmptyMenuBarIfNeeded(at url: URL, displayID: CGDirectDisplayID?) {
         guard let displayID,
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -135,7 +149,6 @@ final class ScreenshotManager {
         }
 
         let trimmed = NotchBarTrimmer.trimmingEmptyMenuBar(image, displayID: displayID)
-        // Same reference back means nothing was trimmed - leave the file as-is.
         guard trimmed !== image else { return }
 
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
@@ -152,9 +165,7 @@ final class ScreenshotManager {
         CGImageDestinationFinalize(destination)
     }
 
-    // MARK: - Helpers
-    
-    /// Generates a unique temp file path for screenshots.
+
     private func generateTempPath(extension ext: String) -> String {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let initialURL = directory.appendingPathComponent(ScreenshotFileNaming.fileName(extension: ext))
