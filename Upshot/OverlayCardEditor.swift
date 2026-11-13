@@ -1,41 +1,25 @@
-//
-//  OverlayCardEditor.swift
-//  Upshot
-//
-//  A live, drag-and-drop editor for the preview card layout. Users drag action
-//  chips between the four corner slots, the center column, and a "tray" of
-//  hidden actions. Chips morph between a circular corner badge and a labelled
-//  center pill as they move, with springy, Apple-style animations. Edits are
-//  written straight to the shared `OverlayCardLayoutStore`, so the floating
-//  preview updates immediately.
-//
-
 import AppKit
 import SwiftUI
 
 struct OverlayCardEditor: View {
     @State private var store = OverlayCardLayoutStore.shared
 
-    // Drag interaction state.
     @State private var dragging: OverlayCardAction?
     @State private var dragLocation: CGPoint = .zero
     @State private var originZone: OverlayCardZone?
     @State private var hoveredZone: OverlayCardZone?
 
-    // Geometry of drop targets, in the "cardEditor" coordinate space.
     @State private var zoneFrames: [ZoneFrame] = []
     @State private var centerItemFrames: [CenterItemFrame] = []
 
     private let cardSize = CGSize(width: 210, height: 158)
-    /// The shelf card's radius, scaled up with the editor's larger card.
     private static let cardRadius = CaptureShelfMetrics.cardRadius * 210 / CaptureShelfMetrics.cardSize.width
+    private static let trayRadius = Radius.nested(inner: Radius.control, padding: Space.xs)
     private let spaceName = "cardEditor"
     private var layout: OverlayCardLayout { store.layout }
 
     var body: some View {
-        VStack(spacing: 18) {
-            header
-
+        VStack(spacing: Space.xl) {
             card
 
             tray
@@ -45,8 +29,6 @@ struct OverlayCardEditor: View {
         .coordinateSpace(.named(spaceName))
         .onPreferenceChange(ZoneFramesKey.self) { zoneFrames = $0 }
         .onPreferenceChange(CenterItemFramesKey.self) { centerItemFrames = $0 }
-        // The floating chip lives at the root of the coordinate space so its
-        // `.position` matches the gesture's reported location exactly.
         .overlay(alignment: .topLeading) {
             if let dragging {
                 FloatingMorphChip(
@@ -62,19 +44,6 @@ struct OverlayCardEditor: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Header / footer
-
-    private var header: some View {
-        VStack(spacing: 4) {
-            Text("Customize the capture card")
-                .font(.dsHeadline)
-            Text("Drag actions into the corners or the center. Drop them in the tray to hide.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-    }
-
     private var footer: some View {
         InterfaceActionButton("Reset to Default", systemImage: "arrow.uturn.backward") {
             withAnimation(.morphIfAllowed) {
@@ -83,7 +52,6 @@ struct OverlayCardEditor: View {
         }
     }
 
-    // MARK: - Card
 
     private var card: some View {
         ZStack {
@@ -99,9 +67,6 @@ struct OverlayCardEditor: View {
         }
         .frame(width: cardSize.width, height: cardSize.height)
         .motion(.morph, value: layout)
-        // Slot-placeholder highlights animate on their own gentle curve. The
-        // floating chip's morph is driven solely by the curve in the drag
-        // handler, so it is not double-animated here.
         .animation(.easeOut(duration: 0.18), value: hoveredZone)
     }
 
@@ -113,11 +78,6 @@ struct OverlayCardEditor: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-            )
-            .overlay(
-                Image(systemName: "photo")
-                    .font(.system(size: 60, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
@@ -133,16 +93,11 @@ struct OverlayCardEditor: View {
         let isFilled = action != nil && action != dragging
 
         return ZStack {
-            // Only show the dashed slot when it's empty (or its chip is lifted
-            // away), so the ring never peeks out from behind a filled chip.
             if !isFilled {
                 slotPlaceholder(isCircle: true, highlighted: highlighted)
             }
 
             if let action {
-                // Keep the chip (and its drag gesture) mounted while it's being
-                // dragged - just hide it - so `.onEnded` still fires. Removing it
-                // here would tear down the gesture mid-drag and orphan the chip.
                 chip(action, style: .corner)
                     .opacity(action == dragging ? 0 : 1)
             }
@@ -161,10 +116,6 @@ struct OverlayCardEditor: View {
                     chip(action, style: .pill)
                         .opacity(action == dragging ? 0 : 1)
 
-                    // When the only remaining center item is the one being
-                    // dragged, overlay the empty-slot placeholder onto its
-                    // reserved row so it stays centered - rather than adding a
-                    // second row that pushes the placeholder below center.
                     if action == dragging && visibleCount == 0 {
                         slotPlaceholder(isCircle: false, highlighted: highlighted)
                             .frame(width: 104, height: 30)
@@ -183,22 +134,21 @@ struct OverlayCardEditor: View {
         .background(frameReporter(.center))
     }
 
-    // MARK: - Tray
 
     private var tray: some View {
         let highlighted = hoveredZone == .tray
         let visibleCount = layout.hidden.filter { $0 != dragging }.count
 
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("HIDDEN ACTIONS")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+        return VStack(alignment: .leading, spacing: Space.m) {
+            Text("Hidden")
+                .font(.dsCaption)
+                .foregroundStyle(Palette.secondaryLabel)
 
-            FlowLayout(spacing: 8) {
+            FlowLayout(spacing: Space.m) {
                 if layout.hidden.isEmpty || visibleCount == 0 {
-                    Text("Drag actions here to hide them")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("Drop actions here to hide them")
+                        .font(.dsCaption)
+                        .foregroundStyle(Palette.tertiaryLabel)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ForEach(layout.hidden) { action in
@@ -208,14 +158,14 @@ struct OverlayCardEditor: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
+        .padding(Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.quaternary.opacity(highlighted ? 0.9 : 0.4))
+            RoundedRectangle(cornerRadius: Self.trayRadius, style: .continuous)
+                .fill(highlighted ? Palette.selectedFill : Palette.fill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Self.trayRadius, style: .continuous)
                 .strokeBorder(highlighted ? Palette.highlight : .clear, lineWidth: 2)
         )
         .motion(.morphQuick, value: hoveredZone)
@@ -223,13 +173,12 @@ struct OverlayCardEditor: View {
         .background(frameReporter(.tray))
     }
 
-    // MARK: - Chip
 
     private func chip(_ action: OverlayCardAction, style: ChipStyle) -> some View {
         ActionChip(action: action, style: style)
             .contentShape(.capsule)
             .gesture(dragGesture(for: action))
-            .help(action.detail)
+            .help(action.editorHelp)
             .transition(.asymmetric(
                 insertion: .scale(scale: 0.5).combined(with: .opacity),
                 removal: .opacity
@@ -244,7 +193,6 @@ struct OverlayCardEditor: View {
         }
     }
 
-    // MARK: - Drag handling
 
     private func dragGesture(for action: OverlayCardAction) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named(spaceName))
@@ -259,10 +207,6 @@ struct OverlayCardEditor: View {
 
                 let resolved = resolveDrop(at: value.location) ?? originZone
                 if resolved != hoveredZone {
-                    // Morphing on screen → strong ease-in-out, not a spring.
-                    // cubic-bezier(0.77, 0, 0.175, 1), ~260ms: no bounce, settles
-                    // cleanly, and SwiftUI still retargets it from the current
-                    // state if the drag crosses back over a boundary mid-morph.
                     withAnimation(.timingCurve(0.77, 0, 0.175, 1, duration: 0.26)) {
                         hoveredZone = resolved
                     }
@@ -289,7 +233,6 @@ struct OverlayCardEditor: View {
     }
 
     private func resolveDrop(at point: CGPoint) -> OverlayCardZone? {
-        // Corners win first (small, precise targets), then center, then tray.
         for frame in zoneFrames {
             if case .corner = frame.zone, frame.rect.insetBy(dx: -16, dy: -16).contains(point) {
                 return frame.zone
@@ -306,9 +249,6 @@ struct OverlayCardEditor: View {
         return nil
     }
 
-    /// The center column holds at most `centerCapacity` actions. Reordering an
-    /// action that's already in the center is always allowed; adding a new one
-    /// is only allowed when there's room.
     private func canDropInCenter() -> Bool {
         guard let dragging else { return false }
         if layout.center.contains(dragging) { return true }
@@ -327,7 +267,6 @@ struct OverlayCardEditor: View {
         return index
     }
 
-    // MARK: - Placeholders & reporters
 
     @ViewBuilder
     private func slotPlaceholder(isCircle: Bool, highlighted: Bool) -> some View {
@@ -368,18 +307,7 @@ struct OverlayCardEditor: View {
     }
 }
 
-// MARK: - Floating morph chip
 
-/// The chip that follows the cursor while dragging and morphs between a corner
-/// circle and a center pill.
-///
-/// Center-origin is guaranteed structurally: the OUTER frame is a fixed size
-/// (always the full pill width), so `.position(_)` has a stable anchor and never
-/// drifts. The visible capsule lives INSIDE that fixed frame and is the only
-/// thing that resizes - and because it's centered in the fixed frame, it grows
-/// and shrinks symmetrically from the middle. The icon and label sit on top and
-/// trade places with opacity + a scale that collapses toward (or expands from)
-/// that same center point.
 private struct FloatingMorphChip: View {
     let action: OverlayCardAction
     let isCorner: Bool
@@ -418,15 +346,12 @@ private struct FloatingMorphChip: View {
             .overlay(
                 Capsule().strokeBorder(.black.opacity(0.06), lineWidth: 0.5)
             )
-            // Fixed outer box (max width), centered - stable anchor for
-            // `.position`; the capsule above resizes within it from the center.
             .frame(width: pillWidth, height: Self.diameter)
             .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 7)
             .scaleEffect(1.08, anchor: .center)
     }
 }
 
-// MARK: - Chip view
 
 enum ChipStyle: Equatable {
     case corner
@@ -444,9 +369,6 @@ private struct ActionChip: View {
     private static let cornerDiameter: CGFloat = 32
     private static let labelFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
 
-    /// Explicit pill width (label + horizontal padding) so the capsule width
-    /// interpolates to a known target rather than snapping to an intrinsic
-    /// `nil` width at the end of the animation.
     private var pillWidth: CGFloat {
         let textWidth = (action.label() as NSString)
             .size(withAttributes: [.font: Self.labelFont]).width
@@ -456,13 +378,6 @@ private struct ActionChip: View {
     var body: some View {
         let isCorner = style.isCorner
 
-        // The white capsule is the single, continuous "object": it just resizes
-        // between a circle (w == h) and a pill. The icon and label are layered
-        // at its center and blend with opacity + a gentle scale + a light 2px
-        // blur (Dynamic-Island style) so the swap reads as the same control
-        // changing modes rather than two things crossfading. One state (`style`)
-        // drives all of it, animated by a single ease-in-out curve in the
-        // parent, so a reversed drag retargets cleanly mid-morph.
         ZStack {
             Image(systemName: action.symbol())
                 .font(.system(size: 13, weight: .bold))
@@ -489,7 +404,6 @@ private struct ActionChip: View {
     }
 }
 
-// MARK: - Drop-target geometry
 
 private struct ZoneFrame: Equatable {
     let zone: OverlayCardZone
@@ -515,7 +429,6 @@ private struct CenterItemFramesKey: PreferenceKey {
     }
 }
 
-// MARK: - Helpers
 
 private extension OverlayCardCorner {
     var alignment: Alignment {
@@ -528,7 +441,6 @@ private extension OverlayCardCorner {
     }
 }
 
-/// A minimal wrapping layout for the hidden-actions tray.
 private struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
@@ -572,6 +484,25 @@ private struct FlowLayout: Layout {
             subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+private extension OverlayCardAction {
+    var editorHelp: String {
+        guard let shortcutKey else { return detail }
+        return "\(detail). Shortcut: \(shortcutKey)"
+    }
+
+    var shortcutKey: String? {
+        switch self {
+        case .copy: "C"
+        case .save: "S"
+        case .annotate: "E"
+        case .pin: "P"
+        case .view: "Space"
+        case .close: "Delete"
+        case .compress, .upload, .delete: nil
         }
     }
 }
