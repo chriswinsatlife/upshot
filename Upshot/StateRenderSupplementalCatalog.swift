@@ -79,9 +79,8 @@ enum StateRenderSupplementalCatalog {
             add("pinned-\(variant.name)", "PinnedScreenshotPresenter", "struct PinnedScreenshotView", variant.size.width + 80, variant.size.height + 80) {
                 UpshotStorage.defaults.set(variant.name != "square", forKey: UpshotPreferences.pinnedScreenshotRoundedCornersKey)
                 UpshotStorage.defaults.set(variant.name != "no-border", forKey: UpshotPreferences.pinnedScreenshotBorderKey)
-                let isDark = NSApp.appearance?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                 return AnyView(
-                    PinnedScreenshotView(image: isDark ? fixtures.image : try fixtures.windowAreaImage(), url: fixtures.screenshots[0], onClose: {})
+                    PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {})
                         .frame(width: variant.size.width, height: variant.size.height)
                 )
             }

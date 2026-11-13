@@ -62,16 +62,6 @@ struct StateRenderFixtures {
         return Self(screenshots: screenshots, image: image, project: project, items: items)
     }
 
-    func windowAreaImage() throws -> NSImage {
-        let area = CGRect(x: 88.0 / 1280, y: 78.0 / 800, width: 1030.4 / 1280, height: 644.0 / 800)
-        guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let cropped = source.cropping(to: CGRect(x: area.minX * CGFloat(source.width), y: area.minY * CGFloat(source.height),
-                                                       width: area.width * CGFloat(source.width), height: area.height * CGFloat(source.height)).integral) else {
-            throw StateRenderFailure(message: "The fixture window area image could not be cropped")
-        }
-        return NSImage(cgImage: cropped, size: CGSize(width: image.size.width * area.width, height: image.size.height * area.height))
-    }
-
     static func resetPreferences() {
         let defaults = UpshotStorage.defaults
         defaults.removePersistentDomain(forName: UpshotStorage.fixtureIdentifier)
