@@ -25,6 +25,7 @@ struct AnnotationEditorWindow: View {
 
     var body: some View {
         mainContent
+            .focusedSceneValue(model)
             .modifier(AnnotationEditorWindowLevel())
             .modifier(AnnotationColorPreview(model: model))
             .disabled(model.isCommitting || model.isProcessingImage)
