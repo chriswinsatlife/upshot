@@ -83,7 +83,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         SystemLanguageModel.default.availability == .available
     }
 
-
     private static func readFrames(_ item: CaptureLibraryItem, framesForVideo: Int = 3) async throws -> [CGImage] {
         if item.isVideo {
             let asset = AVURLAsset(url: item.fileURL)
@@ -113,7 +112,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         return [image]
     }
 
-
     private static func makeFeaturePrint(of image: CGImage) throws -> Data? {
         let request = VNGenerateImageFeaturePrintRequest()
         try VNImageRequestHandler(cgImage: image).perform([request])
@@ -134,7 +132,6 @@ nonisolated enum CaptureLibraryAnalyzer {
         }
         return nil
     }
-
 
     @Generable
     struct Insight {

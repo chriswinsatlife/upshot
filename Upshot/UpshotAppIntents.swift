@@ -1,7 +1,6 @@
 import AppIntents
 import ScreenCaptureKit
 
-
 nonisolated enum UpshotIntentError: Error, CustomLocalizedStringResourceConvertible {
     case captureCancelled
     case captureFailed
@@ -30,7 +29,6 @@ nonisolated enum UpshotIntentError: Error, CustomLocalizedStringResourceConverti
         }
     }
 }
-
 
 nonisolated struct TakeFullScreenScreenshotIntent: AppIntent {
     static var title: LocalizedStringResource = "Take Full Screen Screenshot"
@@ -102,7 +100,6 @@ nonisolated struct CaptureTextIntent: AppIntent {
     }
 }
 
-
 @MainActor
 private func startFullScreenRecording() async throws {
     guard !ScreenRecordingManager.shared.isActive else {
@@ -162,7 +159,6 @@ nonisolated struct ToggleScreenRecordingIntent: AppIntent {
         return .result()
     }
 }
-
 
 nonisolated struct UpshotShortcuts: AppShortcutsProvider {
     @AppShortcutsBuilder

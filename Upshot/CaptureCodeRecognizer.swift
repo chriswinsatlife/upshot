@@ -56,4 +56,3 @@ nonisolated enum CaptureCodeRecognizer {
         return CaptureCodeDetection(codes: codes, links: links)
     }
 }
-
