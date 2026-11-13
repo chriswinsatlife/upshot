@@ -51,7 +51,16 @@ nonisolated enum AnnotationImageFileProcessor {
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        return image
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let rawOrientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.uint32Value ?? 1
+        guard let orientation = CGImagePropertyOrientation(rawValue: rawOrientation), orientation != .up else { return image }
+        let oriented = CIImage(cgImage: image).oriented(orientation)
+        let context = CIContext(options: [.cacheIntermediates: false])
+        guard let result = context.createCGImage(oriented, from: oriented.extent, format: .RGBA8,
+                                                colorSpace: image.colorSpace ?? CGColorSpaceCreateDeviceRGB()) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return result
     }
 
     static func write(_ image: CGImage) throws -> Result {
