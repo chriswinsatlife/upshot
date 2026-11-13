@@ -9,7 +9,6 @@ struct AnnotationEditorWindow: View {
     @State private var wallpaperStore = AnnotationWallpaperStore.shared
     @State private var backgroundPresetStore = AnnotationBackgroundPresetStore.shared
     @State private var isInspectorPresented = true
-    @Namespace private var toolbarGlass
     @State private var isFinishing = false
     @State private var isSaving = false
     @State private var isUploading = false
@@ -132,7 +131,7 @@ struct AnnotationEditorWindow: View {
                 .disabled(model.isCropping || model.isCommitting)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     actionFooter
-                        .background(Palette.panel)
+                        .background(.bar)
                 }
             }
     }
@@ -195,12 +194,8 @@ struct AnnotationEditorWindow: View {
         .help("Save a Copy As…")
 
         Button(action: finishEditing) {
-            Label(isFinishing ? "Saving…" : "Done", systemImage: "checkmark")
-                .labelStyle(.titleAndIcon)
+            Text(isFinishing ? "Saving…" : "Done")
         }
-        .buttonStyle(.glassProminent)
-        .tint(Palette.accent)
-        .foregroundStyle(Palette.onAccent)
         .disabled(isDisabled)
         .help("Save and close")
     }
@@ -267,7 +262,7 @@ struct AnnotationEditorWindow: View {
 
     private var bottomChrome: some View {
         ZStack(alignment: .bottom) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.m) {
                 AnnotationZoomControl(model: model)
                 if model.isPreviewDownscaled {
                     LowResolutionPreviewNotice()
@@ -275,17 +270,18 @@ struct AnnotationEditorWindow: View {
                 Spacer(minLength: 0)
                 if model.isCropping {
                     CropResolutionBadge(size: model.cropPixelSize)
-                        .transition(.blurPop)
+                        .transition(.opacity)
                 }
             }
             .frame(height: AnnotationToolDock.height)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Space.xl)
 
-            VStack(spacing: 10) {
+            VStack(spacing: Space.ml) {
                 if let message = toastMessage {
-                    AnnotationDockToast(
-                        text: message.text,
-                        systemImage: message.isError ? "exclamationmark.triangle.fill" : "sparkles"
+                    InterfaceToast(
+                        message.text,
+                        systemImage: message.isError ? "exclamationmark.triangle.fill" : "sparkles",
+                        tone: message.isError ? .failure : .neutral
                     )
                     .id(message.text)
                     .onTapGesture(perform: clearToast)
@@ -293,7 +289,7 @@ struct AnnotationEditorWindow: View {
                     .transition(.rise)
                 }
 
-                GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
+                ZStack {
                     if model.isCropping {
                         GlassCropBar(
                             aspect: model.cropAspect,
@@ -306,21 +302,21 @@ struct AnnotationEditorWindow: View {
                                 withAnimation(.canvasMoveIfAllowed) { model.resetCrop() }
                             },
                             onCancel: exitCrop,
-                            onApply: applyCropAction,
-                            namespace: toolbarGlass
+                            onApply: applyCropAction
                         )
-                        .frame(height: AnnotationToolDock.height)
+                        .transition(.opacity)
                     } else {
                         AnnotationToolDock(
                             model: model,
                             onEditorAction: clearInspectorFocus,
                             canCrop: !isBusy,
-                            onCrop: enterCrop,
-                            glass: toolbarGlass
+                            onCrop: enterCrop
                         )
+                        .transition(.opacity)
                     }
                 }
-                .motion(.morph, value: model.isCropping)
+                .frame(height: AnnotationToolDock.height)
+                .motion(.morphQuick, value: model.isCropping)
             }
         }
         .padding(.bottom, AnnotationToolDock.bottomPadding)
@@ -537,20 +533,21 @@ private struct AnnotationLoadFailureView: View {
     let onClose: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Space.l) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.dsDisplay)
+                .foregroundStyle(Palette.secondaryLabel)
 
             Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.dsBody)
+                .foregroundStyle(Palette.label)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
 
             Button("Close", action: onClose)
+                .buttonStyle(.interfaceAction)
                 .keyboardShortcut(.cancelAction)
         }
-        .padding(32)
+        .padding(Space.xxxl)
     }
 }

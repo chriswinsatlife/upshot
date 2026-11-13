@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 struct AnnotationToolDock: View {
@@ -6,11 +5,11 @@ struct AnnotationToolDock: View {
     let onEditorAction: () -> Void
     var canCrop = true
     let onCrop: () -> Void
-    let glass: Namespace.ID
 
-    static let height: CGFloat = 44
-    static let bottomPadding: CGFloat = 14
-    static let canvasReserve: CGFloat = 44
+    static let iconButtonSize: CGFloat = 40
+    static let height: CGFloat = iconButtonSize + InterfaceMetrics.floatingPanelPadding * 2
+    static let bottomPadding: CGFloat = Space.l
+    static let canvasReserve: CGFloat = height
 
     private static let groups: [[AnnotationTool]] = [
         [.select],
@@ -21,50 +20,42 @@ struct AnnotationToolDock: View {
     ]
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(Self.groups.enumerated()), id: \.offset) { index, group in
-                if index > 0 { separator }
-                ForEach(group) { tool in
-                    AnnotationDockButton(
-                        systemImage: tool.systemImage,
-                        title: tool.title,
-                        help: tool.shortcutKey.map { "\(tool.helpText) (\($0))" } ?? tool.helpText,
-                        accessibilityHint: tool.helpText,
-                        isSelected: model.selectedTool == tool
-                    ) {
-                        onEditorAction()
-                        model.selectTool(tool)
+        InterfacePanel(.panel) {
+            HStack(spacing: Space.xxs) {
+                ForEach(Array(Self.groups.enumerated()), id: \.offset) { index, group in
+                    if index > 0 { InterfaceToolbarDivider() }
+                    ForEach(group) { tool in
+                        InterfaceToolbarButton(
+                            tool.title,
+                            systemImage: tool.systemImage,
+                            isSelected: model.selectedTool == tool,
+                            labelPlacement: .hidden
+                        ) {
+                            onEditorAction()
+                            model.selectTool(tool)
+                        }
+                        .help(tool.shortcutKey.map { "\(tool.helpText) (\($0))" } ?? tool.helpText)
+                        .accessibilityHint(tool.helpText)
                     }
                 }
+
+                additionalToolsMenu
+
+                InterfaceToolbarDivider()
+
+                InterfaceToolbarButton("Crop", systemImage: "crop", labelPlacement: .hidden) {
+                    onEditorAction()
+                    onCrop()
+                }
+                .help("Crop the screenshot (C)")
+                .disabled(!canCrop)
             }
-
-            additionalToolsMenu
-
-            separator
-
-            AnnotationDockButton(
-                systemImage: "crop",
-                title: "Crop",
-                help: "Crop the screenshot (C)"
-            ) {
-                onEditorAction()
-                onCrop()
-            }
-            .disabled(!canCrop)
+            .fixedSize()
         }
-        .padding(.horizontal, 5)
-        .frame(height: Self.height)
-        .glassEffect(.regular, in: .capsule)
-        .glassEffectID(GlassCropBar.applyID, in: glass)
-        .motion(.morphQuick, value: model.selectedTool)
     }
 
-    private var separator: some View {
-        Rectangle()
-            .fill(Palette.hairline)
-            .frame(width: 1, height: 18)
-            .padding(.horizontal, 4)
-            .accessibilityHidden(true)
+    private var additionalToolSelected: Bool {
+        model.selectedTool == .highlighter || model.selectedTool == .measure
     }
 
     private var additionalToolsMenu: some View {
@@ -91,59 +82,23 @@ struct AnnotationToolDock: View {
                 if model.isSmartRedacting {
                     ProgressView()
                         .controlSize(.small)
-                        .transition(.blurPop)
                 } else {
-                    Image(systemName: model.selectedTool == .highlighter || model.selectedTool == .measure ? model.selectedTool.systemImage : "wand.and.sparkles")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Palette.label)
-                        .transition(.blurPop)
+                    Image(systemName: additionalToolSelected ? model.selectedTool.systemImage : "wand.and.sparkles")
+                        .font(.system(size: IconSize.toolbar, weight: .regular))
+                        .foregroundStyle(model.isSmartRedacting ? Palette.disabledLabel : Palette.label)
                 }
             }
-            .frame(width: 34, height: 34)
-            .contentShape(Circle())
+            .frame(width: Self.iconButtonSize, height: Self.iconButtonSize)
+            .contentShape(Rectangle())
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.plain)
+        .buttonStyle(InterfaceFloatingButtonStyle(isSelected: additionalToolSelected, cornerRadius: Radius.toolbarButton))
         .fixedSize()
         .disabled(model.isSmartRedacting)
         .help("Highlighter, measure, and automatic redaction")
         .accessibilityLabel("Additional annotation tools")
-        .motion(.morphQuick, value: model.isSmartRedacting)
-    }
-}
-
-private struct AnnotationDockButton: View {
-    let systemImage: String
-    let title: String
-    let help: String
-    var accessibilityHint = ""
-    var isSelected = false
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isSelected ? Palette.onAccent : Palette.label)
-                .frame(width: 34, height: 34)
-                .background {
-                    Circle()
-                        .fill(isSelected ? Palette.accent : isHovering ? Palette.hoverFill : .clear)
-                }
-                .scaleEffect(isSelected ? 1 : isHovering ? 1.04 : 1)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .onHover { isHovering = $0 }
-        .motion(.morphQuick, value: isHovering)
-        .help(help)
-        .accessibilityLabel(title)
-        .accessibilityHint(accessibilityHint)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAddTraits(additionalToolSelected ? .isSelected : [])
     }
 }
 
@@ -161,23 +116,5 @@ private extension AnnotationTool {
         case .numberedCircle: "1"
         default: nil
         }
-    }
-}
-
-struct AnnotationDockToast: View {
-    let text: String
-    var systemImage = "sparkles"
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-            Text(text)
-                .font(.system(size: 12, weight: .medium))
-        }
-        .foregroundStyle(Palette.label)
-        .padding(.horizontal, 14)
-        .frame(height: 30)
-        .glassEffect(.regular, in: .capsule)
     }
 }

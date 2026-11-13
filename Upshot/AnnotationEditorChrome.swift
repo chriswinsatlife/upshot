@@ -1,109 +1,104 @@
-//
-//  AnnotationEditorChrome.swift
-//  Upshot
-//
-
 import SwiftUI
 
 struct AnnotationZoomControl: View {
     @Bindable var model: AnnotationEditorModel
 
     var body: some View {
-        Menu {
-            // The image and AppKit annotation layer must receive the same
-            // camera immediately; implicit SwiftUI-only animation splits them.
-            Button("Zoom In") { model.zoomIn() }
-                .keyboardShortcut("+", modifiers: .command)
-                .disabled(!model.canZoomIn)
-            Button("Zoom Out") { model.zoomOut() }
-                .keyboardShortcut("-", modifiers: .command)
-                .disabled(!model.canZoomOut)
+        InterfacePanel(.pill) {
+            Menu {
+                Button("Zoom In") { model.zoomIn() }
+                    .keyboardShortcut("+", modifiers: .command)
+                    .disabled(!model.canZoomIn)
+                Button("Zoom Out") { model.zoomOut() }
+                    .keyboardShortcut("-", modifiers: .command)
+                    .disabled(!model.canZoomOut)
 
-            Divider()
+                Divider()
 
-            Button("Fit Canvas") { model.fitCanvas() }
-                .keyboardShortcut("1", modifiers: .command)
+                Button("Fit Canvas") { model.fitCanvas() }
+                    .keyboardShortcut("1", modifiers: .command)
 
-            Divider()
+                Divider()
 
-            Button("50%") { model.setZoomPercent(50) }
-            Button("100%") { model.setZoomPercent(100) }
-                .keyboardShortcut("0", modifiers: .command)
-            Button("200%") { model.setZoomPercent(200) }
-        } label: {
-            Text("\(model.zoomPercent)%")
-                .font(.dsNumeric)
-                .foregroundStyle(Palette.label)
-                .contentTransition(.numericText())
-                .frame(minWidth: 38)
-                .padding(.horizontal, 12)
-                .frame(height: GlassMetrics.buttonSize)
+                Button("50%") { model.setZoomPercent(50) }
+                Button("100%") { model.setZoomPercent(100) }
+                    .keyboardShortcut("0", modifiers: .command)
+                Button("200%") { model.setZoomPercent(200) }
+            } label: {
+                HStack(spacing: Space.xs) {
+                    InterfaceValueWithUnitLabel(value: "\(model.zoomPercent)", unit: "%", unitSpacing: .none)
+                        .contentTransition(.numericText())
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: IconSize.disclosureChevron, weight: .bold))
+                        .foregroundStyle(Palette.secondaryLabel)
+                }
+                .padding(.horizontal, Space.l)
+                .frame(height: AnnotationToolDock.iconButtonSize)
                 .contentShape(Capsule())
-                .glassEffect(.regular.interactive(), in: .capsule)
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
+            .fixedSize()
+            .help("Zoom")
+            .accessibilityLabel("Zoom")
+            .accessibilityValue("\(model.zoomPercent)%")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Zoom")
     }
 }
 
-/// Live pixel dimensions of the current crop selection, shown in the bottom
-/// trailing corner of the canvas while cropping. Styled to match the zoom
-/// control capsule on the opposite side.
 struct CropResolutionBadge: View {
     let size: CGSize
 
     var body: some View {
-        Text("\(Int(size.width)) × \(Int(size.height)) px")
-            .font(.dsNumeric)
-            .foregroundStyle(Palette.secondaryLabel)
+        InterfacePanel(.pill) {
+            InterfaceValueWithUnitLabel(
+                value: "\(Int(size.width).formatted()) × \(Int(size.height).formatted())",
+                unit: "px"
+            )
             .contentTransition(.numericText())
-            .padding(.horizontal, 12)
-            .frame(height: GlassMetrics.buttonSize)
-            .fixedSize()
-            .glassEffect(.regular, in: .capsule)
-            .help("Crop size")
+            .padding(.horizontal, Space.l)
+            .frame(height: AnnotationToolDock.iconButtonSize)
+        }
+        .fixedSize()
+        .help("Crop size")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Crop size")
     }
 }
 
-/// A small badge shown beside the zoom control when the editing preview is
-/// downscaled to save memory. Collapsed it's just an "i" button; tapping it
-/// expands an explanation that the reduction is preview-only and points users
-/// to Settings to disable it.
 struct LowResolutionPreviewNotice: View {
     @State private var isExpanded = false
 
-    private let diameter: CGFloat = GlassMetrics.buttonSize
-
     var body: some View {
-        Button {
-            withAnimation(.morphQuickIfAllowed) {
-                isExpanded.toggle()
-            }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: "info.circle.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: diameter, height: diameter)
-
-                if isExpanded {
-                    Text("Low-res preview to save memory - exports stay full quality")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.trailing, 12)
-                        .transition(AnyTransition(.blurReplace))
+        InterfacePanel(.pill) {
+            Button {
+                withAnimation(.morphQuickIfAllowed) {
+                    isExpanded.toggle()
                 }
+            } label: {
+                HStack(spacing: Space.s) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: IconSize.flyout, weight: .medium))
+                        .foregroundStyle(Palette.secondaryLabel)
+                    if isExpanded {
+                        Text("Preview is downscaled. Exports keep full resolution.")
+                            .font(.dsBody)
+                            .foregroundStyle(Palette.label)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .transition(.opacity)
+                    }
+                }
+                .padding(.horizontal, Space.ml + Space.xxs)
+                .frame(minWidth: AnnotationToolDock.iconButtonSize, minHeight: AnnotationToolDock.iconButtonSize)
+                .contentShape(Capsule())
             }
-            .frame(height: diameter)
-            .fixedSize()
-            .glassEffect(.regular.interactive(), in: .capsule)
+            .buttonStyle(InterfaceFloatingButtonStyle(cornerRadius: Radius.pill))
+            .help("Why is this preview low resolution?")
+            .accessibilityLabel("Low-resolution preview")
         }
-        .buttonStyle(.plain)
-        .help("Why is this preview low resolution?")
+        .fixedSize()
     }
 }
 
@@ -113,10 +108,6 @@ struct AnnotationEditorWorkspaceBackground: View {
 
     var body: some View {
         ZStack {
-            // A flat, fully desaturated gray rather than a system material -
-            // vibrancy materials pick up a bluish cast from the accent color
-            // and whatever's behind the window, which reads as tinted rather
-            // than neutral.
             Rectangle()
                 .fill(Palette.workspace)
 
