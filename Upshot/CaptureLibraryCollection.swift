@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 
 enum CaptureLibraryAction: String {
-    /// Double-click or Space: Edit for a video, Quick Look for anything else.
     case open = "Open"
     case preview = "Quick Look"
     case edit = "Edit"
@@ -13,8 +12,6 @@ enum CaptureLibraryAction: String {
     case trash = "Move to Trash"
 }
 
-/// Both layouts use NSCollectionView's reuse queue. Changing selection doesn't
-/// reload the collection; data changes reconcile selection by stable media IDs.
 struct CaptureLibraryCollection: NSViewRepresentable {
     let items: [CaptureLibraryItem]
     let revision: Int
@@ -75,8 +72,6 @@ struct CaptureLibraryCollection: NSViewRepresentable {
             coordinator.indices[id].map { IndexPath(item: $0, section: 0) }
         })
         if collection.selectionIndexPaths != paths {
-            // A selection made elsewhere (the inspector's Similar captures)
-            // scrolls into view; clicks in the grid are already visible.
             collection.selectionIndexPaths = paths
             if paths.count == 1, let path = paths.first, !collection.indexPathsForVisibleItems().contains(path) {
                 collection.animator().scrollToItems(at: paths, scrollPosition: .centeredVertically)
@@ -166,9 +161,6 @@ final class LibraryCollectionView: NSCollectionView {
     func configureLayout(_ displayLayout: CaptureLibraryLayout) {
         let flow = LibraryCollectionLayout()
         flow.displayLayout = displayLayout
-        // Installing a layout initializes AppKit's data-source/reuse machinery.
-        // Registering first loses the class registration and makes the first
-        // dequeue fall back to a nonexistent CaptureLibraryCell nib.
         collectionViewLayout = flow
         register(LibraryCollectionItem.self, forItemWithIdentifier: LibraryCollectionItem.identifier)
     }
@@ -194,24 +186,14 @@ final class LibraryCollectionView: NSCollectionView {
     @objc func copy(_ sender: Any?) { command?(.copy) }
 }
 
-/// The grid is justified like a photo library: each tile keeps its capture's
-/// shape and every full row spans the width, so wide and tall captures sit
-/// together without letterboxing. The list is one full-width row per item.
-/// Frames are computed once per data or width change; lookups by rect binary
-/// search them, so scrolling cost doesn't grow with the Library.
 final class LibraryCollectionLayout: NSCollectionViewLayout {
     var displayLayout: CaptureLibraryLayout = .grid
-    /// Width over height for each item, in data-source order.
     var aspects: [CGFloat] = []
 
     private static let rowHeight: CGFloat = 170
-    /// Tiles carry their own 6pt selection inset, so the visible gap between
-    /// thumbnails is this plus 12.
     private static let gutter: CGFloat = 2
     private static let margins = NSEdgeInsets(top: 14, left: 16, bottom: 24, right: 16)
     private static let listMargins = NSEdgeInsets(top: 12, left: 14, bottom: 20, right: 14)
-    /// Panoramas and very tall captures are cropped to these bounds rather
-    /// than becoming slivers or swallowing a row.
     private static let aspectRange: ClosedRange<CGFloat> = 0.6...2.4
 
     private var frames: [CGRect] = []
@@ -250,8 +232,6 @@ final class LibraryCollectionLayout: NSCollectionViewLayout {
             let height = (thumbnailHeight + chrome).rounded()
             for (index, aspect) in row.enumerated() {
                 var tileWidth = (aspect * thumbnailHeight + chrome).rounded(.down)
-                // The last tile of a full row absorbs rounding so the row
-                // ends flush with the margin.
                 if fill, index == row.count - 1 { tileWidth = margins.left + usable - x }
                 frames.append(CGRect(x: x, y: y, width: tileWidth, height: height))
                 x += tileWidth + gutter
@@ -265,12 +245,10 @@ final class LibraryCollectionLayout: NSCollectionViewLayout {
             let fixed = CGFloat(row.count) * chrome + CGFloat(row.count - 1) * gutter
             let aspectSum = row.reduce(0, +)
             if aspectSum * Self.rowHeight + fixed >= usable {
-                // Shrink the row's height until it spans the width exactly.
                 place(row, thumbnailHeight: max(40, (usable - fixed) / aspectSum), fill: true)
                 row.removeAll(keepingCapacity: true)
             }
         }
-        // The last, partial row keeps the natural height and sits left.
         if !row.isEmpty { place(row, thumbnailHeight: Self.rowHeight, fill: false) }
         return frames
     }
@@ -278,7 +256,6 @@ final class LibraryCollectionLayout: NSCollectionViewLayout {
     override var collectionViewContentSize: NSSize { contentSize }
 
     override func layoutAttributesForElements(in rect: NSRect) -> [NSCollectionViewLayoutAttributes] {
-        // Rows run top to bottom, so maxY never decreases along `frames`.
         var low = 0, high = frames.count
         while low < high {
             let mid = (low + high) / 2
@@ -356,8 +333,6 @@ struct LibraryCellContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
-    /// The cell's inset around its thumbnail; the cell's corner is the
-    /// thumbnail's plus this, so the two stay concentric.
     static let inset: CGFloat = 6
     private static var cellRadius: CGFloat { Radius.nested(inner: Radius.thumbnail, padding: inset) }
 
@@ -413,7 +388,7 @@ struct LibraryCellContent: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 Text(item.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.dsBodyEmphasis)
                     .foregroundStyle(Palette.label)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -436,8 +411,6 @@ struct LibraryCellContent: View {
         }
     }
 
-    /// Marks where the search words appear in the capture. Read only while
-    /// searching, so the index's batches don't redraw idle tiles.
     @ViewBuilder
     private func textMatches(_ item: CaptureLibraryItem) -> some View {
         if !searchTokens.isEmpty, let lines = CaptureLibraryIndex.shared.analyses[item.id]?.lines {
@@ -461,7 +434,6 @@ struct LibraryCellContent: View {
         }
     }
 
-    /// Where the thumbnail's aspect-fit image sits inside the tile.
     private func fittedImageRect(_ item: CaptureLibraryItem, in size: CGSize) -> CGRect {
         guard item.pixelWidth > 0, item.pixelHeight > 0, size.width > 0, size.height > 0 else {
             return CGRect(origin: .zero, size: size)
@@ -472,8 +444,6 @@ struct LibraryCellContent: View {
         return CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2, width: width, height: height)
     }
 
-    /// Grid tiles drop the name, so the link and draft marks ride on the
-    /// thumbnail in the same dark capsule as the video duration.
     @ViewBuilder
     private func statusBadges(_ item: CaptureLibraryItem) -> some View {
         if item.cloudURL != nil || item.hasDraft {
@@ -507,7 +477,7 @@ struct LibraryCellContent: View {
                         Image(systemName: "play.fill")
                             .font(.system(size: 7, weight: .bold))
                         Text(item.durationText)
-                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .font(.dsMicro.monospacedDigit())
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
