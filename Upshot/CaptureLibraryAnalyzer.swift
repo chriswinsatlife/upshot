@@ -28,21 +28,22 @@ nonisolated enum CaptureLibraryAnalyzer {
         guard !Task.isCancelled else { return nil }
 
         var lines: [CaptureTextLine] = []
-        do {
-            var seen = Set<String>()
-            for (index, frame) in frames.enumerated() {
-                try Task.checkCancellation()
-                let recognized = try await ImageTextRecognizer.recognizeLines(in: frame, requiresBounds: true)
-                for line in recognized where index == 0 || seen.insert(line.text).inserted {
-                    lines.append(CaptureTextLine(text: line.text, box: index == 0 ? line.bounds : nil))
-                    seen.insert(line.text)
-                }
+        var seen = Set<String>()
+        for (index, frame) in frames.enumerated() {
+            guard !Task.isCancelled else { return nil }
+            let recognized: [ImageTextLine]
+            do {
+                recognized = try await ImageTextRecognizer.recognizeLines(in: frame, requiresBounds: true)
+            } catch is CancellationError {
+                return nil
+            } catch {
+                NSLog("Capture Library text recognition failed: id=%@ frame=%ld error=%@", item.id, index, String(describing: error))
+                continue
             }
-        } catch is CancellationError {
-            return nil
-        } catch {
-            NSLog("Capture Library text recognition failed: id=%@ error=%@", item.id, String(describing: error))
-            return nil
+            for line in recognized where index == 0 || seen.insert(line.text).inserted {
+                lines.append(CaptureTextLine(text: line.text, box: index == 0 ? line.bounds : nil))
+                seen.insert(line.text)
+            }
         }
         guard !Task.isCancelled else { return nil }
         NSLog("Capture Library text recognition completed: id=%@ lines=%ld", item.id, lines.count)
@@ -98,7 +99,13 @@ nonisolated enum CaptureLibraryAnalyzer {
             for fraction in fractions {
                 try Task.checkCancellation()
                 let time = CMTime(seconds: duration * fraction, preferredTimescale: 600)
-                frames.append(try await generator.image(at: time).image)
+                do {
+                    frames.append(try await generator.image(at: time).image)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    NSLog("Capture Library frame extraction failed: id=%@ fraction=%.2f error=%@", item.id, fraction, String(describing: error))
+                }
             }
             return frames
         }
