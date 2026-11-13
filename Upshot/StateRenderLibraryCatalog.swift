@@ -12,9 +12,9 @@ enum StateRenderLibraryCatalog {
     static func states(fixtures: StateRenderFixtures) -> [StateRenderDefinition] {
         let variants = [
             "grid", "list", "empty", "screenshots-empty", "recordings-empty",
-            "search", "search-empty", "inspector", "inspector-empty", "multi-selection",
+            "search", "search-empty", "inspector", "no-selection", "multi-selection",
             "screenshots", "recordings", "categories", "category", "app", "scope-empty",
-            "inspector-analyzed", "inspector-recording", "inspector-shared", "list-selected",
+            "selected-analyzed", "selected-recording", "selected-shared", "list-selected",
             "sort-offer", "indexing", "busy", "categories-collapsed", "update-available"
         ]
         return variants.map { variant in
@@ -28,8 +28,8 @@ enum StateRenderLibraryCatalog {
     private static func makeView(variant: String, fixtures: StateRenderFixtures) -> CaptureLibraryView {
         let defaults = UpshotStorage.defaults
         let model = CaptureLibraryModel.shared
-        let analyzed = ["categories", "category", "scope-empty", "inspector-analyzed", "search", "sort-offer", "indexing", "categories-collapsed", "app"].contains(variant)
-        let fixture = variant.hasSuffix("empty") && !variant.hasPrefix("search") && !variant.hasPrefix("inspector") && variant != "scope-empty"
+        let analyzed = ["categories", "category", "scope-empty", "selected-analyzed", "search", "sort-offer", "indexing", "categories-collapsed", "app"].contains(variant)
+        let fixture = variant.hasSuffix("empty") && !variant.hasPrefix("search") && variant != "scope-empty"
             ? LibraryFixture(items: [])
             : libraryFixture(items: fixtures.items, analyzed: analyzed, variant: variant)
         defaults.set(analyzed, forKey: UpshotPreferences.libraryAnalyzeCapturesKey)
@@ -38,7 +38,7 @@ enum StateRenderLibraryCatalog {
         defaults.set(variant != "categories-collapsed", forKey: "captureLibrary.categoriesExpanded")
         defaults.set(true, forKey: "captureLibrary.appsExpanded")
         defaults.set(variant.hasPrefix("list") ? "list" : "grid", forKey: "captureLibrary.layout")
-        let showsInspector = variant.hasPrefix("inspector") || ["multi-selection", "categories", "sort-offer", "indexing", "list-selected", "search"].contains(variant)
+        let showsInspector = variant.hasPrefix("inspector") || variant.hasPrefix("selected") || variant == "no-selection" || ["multi-selection", "categories", "sort-offer", "indexing", "list-selected", "search"].contains(variant)
         defaults.set(showsInspector, forKey: "captureLibrary.inspectorVisible")
         CaptureLibraryIndex.shared.installRenderAnalyses(fixture.analyses, unsortedExistingCount: fixture.unsortedExistingCount, readingCount: fixture.readingCount)
         model.installRenderItems(fixture.items)
@@ -55,11 +55,11 @@ enum StateRenderLibraryCatalog {
         default: break
         }
         switch variant {
-        case "inspector", "inspector-analyzed", "categories", "sort-offer", "indexing", "list-selected", "search":
+        case "inspector", "selected-analyzed", "categories", "sort-offer", "indexing", "list-selected", "search":
             if let screenshot { model.selection = [screenshot.id] }
-        case "inspector-recording":
+        case "selected-recording":
             if let recording = fixture.items.first(where: { $0.session != nil }) { model.selection = [recording.id] }
-        case "inspector-shared":
+        case "selected-shared":
             if let shared = fixture.items.first(where: { $0.cloudURL != nil }) { model.selection = [shared.id] }
         case "multi-selection", "busy":
             model.selection = Set(fixture.items.prefix(2).map(\.id))
@@ -83,7 +83,7 @@ enum StateRenderLibraryCatalog {
         for item in items {
             let baseName = (item.name as NSString).deletingPathExtension
             let source = item.isVideo ? item.source : sources[baseName] ?? item.source
-            let isShared = variant == "inspector-shared" && !sharedAssigned && !item.isVideo && sources[baseName] != nil
+            let isShared = variant == "selected-shared" && !sharedAssigned && !item.isVideo && sources[baseName] != nil
             if isShared { sharedAssigned = true }
             let fixtureItem = CaptureLibraryItem(
                 id: item.id, historyIDs: item.historyIDs, name: item.name, fileURL: item.fileURL, session: item.session,
