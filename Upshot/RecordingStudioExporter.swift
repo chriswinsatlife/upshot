@@ -243,7 +243,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                     replacementURL: configuration.audioReplacementURL,
                     clips: clipSources,
                     timeRange: exportTimeRange,
-                    volume: configuration.audioVolume
+                    volume: configuration.audioVolume,
+                    monoAudio: configuration.deliveryOptions.monoAudio
                 )
             if let mixed {
                 replacementReader = mixed.reader
@@ -256,7 +257,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                     reader.timeRange = exportTimeRange
                     let output = AVAssetReaderAudioMixOutput(
                         audioTracks: replacementTracks,
-                        audioSettings: nil
+                        audioSettings: RecordingAudioChannels.decodedSettings(mono: configuration.deliveryOptions.monoAudio)
                     )
                     output.audioMix = RecordingAudioGain.makeMix(tracks: replacementTracks, volume: configuration.audioVolume)
                     output.alwaysCopiesSampleData = false
@@ -267,7 +268,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             } else if !audioTracks.isEmpty {
                 let output = AVAssetReaderAudioMixOutput(
                     audioTracks: audioTracks,
-                    audioSettings: nil
+                    audioSettings: RecordingAudioChannels.decodedSettings(mono: configuration.deliveryOptions.monoAudio)
                 )
                 output.audioMix = RecordingAudioGain.makeMix(tracks: audioTracks, volume: configuration.audioVolume)
                 output.alwaysCopiesSampleData = false
@@ -325,7 +326,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48_000,
-                AVNumberOfChannelsKey: 2,
+                AVNumberOfChannelsKey: configuration.deliveryOptions.monoAudio ? 1 : 2,
                 AVEncoderBitRateKey: 192_000
             ])
             input.expectsMediaDataInRealTime = false
@@ -433,6 +434,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             try? FileManager.default.removeItem(at: outputURL)
             throw ExportError.writerFailed(writer.error)
         }
+        Self.logger.info("Audio export mono=\(configuration.deliveryOptions.monoAudio) included=\(!configuration.exportSettings.removeAudio)")
         progress(1)
         return outputURL
     }
@@ -560,7 +562,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         replacementURL: URL?,
         clips: [RecordingAudioClipSource],
         timeRange: CMTimeRange,
-        volume: Double
+        volume: Double,
+        monoAudio: Bool = false
     ) async throws -> (reader: AVAssetReader, output: AVAssetReaderAudioMixOutput)? {
         let composition = AVMutableComposition()
         var recordingTrackIDs: [CMPersistentTrackID] = []
@@ -588,7 +591,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         guard !tracks.isEmpty else { return nil }
         let reader = try AVAssetReader(asset: composition)
         reader.timeRange = timeRange
-        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: nil)
+        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: RecordingAudioChannels.decodedSettings(mono: monoAudio))
         output.audioMix = RecordingAudioClipMixer.mix(
             recordingTracks: tracks.filter { recordingTrackIDs.contains($0.trackID) },
             recordingVolume: volume,

@@ -1,28 +1,10 @@
-//
-//  RecordingAudioExport.swift
-//  Upshot
-//
-//  Audio-only export and audio replacement for Studio projects. Together
-//  they close the loop around speech-cleanup tools that offer no API
-//  (Adobe Podcast Enhance and friends): export the edited soundtrack, run
-//  it through the tool, drop the cleaned file back in, and re-export the
-//  video - without leaving Upshot for ffmpeg and a second app.
-//
-//  Both halves speak the same timeline. The exported audio is the finished
-//  cut's soundtrack, so whatever comes back lies flat on the edited
-//  timeline from zero rather than being re-cut through the clip list.
-//
 
 import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
 
 nonisolated enum RecordingAudioFormat: String, CaseIterable, Identifiable, Codable, Sendable {
-    /// AAC in an MP4 container. Screen recordings capture AAC already, so
-    /// this is transparent, and it keeps hour-long narration well under the
-    /// upload limits enhancement services impose.
     case m4a
-    /// Uncompressed, for tools that accept nothing else.
     case wav
 
     var id: Self { self }
@@ -65,23 +47,17 @@ nonisolated enum RecordingAudioFormat: String, CaseIterable, Identifiable, Codab
         }
     }
 
-    /// What the import panel accepts. Enhancement services hand back MP3,
-    /// WAV, or M4A depending on the service and the plan.
     static let importContentTypes: [UTType] = [.audio, .mp3, .wav, .mpeg4Audio, .aiff]
 }
 
-/// Renders the project's soundtrack on its own - the same audio the video
-/// export would carry, mixed and cut identically.
 nonisolated final class RecordingAudioExporter: @unchecked Sendable {
     struct Configuration: Sendable {
         let screenURL: URL
         let clipTimeline: RecordingClipTimeline
-        /// When set, this file *is* the soundtrack: the recording's own
-        /// audio is ignored and the file is simply transcoded, clamped to
-        /// the edited timeline's length.
         let replacementURL: URL?
         let format: RecordingAudioFormat
         var volume: Double = 1
+        var monoAudio = false
     }
 
     enum ExportError: LocalizedError {
@@ -126,22 +102,22 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         }
 
         let reader = try AVAssetReader(asset: audioAsset)
-        // Clamps a replacement that overruns the cut; a shorter one simply
-        // ends early rather than being stretched.
         reader.timeRange = CMTimeRange(
             start: .zero,
             duration: CMTime(seconds: duration, preferredTimescale: 600)
         )
-        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: nil)
+        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: RecordingAudioChannels.decodedSettings(mono: configuration.monoAudio))
         output.audioMix = RecordingAudioGain.makeMix(tracks: tracks, volume: configuration.volume)
         output.alwaysCopiesSampleData = false
         reader.add(output)
 
         let outputURL = Self.temporaryOutputURL(pathExtension: configuration.format.fileExtension)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: configuration.format.fileType)
+        var settings = configuration.format.writerSettings
+        if configuration.monoAudio { settings[AVNumberOfChannelsKey] = 1 }
         let input = AVAssetWriterInput(
             mediaType: .audio,
-            outputSettings: configuration.format.writerSettings
+            outputSettings: settings
         )
         input.expectsMediaDataInRealTime = false
         writer.add(input)
@@ -189,6 +165,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
             try? FileManager.default.removeItem(at: outputURL)
             throw ExportError.writerFailed(writer.error)
         }
+        NSLog("[Upshot] Audio export completed mono=%@ format=%@", String(configuration.monoAudio), configuration.format.rawValue)
         progress(1)
         return outputURL
     }
@@ -204,20 +181,13 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
     }
 }
 
-/// A soundtrack imported to stand in for the recording's own audio, with
-/// its track resolved once so Studio can rebuild the player item
-/// synchronously while the user drags a trim handle.
 nonisolated struct RecordingReplacementAudio {
     let url: URL
-    /// The file's name as the user chose it, for the inspector.
     let displayName: String
-    /// Held because a track doesn't keep its asset alive, and a track whose
-    /// asset is gone fails every insert into a composition.
     let asset: AVURLAsset
     let track: AVAssetTrack
     let duration: TimeInterval
 
-    /// Resolves a picked file, or nil when it carries no audio.
     static func load(url: URL, displayName: String) async -> RecordingReplacementAudio? {
         let asset = AVURLAsset(url: url)
         guard let track = try? await asset.loadTracks(withMediaType: .audio).first,

@@ -3014,7 +3014,8 @@ final class RecordingStudioModel {
             clipTimeline: clipTimeline,
             replacementURL: replacementAudio?.url,
             format: audioExportFormat,
-            volume: Double(audioVolume)
+            volume: Double(audioVolume),
+            monoAudio: exportDeliveryOptions.monoAudio
         )
         let suggestedFileName = audioExportSuggestedFileName
         let dockProgressID = DockExportProgressCoordinator.shared.start()

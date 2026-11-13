@@ -102,6 +102,7 @@ struct RecordingExportOptionsPopover: View {
 
                 InspectorHint(formatHint)
 
+                toggle("Mono audio", isOn: $delivery.monoAudio)
                 toggle("Include audio", isOn: Binding(
                     get: { !settings.removeAudio },
                     set: { settings.removeAudio = !$0 }

@@ -646,6 +646,7 @@ extension AgentTools {
             }
             model.audioExportFormat = format
         }
+        if let mono = arguments.raw["mono"]?.boolValue { model.exportDeliveryOptions.monoAudio = mono }
         let destination = try outputURL(arguments)
         model.audioExportState = .idle
         model.exportAudio()
