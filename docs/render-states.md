@@ -55,7 +55,7 @@ The renderer compares the real Application Support tree, configuration directory
 - Settings: General, Screenshots, Screen Recordings, Overlay, MCP, Cloud, and About; expanded panes; all keyboard shortcuts; each composed settings section; missing permissions; disabled MCP; configured, connected, and failed Cloud states.
 - Library: grid, list, empty, search results, empty search results, screenshot and recording filters, selected capture inspector, and multiple selection inspector.
 - Annotation editor: every annotation tool, generated annotations, clean image, crop, background inspector, border, camera, progressive blur, color adjustments, watermark, background picker, load failure, and New Style popover.
-- Studio: Look, selected zoom, selected layout, selected text, selected redaction, selected image, selected audio, Captions, transcript editing, crop, export progress, export failure, and share failure; expanded inspector controls; video and GIF export options; audio export options; New Style and Share Options popovers.
+- Studio: Look, selected zoom, selected layout, selected text, selected redaction, selected image, selected audio, Captions, transcript editing, crop, export progress, export failure, and share failure; one page per tool rail button (Camera, Zoom, Cursor, Keystrokes, Audio, Clip); video and GIF export options; audio export options; New Style and Share Options popovers.
 - Quick Access: one card, several cards, hover actions, tucked handle, image and video cards, compression and preparation activity, copied link, failed upload, compressed result, and failed action.
 - Pinned screenshots: default, hover toolbar, and square corners.
 - Capture History: every filter and the empty strip.
