@@ -318,11 +318,10 @@ enum StateRenderSource {
         ],
         "Upshot/SettingsCloudPane.swift": [
             ("struct CloudSettingsPane: View {", 6),
-            ("struct PingResponse: Decodable { let version: String? }", 392),
-            ("private enum ConnectionStatus: Equatable {", 461),
-            ("private struct WorkerVersionManifest: Decodable {", 468),
-            ("private struct SetupStepView: View {", 473),
-            ("private struct SetupVideoPlayer: NSViewRepresentable {", 493),
+            ("struct PingResponse: Decodable { let version: String? }", 372),
+            ("private enum ConnectionStatus: Equatable {", 396),
+            ("private struct WorkerVersionManifest: Decodable {", 403),
+            ("private struct SetupVideoPlayer: NSViewRepresentable {", 409),
         ],
         "Upshot/SettingsGeneralPane.swift": [
             ("struct SettingsGeneralPane: View {", 5),

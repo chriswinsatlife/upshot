@@ -19,7 +19,12 @@ struct CloudSettingsPane: View {
     @State private var latestWorkerVersion: String?
     @State private var updateGuideURL = "https://github.com/fayazara/screendrop-worker#updating-your-worker"
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedCredentialField: CredentialField?
+
     private static let versionManifestURL = "https://raw.githubusercontent.com/fayazara/screendrop-worker/main/version.json"
+    private static let workerRepositoryURL = "https://github.com/fayazara/screendrop-worker"
+    private static let deployToCloudflareURL = "https://deploy.workers.cloudflare.com/?url=https://github.com/fayazara/screendrop-worker"
 
     private var isWorkerOutdated: Bool {
         guard let deployed = deployedWorkerVersion, let latest = latestWorkerVersion else {
@@ -35,195 +40,49 @@ struct CloudSettingsPane: View {
 
     var body: some View {
         InterfaceFormPage {
+            InterfaceSection("Cloudflare Worker") {
+                uploadTokenRow
 
-            Section {
-                HStack(spacing: 12) {
-                    Text("Worker URL")
-                        .frame(width: 100, alignment: .leading)
-                    TextField("Worker URL", text: $workerURL, prompt: Text("https://…workers.dev"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1)
-                        .onChange(of: workerURL) { _, newValue in
-                            let cleaned = newValue.components(separatedBy: .whitespacesAndNewlines).joined()
-                            if cleaned != newValue {
-                                workerURL = cleaned
-                            }
-                            fieldDidChange()
-                        }
+                InterfaceRow("Worker") {
+                    Button("View on GitHub") {
+                        Self.open(Self.workerRepositoryURL)
+                    }
+                    Button("Deploy to Cloudflare") {
+                        Self.open(Self.deployToCloudflareURL)
+                    }
                 }
 
-                HStack(spacing: 12) {
-                    Text("Upload Token")
-                        .frame(width: 100, alignment: .leading)
-                    Group {
-                        if tokenRevealed {
-                            TextField("Upload Token", text: $uploadToken, prompt: Text("Paste your token"))
-                        } else {
-                            SecureField("Upload Token", text: $uploadToken, prompt: Text("Paste your token"))
-                        }
-                    }
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1)
-                    .onChange(of: uploadToken) { fieldDidChange() }
+                workerURLRow
 
-                    Button {
-                        tokenRevealed.toggle()
-                    } label: {
-                        Image(systemName: tokenRevealed ? "eye.slash" : "eye")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .disabled(uploadToken.isEmpty)
-                    .help(tokenRevealed ? "Hide token" : "Reveal token")
-                }
-
-                HStack(spacing: 8) {
-                    InterfaceActionButton(
-                        tokenCopied ? "Copied" : "Copy Token",
-                        systemImage: tokenCopied ? "checkmark" : "doc.on.doc"
-                    ) {
-                        copyToken()
-                    }
-                    .disabled(uploadToken.isEmpty)
-                    .motion(.morphQuick, value: tokenCopied)
-
-                    InterfaceActionButton("Regenerate", systemImage: "arrow.triangle.2.circlepath") {
-                        regenerateToken()
-                    }
-
-                    Spacer()
-
-                    if case .checking = workerStatus {
-                        connectionStatusIndicator(workerStatus)
-                    }
-                    InterfaceActionButton(
-                        workerStatus == .connected ? "Connected" : "Verify Connection",
-                        systemImage: workerStatus == .connected ? "checkmark.circle.fill" : "bolt.horizontal"
-                    ) {
-                        Task { await testWorkerConnection() }
-                    }
-                    .disabled(!isWorkerConfigured)
-                    .motion(.morphQuick, value: workerStatus == .connected)
-                }
-            } header: {
-                Text("Connection")
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    if case .failed(let message) = workerStatus {
-                        Label(message, systemImage: "xmark.circle.fill")
-                            .foregroundStyle(Palette.record)
-                            .font(.callout)
-                    }
-                    Text("Paste this token as the **UPLOAD_TOKEN** secret when you deploy the worker to Cloudflare.")
-                }
-            }
-
-            if isWorkerOutdated {
-                Section {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .foregroundStyle(Palette.warning)
-                            .font(.title3)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Worker update available")
-                                .font(.callout.weight(.medium))
-                            if let deployed = deployedWorkerVersion, let latest = latestWorkerVersion {
-                                Text("v\(deployed) → v\(latest)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        InterfaceActionButton("How to Update") {
-                            if let url = URL(string: updateGuideURL) {
-                                NSWorkspace.shared.open(url)
-                            }
+                if isWorkerOutdated, let deployed = deployedWorkerVersion, let latest = latestWorkerVersion {
+                    InterfaceRow("Worker update available", detail: "v\(deployed) → v\(latest)") {
+                        Button("How to Update") {
+                            Self.open(updateGuideURL)
                         }
                     }
                 }
             }
 
-            Section {
-                GlassActionCapsule(
-                    title: "Deploy to Cloudflare",
-                    systemImage: "cloud.fill",
-                    isProminent: true
-                ) {
-                    if let url = URL(string: "https://deploy.workers.cloudflare.com/?url=https://github.com/fayazara/screendrop-worker") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .padding(.vertical, 2)
-
-                Button {
-                    withAnimation(.morphIfAllowed) {
-                        setupGuideExpanded.toggle()
-                    }
+            InterfaceSection(nil) {
+                DisclosureGroup(isExpanded: $setupGuideExpanded.animation(reduceMotion ? nil : .fold)) {
+                    InterfaceRow("1. Copy the upload token") {}
+                    InterfaceRow(
+                        "2. Click Deploy to Cloudflare",
+                        detail: "Cloudflare clones the worker, creates its R2 and D1 storage, and asks for the UPLOAD_TOKEN secret. Paste the upload token there."
+                    ) {}
+                    InterfaceRow("3. Paste the worker URL and click Verify") {}
+                    SetupVideoPlayer()
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.thumbnail, style: .continuous))
+                        .padding(.vertical, Space.xs)
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(setupGuideExpanded ? 90 : 0))
-                        Text("Setup steps & demo")
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
+                    InterfaceRowLabel("Setup Guide")
                 }
-                .buttonStyle(.plain)
-
-                if setupGuideExpanded {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SetupStepView(
-                            number: 1,
-                            text: "Copy the upload token above - you'll paste it into Cloudflare in the next step."
-                        )
-                        SetupStepView(
-                            number: 2,
-                            text: "Click \"Deploy to Cloudflare\". It clones the worker, provisions R2 + D1, and asks for the UPLOAD_TOKEN secret - paste the token you copied."
-                        )
-                        SetupStepView(
-                            number: 3,
-                            text: "Paste your worker URL above, then click \"Verify Connection\" to finish setup and confirm."
-                        )
-
-                        SetupVideoPlayer()
-                            .frame(height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.thumbnail, style: .continuous))
-                    }
-                    .padding(.top, 4)
-                }
-            } header: {
-                HStack {
-                    Text("Setup Guide")
-                    Spacer()
-                    InterfaceActionButton("View on GitHub") {
-                        if let url = URL(string: "https://github.com/fayazara/screendrop-worker") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(overallStatusColor)
-                        .frame(width: 7, height: 7)
-
-                    Text(overallStatusText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
             }
         }
         .onAppear {
             loadFromStore()
+            Task { focusedCredentialField = nil }
         }
         .task {
             guard !UpshotStorage.isRenderingStates else { return }
@@ -233,12 +92,138 @@ struct CloudSettingsPane: View {
         }
     }
 
+    private var uploadTokenRow: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            InterfaceRow("Upload Token") {
+                Button(tokenRevealed ? "Hide" : "Show") {
+                    tokenRevealed.toggle()
+                }
+                .disabled(uploadToken.isEmpty)
+                .help(tokenRevealed ? "Hide token" : "Reveal token")
+
+                Button(tokenCopied ? "Copied" : "Copy") {
+                    copyToken()
+                }
+                .disabled(uploadToken.isEmpty)
+                .motion(.morphQuick, value: tokenCopied)
+
+                Button("Regenerate") {
+                    regenerateToken()
+                }
+            }
+
+            Group {
+                if tokenRevealed {
+                    TextField("", text: $uploadToken, prompt: Text("Paste your token"))
+                } else {
+                    SecureField("", text: $uploadToken, prompt: Text("Paste your token"))
+                }
+            }
+            .labelsHidden()
+            .font(.dsBody)
+            .lineLimit(1)
+            .interfaceFieldChrome()
+            .focused($focusedCredentialField, equals: .uploadToken)
+            .accessibilityLabel("Upload Token")
+            .onChange(of: uploadToken) { fieldDidChange() }
+        }
+        .padding(.bottom, Space.xs)
+    }
+
+    private var workerURLRow: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            InterfaceRow("Worker URL", detail: connectionFailureMessage, detailIsCritical: true) {
+                connectionStatusLabel
+                    .motion(.morphQuick, value: workerStatus)
+                Button("Verify") {
+                    Task { await testWorkerConnection() }
+                }
+                .disabled(!isWorkerConfigured)
+            }
+
+            TextField("", text: $workerURL, prompt: Text("https://…workers.dev"))
+                .labelsHidden()
+                .font(.dsBody)
+                .lineLimit(1)
+                .multilineTextAlignment(.leading)
+                .interfaceFieldChrome()
+                .focused($focusedCredentialField, equals: .workerURL)
+                .accessibilityLabel("Worker URL")
+                .onChange(of: workerURL) { _, newValue in
+                    let cleaned = newValue.components(separatedBy: .whitespacesAndNewlines).joined()
+                    if cleaned != newValue {
+                        workerURL = cleaned
+                    }
+                    fieldDidChange()
+                }
+        }
+        .padding(.bottom, Space.xs)
+    }
+
+    private var connectionFailureMessage: String? {
+        if case .failed(let message) = workerStatus {
+            return message
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var connectionStatusLabel: some View {
+        if !isWorkerConfigured {
+            Text("Not configured")
+                .font(.dsBody)
+                .foregroundStyle(Palette.secondaryLabel)
+        } else {
+            switch workerStatus {
+            case .unchecked:
+                Text("Not verified")
+                    .font(.dsBody)
+                    .foregroundStyle(Palette.secondaryLabel)
+            case .checking:
+                HStack(spacing: Space.s) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking…")
+                        .font(.dsBody)
+                        .foregroundStyle(Palette.secondaryLabel)
+                }
+            case .connected:
+                HStack(spacing: Space.xs) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: IconSize.row))
+                        .foregroundStyle(Palette.success)
+                    Text("Connected")
+                        .font(.dsBody)
+                        .foregroundStyle(Palette.label)
+                }
+            case .failed:
+                HStack(spacing: Space.xs) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: IconSize.row))
+                    Text("Failed")
+                        .font(.dsBody)
+                }
+                .foregroundStyle(Palette.destructiveLabel)
+            }
+        }
+    }
+
+    private static func open(_ address: String) {
+        if let url = URL(string: address) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     private func loadFromStore() {
         if UpshotStorage.isRenderingStates {
             workerURL = StateRenderer.scenario.contains("configured") || StateRenderer.scenario.contains("connected") || StateRenderer.scenario.contains("failed") ? "https://uploads.example.com" : ""
             uploadToken = String(repeating: "0", count: 64)
-            setupGuideExpanded = !StateRenderer.scenario.contains("configured")
+            setupGuideExpanded = workerURL.isEmpty
             workerStatus = StateRenderer.scenario.contains("connected") ? .connected : StateRenderer.scenario.contains("failed") ? .failed("Could not connect to the worker.") : .unchecked
+            if StateRenderer.scenario.contains("update") {
+                deployedWorkerVersion = "1.2.0"
+                latestWorkerVersion = "1.3.0"
+            }
             isLoading = false
             return
         }
@@ -411,51 +396,6 @@ struct CloudSettingsPane: View {
         return false
     }
 
-    private var overallStatusColor: Color {
-        if isWorkerConfigured {
-            if workerStatus == .connected {
-                return Palette.success
-            }
-            return Palette.warning
-        }
-        return .gray
-    }
-
-    private var overallStatusText: String {
-        if !isWorkerConfigured {
-            return "Not configured"
-        }
-        if workerStatus == .connected {
-            return "Connected"
-        }
-        return "Not verified"
-    }
-
-    @ViewBuilder
-    private func connectionStatusIndicator(_ status: ConnectionStatus) -> some View {
-        switch status {
-        case .unchecked:
-            EmptyView()
-        case .checking:
-            ProgressView()
-                .scaleEffect(0.6)
-                .frame(width: 16, height: 16)
-        case .connected:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Palette.success)
-                .font(.system(size: 13))
-        case .failed(let message):
-            HStack(spacing: 4) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Palette.record)
-                    .font(.system(size: 13))
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.record)
-                    .lineLimit(1)
-            }
-        }
-    }
 }
 
 private enum ConnectionStatus: Equatable {
@@ -470,25 +410,6 @@ private struct WorkerVersionManifest: Decodable {
     let updateGuide: String?
 }
 
-private struct SetupStepView: View {
-    let number: Int
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("\(number)")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(Palette.label)
-                .frame(width: 22, height: 22)
-                .glassEffect(.regular, in: .circle)
-
-            Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineSpacing(2)
-        }
-    }
-}
 
 private struct SetupVideoPlayer: NSViewRepresentable {
     private static let videoURL = URL(string: "https://static.fayazahmed.com/8130A265-enable-cloud-screendrop.mp4")!
@@ -504,4 +425,9 @@ private struct SetupVideoPlayer: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: AVPlayerView, context: Context) {}
+}
+
+private enum CredentialField: Hashable {
+    case uploadToken
+    case workerURL
 }
