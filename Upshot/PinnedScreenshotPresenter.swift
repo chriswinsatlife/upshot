@@ -130,29 +130,33 @@ struct PinnedScreenshotView: View {
     let url: URL
     let onClose: () -> Void
 
-    @State private var isHovered = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("hover")
-    @State private var didCopy = false
+    @State private var isHovered = UpshotStorage.isRenderingStates && ["hover", "copied"].contains { StateRenderer.scenario.contains($0) }
+    @State private var didCopy = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("copied")
     @AppStorage(UpshotPreferences.pinnedScreenshotRoundedCornersKey) private var roundedCorners = true
     @AppStorage(UpshotPreferences.pinnedScreenshotBorderKey) private var border = true
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: roundedCorners ? 10 : 0, style: .continuous)
+        RoundedRectangle(cornerRadius: roundedCorners ? Radius.nested(inner: Radius.panel, padding: Space.s) : 0, style: .continuous)
     }
 
     var body: some View {
         Image(nsImage: image)
             .resizable()
+            .interpolation(.high)
             .aspectRatio(contentMode: .fill)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(shape)
             .overlay {
-                shape.strokeBorder(.white.opacity(border ? 0.25 : 0), lineWidth: 1)
+                shape
+                    .strokeBorder(Palette.floatingStroke, lineWidth: 1)
+                    .opacity(border ? 1 : 0)
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .top) {
                 if isHovered {
-                    toolbar
-                        .padding(8)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    controls
+                        .padding(Space.s)
+                        .transition(.opacity)
                 }
             }
             .contentShape(shape)
@@ -168,38 +172,47 @@ struct PinnedScreenshotView: View {
                 Divider()
                 Button("Close Pin") { onClose() }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Pinned Screenshot")
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 6) {
-            toolbarButton(systemImage: "xmark", help: "Close pin", action: onClose)
-
-            Spacer(minLength: 0)
-
-            toolbarButton(
-                systemImage: didCopy ? "checkmark" : "doc.on.doc",
-                help: "Copy to clipboard",
-                action: copy
-            )
-            toolbarButton(systemImage: "square.and.arrow.down", help: "Save…", action: save)
+    private var controls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 0) {
+                closePanel
+                Spacer(minLength: Space.m)
+                actionPanel
+            }
+            HStack(alignment: .top, spacing: 0) {
+                closePanel
+                Spacer(minLength: 0)
+            }
+            Color.clear
+                .frame(width: 0, height: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
-        .glassEffect(.regular, in: .capsule)
-        .environment(\.colorScheme, .dark)
     }
 
-    private func toolbarButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .contentTransition(.symbolEffect(.replace.downUp))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+    private var closePanel: some View {
+        InterfacePanel {
+            InterfaceToolbarButton("Close Pin", systemImage: "xmark", labelPlacement: .hidden, action: onClose)
         }
-        .buttonStyle(.plain)
-        .help(help)
+        .fixedSize()
+    }
+
+    private var actionPanel: some View {
+        InterfacePanel {
+            HStack(spacing: Space.xxs) {
+                InterfaceToolbarButton(
+                    didCopy ? "Copied" : "Copy",
+                    systemImage: didCopy ? "checkmark" : "doc.on.doc",
+                    labelPlacement: .hidden,
+                    tint: didCopy ? Palette.success : nil,
+                    action: copy
+                )
+                InterfaceToolbarButton("Save…", systemImage: "square.and.arrow.down", labelPlacement: .hidden, action: save)
+            }
+        }
+        .fixedSize()
     }
 
     private func copy() {

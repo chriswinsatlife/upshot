@@ -99,10 +99,25 @@ enum StateRenderSupplementalCatalog {
             model.errorMessage = "The screenshot could not be opened."
             return AnyView(AnnotationEditorWindow(url: .constant(fixtures.screenshots[0]), renderModel: model))
         }
-        for variant in ["normal", "hover", "square"] {
-            add("pinned-\(variant)", "PinnedScreenshotPresenter", "struct PinnedScreenshotView", 640, 400) {
-                UpshotStorage.defaults.set(variant != "square", forKey: UpshotPreferences.pinnedScreenshotRoundedCornersKey)
-                return AnyView(PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {}))
+        let pinnedVariants: [(name: String, size: CGSize)] = [
+            ("normal", CGSize(width: 560, height: 350)),
+            ("hover", CGSize(width: 560, height: 350)),
+            ("copied", CGSize(width: 560, height: 350)),
+            ("square", CGSize(width: 560, height: 350)),
+            ("no-border", CGSize(width: 560, height: 350)),
+            ("small-hover", CGSize(width: 240, height: 150)),
+            ("compact-hover", CGSize(width: 160, height: 100)),
+            ("minimum-hover", CGSize(width: 128, height: 80))
+        ]
+        for variant in pinnedVariants {
+            add("pinned-\(variant.name)", "PinnedScreenshotPresenter", "struct PinnedScreenshotView", variant.size.width + 80, variant.size.height + 80) {
+                UpshotStorage.defaults.set(variant.name != "square", forKey: UpshotPreferences.pinnedScreenshotRoundedCornersKey)
+                UpshotStorage.defaults.set(variant.name != "no-border", forKey: UpshotPreferences.pinnedScreenshotBorderKey)
+                return AnyView(
+                    PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {})
+                        .frame(width: variant.size.width, height: variant.size.height)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                )
             }
         }
         for filter in ["capture-actions", "recording-controls", "history", "projects"] {
