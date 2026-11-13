@@ -39,6 +39,11 @@ final class HotkeyShortcutRecorder {
         HotkeyManager.shared.resumeAfterShortcutRecording()
     }
 
+    func presentRecordingForRendering() {
+        precondition(UpshotStorage.isRenderingStates)
+        isRecording = true
+    }
+
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard isRecording else { return event }
 

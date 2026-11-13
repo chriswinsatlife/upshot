@@ -1,157 +1,160 @@
 import AppKit
+import Observation
 import SwiftUI
 
-struct CaptureHotkeySettingsSection: View {
-    let actions: [CaptureHotkeyAction]
-    @State private var searchText = ""
-    @State private var showsAllActions = UpshotStorage.isRenderingStates && StateRenderer.scenario == "settings-shortcuts-expanded"
+@MainActor
+@Observable
+final class CaptureHotkeySettingsModel {
+    private(set) var shortcuts = CaptureHotkeyPreferences.shortcuts()
+    private(set) var recordingAction: CaptureHotkeyAction?
+    private(set) var rejectedAttempts: [CaptureHotkeyAction: String] = [:]
 
-    @State private var shortcuts = CaptureHotkeyPreferences.shortcuts()
-    @State private var recorder = HotkeyShortcutRecorder()
-    @State private var recordingAction: CaptureHotkeyAction?
-    @State private var errorMessage: String?
+    @ObservationIgnored private let recorder = HotkeyShortcutRecorder()
 
-    var body: some View {
-        Section("Keyboard Shortcuts") {
-            TextField("Search all shortcuts", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-            Toggle("Show all actions", isOn: $showsAllActions)
-            ForEach(visibleActions) { action in
-                LabeledContent(action.title) {
-                    HStack(spacing: 8) {
-                        if shortcut(for: action) != action.defaultShortcut, !isRecording(action) {
-                            InspectorResetButton(help: "Restore the default shortcut") {
-                                resetShortcut(for: action)
-                            }
-                            .transition(.blurPop)
-                        }
-
-                        ZStack {
-                            if isRecording(action) {
-                                Text("Press keys…")
-                                    .font(.system(size: 11.5, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .phaseAnimator([1.0, 0.45]) { content, opacity in
-                                        content.opacity(opacity)
-                                    } animation: { _ in .easeInOut(duration: 0.7) }
-                                    .transition(.blurPop)
-                            } else {
-                                KeyCaps(tokens: shortcut(for: action)?.displayTokens ?? ["Unassigned"])
-                                    .transition(.blurPop)
-                            }
-                        }
-
-                        if shortcut(for: action) != nil, !isRecording(action) {
-                            InterfaceActionButton("Clear") { apply(nil, to: action) }
-                        }
-                        InterfaceActionButton(isRecording(action) ? "Cancel" : "Record") {
-                            toggleRecording(for: action)
-                        }
-                    }
-                    .motion(.morphQuick, value: isRecording(action))
-                    .motion(.morphQuick, value: shortcut(for: action))
-                }
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(Palette.record)
-            }
-
-            ForEach(visibleActions) { action in
-                if let failure = HotkeyManager.shared.registrationErrors[action] {
-                    Text("\(action.title): \(failure)")
-                        .font(.caption)
-                        .foregroundStyle(Palette.record)
-                }
-            }
-
-            if recordingAction != nil {
-                Text("Press a key combination with at least one modifier. Press Esc to cancel.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+    init() {
+        recorder.onShortcutRecorded = { [weak self] shortcut in
+            guard let self, let action = self.recordingAction else { return }
+            self.apply(shortcut, to: action)
         }
-        .onAppear {
-            reloadShortcuts()
-            configureRecorder()
-        }
-        .onDisappear {
-            recorder.stop()
-            recordingAction = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-            reloadShortcuts()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-            recorder.stop()
-            recordingAction = nil
+        recorder.onCancel = { [weak self] in
+            guard let self, let action = self.recordingAction else { return }
+            self.recordingAction = nil
+            AppLog.event("settings", "shortcut_recording_cancelled", fields: ["action": action.route])
         }
     }
 
-    private var visibleActions: [CaptureHotkeyAction] {
-        let catalog = showsAllActions || !searchText.isEmpty ? CaptureHotkeyAction.allCases : actions
-        return catalog.filter { searchText.isEmpty || $0.title.localizedStandardContains(searchText) || $0.route.localizedStandardContains(searchText) }
-    }
-
-    private func shortcut(for action: CaptureHotkeyAction) -> HotkeyShortcut? {
+    func shortcut(for action: CaptureHotkeyAction) -> HotkeyShortcut? {
         shortcuts[action]
     }
 
-    private func isRecording(_ action: CaptureHotkeyAction) -> Bool {
-        recorder.isRecording && recordingAction == action
+    func isRecording(_ action: CaptureHotkeyAction) -> Bool {
+        recordingAction == action && recorder.isRecording
     }
 
-    private func toggleRecording(for action: CaptureHotkeyAction) {
-        errorMessage = nil
+    func isCustomized(_ action: CaptureHotkeyAction) -> Bool {
+        action.defaultShortcut != nil && shortcut(for: action) != action.defaultShortcut
+    }
 
+    func failure(for action: CaptureHotkeyAction) -> String? {
+        rejectedAttempts[action] ?? HotkeyManager.shared.registrationErrors[action]
+    }
+
+    func toggleRecording(for action: CaptureHotkeyAction) {
+        rejectedAttempts[action] = nil
         if isRecording(action) {
-            recorder.stop()
-            recordingAction = nil
+            stopRecording()
+            AppLog.event("settings", "shortcut_recording_cancelled", fields: ["action": action.route])
             return
         }
-
+        if let previous = recordingAction {
+            rejectedAttempts[previous] = nil
+        }
         recordingAction = action
         recorder.start()
+        AppLog.event("settings", "shortcut_recording_started", fields: ["action": action.route])
     }
 
-    private func resetShortcut(for action: CaptureHotkeyAction) {
-        apply(action.defaultShortcut, to: action)
-    }
-
-    private func configureRecorder() {
-        recorder.onShortcutRecorded = { shortcut in
-            guard let recordingAction else { return }
-            apply(shortcut, to: recordingAction)
-        }
-
-        recorder.onCancel = {
-            recordingAction = nil
-        }
-    }
-
-    private func apply(_ shortcut: HotkeyShortcut?, to action: CaptureHotkeyAction) {
-        if let shortcut, let conflict = CaptureHotkeyPreferences.conflictingAction(for: shortcut, excluding: action) {
-            errorMessage = "\(shortcut.displayString) is already assigned to \(conflict.title)."
-            NSSound.beep()
-            recorder.stop()
-            recordingAction = nil
-            return
-        }
-
-        do {
-            try HotkeyManager.shared.setShortcut(shortcut, for: action)
-            shortcuts[action] = shortcut
-            errorMessage = nil
-        } catch {
-            errorMessage = "\(error.localizedDescription) Your previous shortcut has been kept."
-            NSSound.beep()
-        }
+    func stopRecording() {
+        recorder.stop()
         recordingAction = nil
     }
 
-    private func reloadShortcuts() {
+    func clear(_ action: CaptureHotkeyAction) {
+        apply(nil, to: action)
+    }
+
+    func reset(_ action: CaptureHotkeyAction) {
+        apply(action.defaultShortcut, to: action)
+    }
+
+    func reload() {
         shortcuts = CaptureHotkeyPreferences.shortcuts()
+    }
+
+    private func apply(_ shortcut: HotkeyShortcut?, to action: CaptureHotkeyAction) {
+        recordingAction = nil
+        if let shortcut, let conflict = CaptureHotkeyPreferences.conflictingAction(for: shortcut, excluding: action) {
+            recorder.stop()
+            reject(Self.conflictMessage(for: shortcut, conflict: conflict), for: action, reason: "conflict")
+            return
+        }
+        do {
+            try HotkeyManager.shared.setShortcut(shortcut, for: action)
+            shortcuts[action] = shortcut
+            rejectedAttempts[action] = nil
+        } catch {
+            reject(error.localizedDescription, for: action, reason: "registration")
+        }
+    }
+
+    private func reject(_ message: String, for action: CaptureHotkeyAction, reason: String) {
+        rejectedAttempts[action] = message
+        NSSound.beep()
+        AppLog.event("settings", "shortcut_rejected", fields: ["action": action.route, "reason": reason])
+    }
+
+    static func conflictMessage(for shortcut: HotkeyShortcut, conflict: CaptureHotkeyAction) -> String {
+        "\(shortcut.displayTokens.joined()) is assigned to \(conflict.title)."
+    }
+
+    func presentRecordingForRendering(_ action: CaptureHotkeyAction) {
+        precondition(UpshotStorage.isRenderingStates)
+        recordingAction = action
+        recorder.presentRecordingForRendering()
+    }
+
+    func presentRejectionForRendering(_ message: String, for action: CaptureHotkeyAction) {
+        precondition(UpshotStorage.isRenderingStates)
+        rejectedAttempts[action] = message
+    }
+}
+
+struct CaptureHotkeyShortcutRow: View {
+    let action: CaptureHotkeyAction
+    let model: CaptureHotkeySettingsModel
+
+    var body: some View {
+        let isRecording = model.isRecording(action)
+        InterfaceShortcutRow(
+            action.title,
+            detail: isRecording ? "Include ⌘, ⌥, ⌃, or ⇧. Press Esc to cancel." : nil,
+            keys: model.shortcut(for: action)?.displayTokens,
+            isRecording: isRecording,
+            isCustomized: model.isCustomized(action),
+            failure: isRecording ? nil : model.failure(for: action),
+            onRecord: { model.toggleRecording(for: action) },
+            onClear: { model.clear(action) },
+            onReset: { model.reset(action) }
+        )
+    }
+}
+
+struct CaptureHotkeySettingsLifecycle: ViewModifier {
+    let model: CaptureHotkeySettingsModel
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { model.reload() }
+            .onDisappear { model.stopRecording() }
+            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+                model.reload()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                model.stopRecording()
+            }
+    }
+}
+
+struct CaptureHotkeySettingsSection: View {
+    let actions: [CaptureHotkeyAction]
+    @State private var model = CaptureHotkeySettingsModel()
+
+    var body: some View {
+        InterfaceSection("Keyboard Shortcuts") {
+            ForEach(actions) { action in
+                CaptureHotkeyShortcutRow(action: action, model: model)
+            }
+        }
+        .modifier(CaptureHotkeySettingsLifecycle(model: model))
     }
 }
