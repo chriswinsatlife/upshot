@@ -23,6 +23,7 @@ final class AnnotationEditorModel {
     var backgroundSettings = AnnotationBackgroundSettings()
     var appliedBackgroundPresetID: AnnotationBackgroundPreset.ID?
     var previewBackground: AnnotationBackgroundStyle?
+    var isProcessingImage = false
     var errorMessage: String?
     var isSmartRedacting = false
     var smartRedactionMessage: String?
@@ -43,16 +44,16 @@ final class AnnotationEditorModel {
     var textIsUnderline = false
     var textAlignment: NSTextAlignment = .left
 
-    private struct CropSnapshot {
+    struct CropSnapshot {
         var baseImageURL: URL?
         var imageSize: CGSize
         var shapes: [AnnoShape]
         var bindings: [ArrowBinding]
     }
 
-    private var cropUndoStack: [CropSnapshot] = []
-    private var cropRedoStack: [CropSnapshot] = []
-    private var ownedCropURLs: Set<URL> = []
+    var cropUndoStack: [CropSnapshot] = []
+    var cropRedoStack: [CropSnapshot] = []
+    var ownedCropURLs: Set<URL> = []
 
     let previewImageMaxPixelSize: CGFloat = 2880
     @ObservationIgnored private var wallpaperCacheLease: BoundedCGImageCache.Lease?
@@ -164,7 +165,7 @@ final class AnnotationEditorModel {
         markSaved()
     }
 
-    private func makePreviewImage(from url: URL) -> NSImage? {
+    func makePreviewImage(from url: URL) -> NSImage? {
         if UpshotPreferences.lowResolutionEditorPreview {
             isPreviewDownscaled = max(imageSize.width, imageSize.height) > previewImageMaxPixelSize
             return ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: previewImageMaxPixelSize)
@@ -735,7 +736,7 @@ extension AnnotationEditorModel {
         restore(next)
     }
 
-    private func currentCropSnapshot() -> CropSnapshot? {
+    func currentCropSnapshot() -> CropSnapshot? {
         let stableBaseURL: URL?
         if let baseImageURL {
             guard let snapshotURL = stableCropSnapshotURL(for: baseImageURL) else { return nil }

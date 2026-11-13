@@ -21,19 +21,20 @@ struct AnnotationEditorWindow: View {
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
 
-    private var isBusy: Bool { isSaving || isFinishing || isUploading || model.isCommitting }
+    private var isBusy: Bool { isSaving || isFinishing || isUploading || model.isCommitting || model.isProcessingImage }
 
     var body: some View {
         mainContent
             .modifier(AnnotationEditorWindowLevel())
             .modifier(AnnotationColorPreview(model: model))
-            .disabled(model.isCommitting)
-            .allowsHitTesting(!model.isCommitting)
+            .disabled(model.isCommitting || model.isProcessingImage)
+            .allowsHitTesting(!model.isCommitting && !model.isProcessingImage)
             .modifier(CaptureLibraryEditorRegistration(url: url))
             .navigationTitle("Upshot Annotate")
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    AnnotationImageOperationsMenu(model: model)
                     toolbarActions
                 }
             }
@@ -77,7 +78,7 @@ struct AnnotationEditorWindow: View {
                 closeGuard.refreshDocumentEdited()
             }
             .background(AnnotationKeyCommandHandler(
-                isEnabled: { !model.isCommitting },
+                isEnabled: { !model.isCommitting && !model.isProcessingImage },
                 onDelete: model.deleteSelectedAnnotation,
                 onSave: saveEdits,
                 onUndo: model.undo,

@@ -172,6 +172,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
     var rotation: Double = 0
     var opacity: Double = 1
     var castsShadow: Bool?
+    var isVerticallyFlipped: Bool?
     var kind: AnnoShapeKind
 
     init(
@@ -193,7 +194,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
     }
 
     var pageTransform: Mat {
-        Mat.compose(x: x, y: y, rotation: rotation)
+        Mat.multiply(Mat.compose(x: x, y: y, rotation: rotation), Mat.scale(1, isVerticallyFlipped == true ? -1 : 1))
     }
 
     var strokeWidth: Double {
