@@ -33,7 +33,7 @@ struct CaptureHistoryStrip: View {
     static let screenMargin = Space.m
     static let headerHeight: CGFloat = 40
     static let capturesHeight = thumbnailSize.height + InterfaceMetrics.controlHeight + Space.m + Space.s * 2
-    static let preferredHeight = screenMargin * 2 + InterfaceMetrics.floatingPanelPadding * 2 + headerHeight + Space.s + capturesHeight + Space.s
+    static let preferredHeight = screenMargin * 2 + InterfaceMetrics.floatingPanelPadding * 2 + headerHeight + Space.s + capturesHeight
 
     private static let filterOptions = CaptureHistoryFilter.allCases.map {
         InterfaceModeSwitchOption(value: $0, title: $0.title)
@@ -42,10 +42,13 @@ struct CaptureHistoryStrip: View {
     var body: some View {
         VStack(spacing: Space.s) {
             header
+                .padding(.horizontal, InterfaceMetrics.floatingPanelPadding)
+                .padding(.top, InterfaceMetrics.floatingPanelPadding)
             captures
         }
-        .padding(InterfaceMetrics.floatingPanelPadding)
+        .padding(.bottom, InterfaceMetrics.floatingPanelPadding)
         .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
         .interfacePanelSurface(.panel)
         .padding(Self.screenMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -100,7 +103,6 @@ struct CaptureHistoryStrip: View {
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }
         }
-        .padding(.bottom, Space.s)
     }
 
     @ViewBuilder
@@ -167,6 +169,6 @@ private struct CaptureHistoryCard: View {
     private var kindSymbol: String {
         if item.session != nil { return "film" }
         if item.fileURL.pathExtension.lowercased() == "gif" { return "photo.stack" }
-        return item.isVideo ? "video.fill" : "photo"
+        return item.isVideo ? "video" : "photo"
     }
 }

@@ -81,7 +81,7 @@ enum StateRenderSource {
         "Upshot/CaptureHistoryView.swift": [
             ("struct CaptureHistoryView: View {", 3),
             ("struct CaptureHistoryStrip: View {", 23),
-            ("private struct CaptureHistoryCard: View {", 123),
+            ("private struct CaptureHistoryCard: View {", 125),
         ],
         "Upshot/CaptureLibraryInspector.swift": [
             ("struct CaptureLibraryInspector: View {", 7),
