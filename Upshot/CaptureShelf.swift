@@ -287,13 +287,18 @@ final class CaptureShelf {
         return shelf.perform(action, id: item.id)
     }
 
-    @discardableResult
-    func perform(_ action: OverlayCardAction, id: ShelfItem.ID) -> Bool {
+    func canPerform(_ action: OverlayCardAction, id: ShelfItem.ID) -> Bool {
         guard let item = item(id: id), item.activity == nil, draggingID == nil,
               !CloudUploader.shared.uploadingItems.contains(id) else { return false }
         if (action == .pin || action == .compress) && item.kind != .image { return false }
         if action == .delete && isOpenInEditor(id: id) { return false }
         if action == .upload && !CloudUploader.shared.isConfigured { return false }
+        return true
+    }
+
+    @discardableResult
+    func perform(_ action: OverlayCardAction, id: ShelfItem.ID) -> Bool {
+        guard canPerform(action, id: id) else { return false }
 
         switch action {
         case .copy: copy(id: id)

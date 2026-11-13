@@ -84,10 +84,12 @@ final class CaptureShelfPresenter {
 
 
     private func installMonitors() {
+        CaptureShelfKeyboardShortcuts.shared.start()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             Self.handleKey(event) ? nil : event
         }
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 49 || event.keyCode == 53 else { return }
             _ = Self.handleKey(event)
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -100,6 +102,7 @@ final class CaptureShelfPresenter {
     }
 
     private func removeMonitors() {
+        CaptureShelfKeyboardShortcuts.shared.stop()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let globalKeyMonitor { NSEvent.removeMonitor(globalKeyMonitor) }
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
@@ -126,18 +129,7 @@ final class CaptureShelfPresenter {
             return true
         default:
             guard !QuickLookPreviewPresenter.isShown else { return false }
-            let action: OverlayCardAction
-            if event.keyCode == 51 || event.keyCode == 117 {
-                action = .close
-            } else {
-                switch event.charactersIgnoringModifiers?.lowercased() {
-                case "c": action = .copy
-                case "s": action = .save
-                case "e": action = .annotate
-                case "p": action = .pin
-                default: return false
-                }
-            }
+            guard let action = CaptureShelfKeyboardShortcuts.action(for: event) else { return false }
             guard let item = shelf.hoveredItem, CaptureShelf.performHoveredAction(action) else { return false }
             NSLog("Quick Access hover shortcut item=%@ action=%@ outcome=dispatched", item.id.uuidString, action.rawValue)
             return true

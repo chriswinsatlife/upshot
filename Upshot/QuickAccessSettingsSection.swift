@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct QuickAccessSettingsSection: View {
@@ -9,6 +10,7 @@ struct QuickAccessSettingsSection: View {
     @AppStorage(UpshotPreferences.pinnedScreenshotRoundedCornersKey) private var pinnedRoundedCorners = true
     @AppStorage(UpshotPreferences.pinnedScreenshotShadowKey) private var pinnedShadow = true
     @AppStorage(UpshotPreferences.pinnedScreenshotBorderKey) private var pinnedBorder = true
+    @State private var accessibilityGranted = CaptureShelfKeyboardShortcuts.accessibilityGranted
 
     var body: some View {
         Section("Quick Access") {
@@ -30,6 +32,15 @@ struct QuickAccessSettingsSection: View {
             Text("Hover over a card: C copies, S saves, E edits, P pins a screenshot, Delete closes, and Space opens Quick Look. Hold Option while dragging to keep the card.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !accessibilityGranted {
+                Button("Enable Shortcuts in Other Apps…") {
+                    CaptureShelfKeyboardShortcuts.requestAccessibility()
+                    accessibilityGranted = CaptureShelfKeyboardShortcuts.accessibilityGranted
+                }
+                Text("Accessibility access lets card shortcuts consume the key before another app receives the key.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Picker("Swipe toward screen edge", selection: $swipeTowardEdgeAction) {
                 ForEach(QuickAccessSwipeAction.allCases) { action in
                     Text(action.title).tag(action)
@@ -51,6 +62,9 @@ struct QuickAccessSettingsSection: View {
                 .toggleStyle(.ink)
             Toggle("Border", isOn: $pinnedBorder)
                 .toggleStyle(.ink)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityGranted = CaptureShelfKeyboardShortcuts.accessibilityGranted
         }
     }
 }
