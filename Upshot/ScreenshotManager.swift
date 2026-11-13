@@ -2,6 +2,7 @@
 import SwiftUI
 import CoreGraphics
 import ImageIO
+import ScreenCaptureKit
 
 @Observable
 final class ScreenshotManager {
@@ -122,7 +123,7 @@ final class ScreenshotManager {
             return url
         }
         guard let image = try await image(for: selection, delaySeconds: delaySeconds) else { return nil }
-        let scale = selection.snapshots.filter { $0.frame.intersects(selection.rect) }.map(\.scale).max() ?? 1
+        let scale = selection.composedImageScale ?? selection.snapshots.filter { $0.frame.intersects(selection.rect) }.map(\.scale).max() ?? 1
         let topLeft = ActiveDisplayResolver.quartzPoint(fromAppKit: CGPoint(x: selection.rect.minX, y: selection.rect.maxY))
         let bounds = CGRect(origin: topLeft, size: selection.rect.size)
         let delayedCursor = delaySeconds > 0 ? ScreenshotCursorService.snapshot() : selection.cursor
@@ -172,6 +173,15 @@ final class ScreenshotManager {
         guard !Task.isCancelled else { return nil }
         if delaySeconds == 0, let image = selection.composedImage { return image }
         guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
+        if case .window(let windowID) = selection.kind {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let window = content.windows.first(where: { $0.windowID == windowID }) else { throw CocoaError(.fileReadUnknown) }
+            let snapshot = try await AreaCaptureWindowSnapshot.capture(window: window, includeShadow: false, eventTime: selection.selectionTime)
+            if let eventTime = selection.selectionTime {
+                snapshot.logTiming(windowID: windowID, shadow: false, eventTime: eventTime, acquisition: "window-countdown")
+            }
+            return snapshot.image
+        }
         let snapshots: [AreaCaptureSnapshot]
         if delaySeconds == 0 {
             snapshots = selection.snapshots

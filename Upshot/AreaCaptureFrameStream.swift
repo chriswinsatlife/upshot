@@ -119,11 +119,14 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
     private var frameBufferPool: AreaCaptureFrameBufferPool?
     private var acceptingFrames = true
     private var stoppedBySystem = false
+    private var failed = false
+    private(set) var windowID: CGWindowID?
+    private(set) var windowScale: CGFloat = 1
     private let didUpdate: () -> Void
     private let didFail: (Error) -> Void
     private static let imageContext = CIContext(options: [.cacheIntermediates: false])
 
-    var isReady: Bool { frames.count > 0 }
+    var isReady: Bool { frames.count > 0 && !failed }
 
     init(displayID: CGDirectDisplayID, frame: CGRect, didUpdate: @escaping () -> Void, didFail: @escaping (Error) -> Void) {
         self.displayID = displayID
@@ -144,6 +147,37 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         let maximumFramesPerSecond = max(1, NSScreen.screens.first {
             ActiveDisplayResolver.displayID(for: $0) == displayID
         }?.maximumFramesPerSecond ?? 60)
+        try await start(filter: filter, configuration: configuration, maximumFramesPerSecond: maximumFramesPerSecond)
+        NSLog("Area capture stream started: display=%u excludedApplication=%d wallpaperCovers=%ld frameCapacity=%ld historyMs=250 maximumFrameRate=%ld",
+              displayID, application.processID, covers.count, frames.capacity, maximumFramesPerSecond)
+    }
+
+    func start(window: SCWindow, includeShadow: Bool) async throws {
+        windowID = window.windowID
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        windowScale = CGFloat(filter.pointPixelScale)
+        let configuration = SCStreamConfiguration()
+        if includeShadow {
+            let sizing = try await AreaCaptureWindowSnapshot.capture(window: window, includeShadow: true)
+            configuration.width = sizing.image.width
+            configuration.height = sizing.image.height
+        } else {
+            configuration.width = Int(ceil(filter.contentRect.width * windowScale))
+            configuration.height = Int(ceil(filter.contentRect.height * windowScale))
+        }
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.colorSpaceName = CGColorSpace.sRGB
+        configuration.showsCursor = false
+        configuration.includeChildWindows = false
+        configuration.ignoreShadowsSingleWindow = !includeShadow
+        let maximumFramesPerSecond = max(1, NSScreen.screens.first {
+            ActiveDisplayResolver.displayID(for: $0) == displayID
+        }?.maximumFramesPerSecond ?? 60)
+        try await start(filter: filter, configuration: configuration, maximumFramesPerSecond: maximumFramesPerSecond)
+        NSLog("Area window stream started: window=%u shadow=%d frameCapacity=%ld", window.windowID, includeShadow, frames.capacity)
+    }
+
+    private func start(filter: SCContentFilter, configuration: SCStreamConfiguration, maximumFramesPerSecond: Int) async throws {
         frames = AreaCaptureFrameRing(maximumFramesPerSecond: maximumFramesPerSecond)
         frameBufferPool = try AreaCaptureFrameBufferPool(width: configuration.width, height: configuration.height,
                                                        maximumBufferCount: frames.capacity + 1)
@@ -153,8 +187,6 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         self.stream = stream
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
         try await stream.startCapture()
-        NSLog("Area capture stream started: display=%u excludedApplication=%d wallpaperCovers=%ld frameCapacity=%ld historyMs=250 maximumFrameRate=%ld",
-              displayID, application.processID, covers.count, frames.capacity, maximumFramesPerSecond)
     }
 
     func snapshot(for eventTime: TimeInterval) throws -> AreaCaptureSnapshot {
@@ -169,6 +201,12 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         acceptingFrames = false
         return AreaCaptureSnapshot(displayID: displayID, frame: frame, image: try Self.image(from: selection.frame.value),
                                    presentationTime: selection.frame.presentationTime)
+    }
+
+    func windowSnapshot(for eventTime: TimeInterval) throws -> AreaCaptureWindowSnapshot {
+        let snapshot = try snapshot(for: eventTime)
+        return AreaCaptureWindowSnapshot(image: snapshot.image, scale: windowScale, presentationTime: snapshot.presentationTime,
+                                         requestTime: ProcessInfo.processInfo.systemUptime)
     }
 
     func magnifierImage(at point: CGPoint, geometry: AreaCaptureSnapshot) -> CGImage? {
@@ -196,7 +234,8 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 throw error
             }
         }
-        NSLog("Area capture stream stopped: display=%u", displayID)
+        if let windowID { NSLog("Area window stream stopped: window=%u", windowID) }
+        else { NSLog("Area capture stream stopped: display=%u", displayID) }
     }
 
     static func image(from sample: CMSampleBuffer) throws -> CGImage {
@@ -228,6 +267,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
                   let status = attachments.first?[.status] as? Int else { return }
             if status == SCFrameStatus.blank.rawValue || status == SCFrameStatus.suspended.rawValue || status == SCFrameStatus.stopped.rawValue {
                 acceptingFrames = false
+                failed = true
                 didFail(CocoaError(.fileReadUnknown))
                 return
             }
@@ -238,6 +278,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 didUpdate()
             } catch {
                 acceptingFrames = false
+                failed = true
                 NSLog("Area capture frame retention failed: display=%u error=%@", displayID, error.localizedDescription)
                 didFail(error)
             }
@@ -248,6 +289,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
         Task { @MainActor in
             stoppedBySystem = true
             guard acceptingFrames else { return }
+            failed = true
             NSLog("Area capture stream failed: display=%u error=%@", displayID, error.localizedDescription)
             didFail(error)
         }

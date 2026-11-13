@@ -191,6 +191,9 @@ struct AreaCaptureOfflineVerification {
     }
 
     static func main() throws {
+        let windowConfiguration = AreaCaptureWindowSnapshot.configuration(includeShadow: false)
+        precondition(windowConfiguration.ignoreShadows && !windowConfiguration.includeChildWindows && !windowConfiguration.showsCursor)
+        print("PASS isolated window screenshot configuration: shadows disabled, child windows excluded, cursor excluded")
         let output = URL(fileURLWithPath: ".local/verification/area-capture", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let red = CGColor(red: 1, green: 0, blue: 0, alpha: 1)

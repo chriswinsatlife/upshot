@@ -23,6 +23,7 @@ struct AreaCaptureSelectionResult {
     var composedImage: CGImage?
     var selectionTime: TimeInterval?
     var desktopIconLease: UUID?
+    var composedImageScale: CGFloat?
 
     func logTiming(composedAt time: TimeInterval, acquisition: String, frames: [AreaCaptureSnapshot]? = nil) {
         guard let selectionTime else { return }
@@ -57,6 +58,13 @@ final class AreaCaptureSelection {
     private var windows: [WindowTarget] = []
     private var screenObserver: NSObjectProtocol?
     private var streams: [AreaCaptureFrameStream] = []
+    private var shareableContent: SCShareableContent?
+    private var windowStream: AreaCaptureFrameStream?
+    private var windowStreamTask: Task<Void, Never>?
+    private var desiredWindowID: CGWindowID?
+    private var currentWindowID: CGWindowID?
+    private var selectionTask: Task<Void, Never>?
+    private var completingSelection = false
     private var desktopIconLease: UUID?
     private var selectionError: Error?
     private var cancelled = false
@@ -101,6 +109,10 @@ final class AreaCaptureSelection {
             screenObserver = nil
             DesktopIconVisibilityService.shared.endCapture(desktopIconLease)
             desktopIconLease = nil
+            shareableContent = nil
+            desiredWindowID = nil
+            currentWindowID = nil
+            completingSelection = false
         }
         cancelled = false
         let sessionID = UUID()
@@ -165,6 +177,7 @@ final class AreaCaptureSelection {
 
     private func startStreams() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        shareableContent = content
         guard let application = content.applications.first(where: { $0.processID == getpid() }) else { throw CocoaError(.fileReadUnknown) }
         let coverIDs = DesktopIconVisibilityService.shared.coverWindowIDs
         let covers = content.windows.filter { coverIDs.contains($0.windowID) }
@@ -190,15 +203,21 @@ final class AreaCaptureSelection {
     }
 
     private func stopStreams() async throws {
-        guard !streams.isEmpty else { return }
+        windowStreamTask?.cancel()
+        if let windowStreamTask { await windowStreamTask.value }
+        selectionTask?.cancel()
+        if let selectionTask { await selectionTask.value }
+        let allStreams = streams + [windowStream].compactMap { $0 }
+        guard !allStreams.isEmpty else { return }
         var failure: Error?
         var stopped = 0
         var failed = 0
-        for stream in streams {
+        for stream in allStreams {
             do { try await stream.stop(); stopped += 1 }
             catch { failure = failure ?? error; failed += 1 }
         }
         streams.removeAll()
+        windowStream = nil
         NSLog("Area capture streams released: retained=0 stopped=%ld failed=%ld", stopped, failed)
         if let failure { throw failure }
     }
@@ -256,6 +275,7 @@ final class AreaCaptureSelection {
     }
 
     func chooseMode(_ selected: AllInOneCaptureMode) {
+        guard !completingSelection else { return }
         guard !isScrollingOnly else { return }
         guard isAllInOne || [.area, .window, .element].contains(selected) else { return }
         if selected == .element && !AreaSelectionAccessibility.hasPermission {
@@ -274,6 +294,7 @@ final class AreaCaptureSelection {
     }
 
     func move(to point: CGPoint) {
+        guard !completingSelection else { return }
         pointer = point
         if let start {
             let rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
@@ -291,7 +312,45 @@ final class AreaCaptureSelection {
             case .area, .previousArea, .scrolling, .recording: break
             }
         }
+        updateWindowStream()
         redraw()
+    }
+
+    private func updateWindowStream() {
+        desiredWindowID = mode == .window && delaySeconds == 0 && !includeWindowShadow ? hoveredWindow?.id : nil
+        guard windowStreamTask == nil, currentWindowID != desiredWindowID else { return }
+        windowStreamTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { windowStreamTask = nil }
+            while !Task.isCancelled && !cancelled && !completingSelection && currentWindowID != desiredWindowID {
+                if let windowStream { try? await windowStream.stop() }
+                windowStream = nil
+                let targetID = desiredWindowID
+                currentWindowID = targetID
+                guard let targetID else { break }
+                do {
+                    let content: SCShareableContent
+                    if let shareableContent { content = shareableContent }
+                    else {
+                        content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                        shareableContent = content
+                    }
+                    try Task.checkCancellation()
+                    guard !completingSelection, let window = content.windows.first(where: { $0.windowID == targetID }),
+                          let target = windows.first(where: { $0.id == targetID }) else { continue }
+                    let displayID = snapshots.first { $0.frame.intersects(target.frame) }?.displayID ?? 0
+                    let source = AreaCaptureFrameStream(displayID: displayID, frame: target.frame, didUpdate: {}, didFail: { error in
+                        NSLog("Area window stream unavailable: window=%u error=%@", targetID, error.localizedDescription)
+                    })
+                    windowStream = source
+                    try await source.start(window: window, includeShadow: includeWindowShadow)
+                } catch {
+                    NSLog("Area window stream unavailable: window=%u error=%@", targetID, error.localizedDescription)
+                    if let windowStream { try? await windowStream.stop() }
+                    windowStream = nil
+                }
+            }
+        }
     }
 
     func mouseDown(at point: CGPoint) {
@@ -347,6 +406,10 @@ final class AreaCaptureSelection {
     }
 
     func keyDown(_ event: NSEvent) {
+        if completingSelection {
+            if event.keyCode == 53 { cancel() }
+            return
+        }
         if let character = event.charactersIgnoringModifiers?.lowercased() {
             if isAllInOne, let selected = AllInOneCaptureMode.allCases.first(where: { $0.shortcut == character }) {
                 chooseMode(selected)
@@ -373,6 +436,7 @@ final class AreaCaptureSelection {
     }
 
     private func complete(kind: AreaCaptureSelectionResult.Kind, rect: CGRect, eventTime: TimeInterval) {
+        guard !completingSelection else { return }
         NSLog("Area selector selected: mode=%@ x=%.1f y=%.1f width=%.1f height=%.1f", mode.rawValue, rect.minX, rect.minY, rect.width, rect.height)
         let target: WindowTarget?
         if case .window(let id) = kind {
@@ -389,6 +453,10 @@ final class AreaCaptureSelection {
         result.skipBackgroundPreset = NSEvent.modifierFlags.contains(.shift)
         result.selectionTime = eventTime
         result.capturedAt = Date(timeIntervalSinceNow: eventTime - ProcessInfo.processInfo.systemUptime)
+        if case .window(let windowID) = kind, delaySeconds == 0 && !includeWindowShadow {
+            completeWindowSelection(result, windowID: windowID, eventTime: eventTime)
+            return
+        }
         switch kind {
         case .scrolling, .recording: break
         default:
@@ -412,6 +480,39 @@ final class AreaCaptureSelection {
             }
         }
         finish(result)
+    }
+
+    private func completeWindowSelection(_ result: AreaCaptureSelectionResult, windowID: CGWindowID, eventTime: TimeInterval) {
+        completingSelection = true
+        var selected = result
+        if let windowStream, windowStream.windowID == windowID, windowStream.isReady,
+           let snapshot = try? windowStream.windowSnapshot(for: eventTime) {
+            selected.composedImage = snapshot.image
+            selected.composedImageScale = snapshot.scale
+            snapshot.logTiming(windowID: windowID, shadow: includeWindowShadow, eventTime: eventTime, acquisition: "window-stream")
+            finish(selected)
+            return
+        }
+        selectionTask = Task { @MainActor in
+            defer { selectionTask = nil }
+            do {
+                let content: SCShareableContent
+                if let shareableContent { content = shareableContent }
+                else { content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) }
+                try Task.checkCancellation()
+                guard let window = content.windows.first(where: { $0.windowID == windowID }) else { throw CocoaError(.fileReadUnknown) }
+                let snapshot = try await AreaCaptureWindowSnapshot.capture(window: window, includeShadow: includeWindowShadow, eventTime: eventTime)
+                try Task.checkCancellation()
+                guard !cancelled, continuation != nil else { return }
+                selected.composedImage = snapshot.image
+                selected.composedImageScale = snapshot.scale
+                snapshot.logTiming(windowID: windowID, shadow: includeWindowShadow, eventTime: eventTime, acquisition: "window-screenshot")
+                finish(selected)
+            } catch {
+                if !cancelled { selectionError = error }
+                finish(nil)
+            }
+        }
     }
 
     private func selectionUsingLiveFrames(_ result: AreaCaptureSelectionResult, eventTime: TimeInterval) throws -> AreaCaptureSelectionResult {
