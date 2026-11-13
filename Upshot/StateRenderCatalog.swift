@@ -86,12 +86,10 @@ enum StateRenderCatalog {
             ("screenshot-output", "ScreenshotOutputSettingsSection", { AnyView(InterfaceFormPage { ScreenshotOutputSettingsSection(); WindowScreenshotSettingsSection(); ScreenshotBackgroundPresetSettingsSection() }) }),
             ("text-recognition", "TextRecognitionSettingsSection", { AnyView(InterfaceFormPage { TextRecognitionSettingsSection() }) }),
             ("annotation-editor", "AnnotationEditorSettingsSection", { AnyView(InterfaceFormPage { AnnotationEditorSettingsSection() }) }),
-            ("capture-history", "CaptureHistorySettingsSection", { AnyView(InterfaceFormPage { CaptureHistorySettingsSection() }) }),
             ("live-recording", "LiveRecordingSettingsSection", { AnyView(InterfaceFormPage { LiveRecordingSettingsSection() }) }),
             ("recording-export", "RecordingExportSettingsSection", { AnyView(InterfaceFormPage { RecordingExportSettingsSection() }) }),
             ("after-screenshot", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .screenshot, title: "After Capture") }) }),
-            ("after-recording", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) }),
-            ("configuration", "AutomationSettingsSection", { AnyView(InterfaceFormPage { AutomationSettingsSection() }) })
+            ("after-recording", "AfterCaptureSettingsSection", { AnyView(InterfaceFormPage { AfterCaptureActionsSection(type: .recording, title: "After Recording") }) })
         ]
         for (name, source, view) in sections {
             add("settings-section-\(name)-expanded", source, "struct ", 860, name == "screenshot-output" ? 820 : 900) {
@@ -99,6 +97,25 @@ enum StateRenderCatalog {
                 UpshotStorage.defaults.set(WindowScreenshotBackgroundMode.customWallpaper.rawValue, forKey: UpshotPreferences.screenshotWindowBackgroundKey)
                 UpshotStorage.defaults.set(true, forKey: UpshotPreferences.recordingDoNotDisturbKey)
                 return view()
+            }
+        }
+        let advancedStates: [(String, Int, Bool, String?)] = [
+            ("settings-advanced", 0, true, nil),
+            ("settings-advanced-history-one-week", 7, true, nil),
+            ("settings-advanced-history-custom", 10, true, nil),
+            ("settings-advanced-analysis-off", 0, false, nil),
+            ("settings-advanced-configuration-failure", 0, true, "[preferences]\nplaySounds = yes\n")
+        ]
+        for (name, retentionDays, analyzeCaptures, configurationText) in advancedStates {
+            add(name, "SettingsAdvancedPane", "struct SettingsAdvancedPane", 800, 560) {
+                UpshotStorage.defaults.set(retentionDays, forKey: UpshotPreferences.historyRetentionDaysKey)
+                UpshotStorage.defaults.set(analyzeCaptures, forKey: UpshotPreferences.libraryAnalyzeCapturesKey)
+                UpshotStorage.defaults.set(false, forKey: UpshotPreferences.librarySortExistingKey)
+                if let configurationText {
+                    try Data(configurationText.utf8).write(to: UpshotStorage.configurationFileURL)
+                    AutomationConfiguration.shared.synchronize()
+                }
+                return AnyView(SettingsAdvancedPane())
             }
         }
         for variant in ["grid", "list", "empty", "search", "search-empty", "inspector", "multi-selection", "screenshots", "recordings"] {
