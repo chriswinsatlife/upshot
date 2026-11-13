@@ -712,8 +712,9 @@ struct InterfaceSidebarIconTile: View {
                             .foregroundStyle(Color.white)
                     }
             case .line(let systemImage):
-                Image(systemName: systemImage)
-                    .font(.system(size: InterfaceMetrics.sidebarLineIconPointSize, weight: .regular))
+                Image(nsImage: CenteredSymbolImage.image(systemImage, pointSize: InterfaceMetrics.sidebarLineIconPointSize,
+                                                         canvas: NSSize(width: InterfaceMetrics.sidebarIconTileSize, height: InterfaceMetrics.sidebarIconTileSize)))
+                    .renderingMode(.template)
                     .foregroundStyle(Palette.secondaryLabel)
             case .image(let image):
                 Image(nsImage: image)

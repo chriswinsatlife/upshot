@@ -39,13 +39,13 @@ struct MenuBarView: View {
             Menu {
                 historyMenuContent
             } label: {
-                Label(Self.recentCapturesTitle, systemImage: "photo")
+                MenuBarItemLabel(Self.recentCapturesTitle, symbol: "photo")
             }
 
             Menu {
                 projectsMenuContent
             } label: {
-                Label(Self.recordingsTitle, systemImage: "film.stack")
+                MenuBarItemLabel(Self.recordingsTitle, symbol: "film.stack")
             }
 
             actionButton(.screenshotsFolder, symbol: "folder") { openScreenshotsFolder() }
@@ -70,7 +70,7 @@ struct MenuBarView: View {
             Button {
                 updaterManager.checkForUpdates()
             } label: {
-                Label(Self.checkForUpdatesTitle, systemImage: "arrow.down.circle")
+                MenuBarItemLabel(Self.checkForUpdatesTitle, symbol: "arrow.down.circle")
             }
             .disabled(!updaterManager.canCheckForUpdates)
 
@@ -79,7 +79,7 @@ struct MenuBarView: View {
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {
-                Label(Self.quitTitle, systemImage: "power")
+                MenuBarItemLabel(Self.quitTitle, symbol: "power")
             }
             .keyboardShortcut("q")
         }
@@ -103,7 +103,7 @@ struct MenuBarView: View {
             if let perform { perform() } else { action.perform() }
         } label: {
             if let symbol {
-                Label(Self.menuTitle(for: action), systemImage: symbol)
+                MenuBarItemLabel(Self.menuTitle(for: action), symbol: symbol)
             } else {
                 Text(Self.menuTitle(for: action))
             }
@@ -121,7 +121,7 @@ struct MenuBarView: View {
                 }
             }
         } label: {
-            Label(title, systemImage: symbol)
+            MenuBarItemLabel(title, symbol: symbol)
         }
     }
 

@@ -117,17 +117,16 @@ enum MenuBarMenuRendering {
 
     private static func assignFixtureShortcuts() {
         let fixtureShortcuts: [(CaptureHotkeyAction, HotkeyShortcut)] = [
-            (.fullscreen, HotkeyShortcut(modifiers: [.option], keyCode: 18)),
-            (.window, HotkeyShortcut(modifiers: [.option], keyCode: 19)),
-            (.area, HotkeyShortcut(modifiers: [.option], keyCode: 20)),
-            (.screenRecording, HotkeyShortcut(modifiers: [.option], keyCode: 21)),
-            (.textCapture, HotkeyShortcut(modifiers: [.option], keyCode: 23)),
-            (.previousArea, HotkeyShortcut(modifiers: [.option, .shift], keyCode: 20)),
+            (.window, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 18)),
+            (.textCapture, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 19)),
+            (.fullscreen, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 20)),
+            (.area, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 21)),
+            (.previousArea, HotkeyShortcut(modifiers: [.command, .shift, .option], keyCode: 21)),
             (.recordingStop, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 53)),
-            (.recordingPause, HotkeyShortcut(modifiers: [.option, .shift], keyCode: 35)),
+            (.recordingPause, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 35)),
             (.editorUndo, HotkeyShortcut(modifiers: [.control, .option], keyCode: 6)),
             (.recordingEditorPlay, HotkeyShortcut(modifiers: [.control, .option], keyCode: 49)),
-            (.captureHistory, HotkeyShortcut(modifiers: [.option], keyCode: 22))
+            (.captureHistory, HotkeyShortcut(modifiers: [.command, .shift], keyCode: 22))
         ]
         for (action, shortcut) in fixtureShortcuts {
             CaptureHotkeyPreferences.saveShortcut(shortcut, for: action)
