@@ -75,18 +75,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     override func showWindow(_ sender: Any?) {
         guard let window else { return }
 
+        let shouldAnimate = !window.isVisible
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        window.alphaValue = shouldAnimate ? 0 : 1
+
+        super.showWindow(sender)
+
         if !didEnterActivationPolicy {
             AppActivationPolicy.enter()
             didEnterActivationPolicy = true
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
-
-        let shouldAnimate = !window.isVisible
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        window.alphaValue = shouldAnimate ? 0 : 1
-
-        super.showWindow(sender)
+        NSLog("Settings window shown visibleWindows=%ld", NSApp.windows.filter(\.isVisible).count)
 
         guard shouldAnimate else { return }
         window.displayIfNeeded()

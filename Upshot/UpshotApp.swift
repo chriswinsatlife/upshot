@@ -169,6 +169,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        let appWindowVisible = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
+        NSLog("Application reopen hasVisibleWindows=%d appWindowVisible=%d library=%@", hasVisibleWindows, appWindowVisible, appWindowVisible ? "skipped" : "shown")
+        guard !appWindowVisible else { return false }
         CaptureLibraryModel.shared.show()
         return false
     }
