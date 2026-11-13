@@ -75,6 +75,7 @@ struct RecordingExportOptionsPopover: View {
                 segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
                 segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
                 segmented("Resolution", options: VideoCompressionResolution.allCases, selection: $settings.resolution)
+                toggle("Scale Retina to 1x", isOn: $delivery.scalesRetinaToOne)
                 segmented(
                     "Frame rate",
                     options: VideoExportFrameRate.allCases,

@@ -201,13 +201,16 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             duration: CMTime(seconds: clipTimeline.duration, preferredTimescale: 600)
         )
 
+        let pixelScale = configuration.deliveryOptions.scalesRetinaToOne && configuration.sourcePixelScale.isFinite
+            ? max(1, configuration.sourcePixelScale) : 1
         let outputSize = Self.outputSize(
-            source: configuration.canvasSize,
+            source: CGSize(width: configuration.canvasSize.width / pixelScale, height: configuration.canvasSize.height / pixelScale),
             resolution: configuration.exportSettings.resolution
         )
         let canvasWidth = max(2, Int(outputSize.width.rounded()) & ~1)
         let canvasHeight = max(2, Int(outputSize.height.rounded()) & ~1)
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
+        Self.logger.info("Retina export scale=\(pixelScale) output=\(canvasWidth)x\(canvasHeight)")
 
         let screenReader = try AVAssetReader(asset: screenAsset)
         let videoOutput = AVAssetReaderTrackOutput(

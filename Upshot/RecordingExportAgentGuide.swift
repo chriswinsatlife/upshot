@@ -7,6 +7,7 @@ enum RecordingExportAgentGuide {
     gifFrameRate: 10, 15, 20, 25, 30. gifQuality: "Low", "Medium", "High".
     optimizesGIF: true combines identical frames while retaining their elapsed time.
     settings.resolution applies to both GIF and video: "Original", "1080p", "720p", "480p".
+    scalesRetinaToOne: true divides the export canvas by the captured pixel scale before applying the resolution limit.
     get_recording returns the current options as exportOptions.
     """
 }
