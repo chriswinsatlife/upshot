@@ -15,6 +15,7 @@ enum ScreenshotCaptureNamePrompt {
         alert.accessoryView = field
         alert.addButton(withTitle: "Use Name")
         alert.addButton(withTitle: "Keep Generated Name")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         alert.window.initialFirstResponder = field
         NSApplication.shared.activate(ignoringOtherApps: true)
         field.selectText(nil)
