@@ -79,6 +79,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.alphaValue = shouldAnimate ? 0 : 1
 
         super.showWindow(sender)
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.async { [weak window] in window?.makeFirstResponder(nil) }
 
         if !didEnterActivationPolicy {
             AppActivationPolicy.enter()
