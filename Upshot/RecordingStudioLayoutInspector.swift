@@ -22,7 +22,7 @@ struct StudioCameraLayoutPicker: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
+        VStack(alignment: .leading, spacing: Space.xl) {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(RecordingCameraLayout.presets, id: \.self) { preset in
                     StudioCameraLayoutTile(preset: preset, current: layout, aspectRatio: tileAspect) {
@@ -49,26 +49,27 @@ struct StudioCameraLayoutPicker: View {
     private var options: some View {
         switch layout.kind {
         case .pictureInPicture:
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                if layout.shape == .circle {
-                    cornerPicker
-                } else {
-                    InspectorFieldPair {
-                        cornerPicker
-                    } trailing: {
-                        group("Shape") {
-                            InspectorSegmented(
-                                options: [RecordingCameraLayout.Shape.square, .portrait],
-                                isSelected: { $0 == layout.shape },
-                                onTap: { shape in edit { $0.shape = shape } },
-                                label: { shape in
-                                    Image(systemName: shape.systemImage)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .accessibilityLabel(shape.title)
-                                }
-                            )
-                        }
+            VStack(alignment: .leading, spacing: Space.m) {
+                StudioInspectorPickerRow("Corner", selection: Binding(
+                    get: { layout.corner },
+                    set: { corner in edit { $0.corner = corner } }
+                )) {
+                    ForEach(RecordingCameraLayout.Corner.allCases, id: \.self) { corner in
+                        Text(corner.title).tag(corner)
                     }
+                }
+
+                if layout.shape != .circle {
+                    StudioInspectorModeSwitchRow(
+                        "Shape",
+                        selection: Binding(
+                            get: { layout.shape },
+                            set: { shape in edit { $0.shape = shape } }
+                        ),
+                        options: [RecordingCameraLayout.Shape.square, .portrait].map {
+                            InterfaceModeSwitchOption(value: $0, title: $0.title, systemImage: $0.systemImage)
+                        }
+                    )
                 }
 
                 InspectorFieldPair {
@@ -81,7 +82,6 @@ struct StudioCameraLayoutPicker: View {
                         format: .percent()
                     )
                     .disabled(layout.shape == .circle)
-                    .opacity(layout.shape == .circle ? 0.4 : 1)
                 }
 
                 InspectorHalfField {
@@ -89,15 +89,15 @@ struct StudioCameraLayoutPicker: View {
                 }
             }
         case .cutout:
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                group("Position") {
-                    InspectorSegmented(
-                        options: RecordingCameraLayout.Placement.allCases,
-                        isSelected: { $0 == layout.placement },
-                        onTap: { placement in edit { $0.placement = placement } },
-                        label: { Text($0.title).font(.inspectorSegment) }
-                    )
-                }
+            VStack(alignment: .leading, spacing: Space.m) {
+                StudioInspectorModeSwitchRow(
+                    "Position",
+                    selection: Binding(
+                        get: { layout.placement },
+                        set: { placement in edit { $0.placement = placement } }
+                    ),
+                    options: RecordingCameraLayout.Placement.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.title) }
+                )
 
                 InspectorFieldPair {
                     slider("Size", \.cutoutSize, range: RecordingCameraLayout.cutoutSizeRange)
@@ -107,26 +107,26 @@ struct StudioCameraLayoutPicker: View {
                 }
             }
         case .split:
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorFieldPair {
-                    group("Camera") {
-                        InspectorSegmented(
-                            options: RecordingCameraLayout.Side.allCases,
-                            isSelected: { $0 == layout.side },
-                            onTap: { side in edit { $0.side = side } },
-                            label: { Text($0.title(isPortrait: isPortraitCanvas)).font(.inspectorSegment) }
-                        )
+            VStack(alignment: .leading, spacing: Space.m) {
+                StudioInspectorModeSwitchRow(
+                    "Camera",
+                    selection: Binding(
+                        get: { layout.side },
+                        set: { side in edit { $0.side = side } }
+                    ),
+                    options: RecordingCameraLayout.Side.allCases.map {
+                        InterfaceModeSwitchOption(value: $0, title: $0.title(isPortrait: isPortraitCanvas))
                     }
-                } trailing: {
-                    group("Screen") {
-                        InspectorSegmented(
-                            options: RecordingCameraLayout.ScreenFit.allCases,
-                            isSelected: { $0 == layout.screenFit },
-                            onTap: { fit in edit { $0.screenFit = fit } },
-                            label: { Text($0.title).font(.inspectorSegment) }
-                        )
-                    }
-                }
+                )
+
+                StudioInspectorModeSwitchRow(
+                    "Screen",
+                    selection: Binding(
+                        get: { layout.screenFit },
+                        set: { fit in edit { $0.screenFit = fit } }
+                    ),
+                    options: RecordingCameraLayout.ScreenFit.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.title) }
+                )
 
                 InspectorFieldPair {
                     slider("Width", \.splitRatio, range: RecordingCameraLayout.splitRatioRange)
@@ -137,21 +137,6 @@ struct StudioCameraLayoutPicker: View {
             }
         case .screen, .camera:
             EmptyView()
-        }
-    }
-
-    private var cornerPicker: some View {
-        group("Corner") {
-            InspectorSegmented(
-                options: RecordingCameraLayout.Corner.allCases,
-                isSelected: { $0 == layout.corner },
-                onTap: { corner in edit { $0.corner = corner } },
-                label: { corner in
-                    Image(systemName: corner.systemImage)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .accessibilityLabel(corner.title)
-                }
-            )
         }
     }
 
@@ -183,13 +168,6 @@ struct StudioCameraLayoutPicker: View {
     private var isPortraitCanvas: Bool {
         let size = model.basePreviewCanvasSize
         return size.height > size.width
-    }
-
-    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            InspectorGroupLabel(title)
-            content()
-        }
     }
 
     private func edit(_ change: (inout RecordingCameraLayout) -> Void) {
@@ -272,7 +250,7 @@ private struct StudioCameraLayoutTile: View {
                 }
 
                 Text(preset.title)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                    .font(isSelected ? .dsSegmentSelected : .dsSegment)
                     .foregroundStyle(isSelected ? Palette.label : Palette.secondaryLabel)
                     .lineLimit(1)
             }
