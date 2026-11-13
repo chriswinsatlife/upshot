@@ -50,26 +50,50 @@ final class ScreenshotManager {
 
     func captureArea(includeShadow: Bool = false, delaySeconds: Int = 0) async -> URL? {
         do {
-            lastAreaCaptureDisplayID = nil
-            lastAreaCaptureSource = nil
             guard let selection = try await AreaCaptureSelection.shared.select() else { return nil }
-            lastAreaCaptureDisplayID = selection.snapshots.max {
-                let left = $0.frame.intersection(selection.rect)
-                let right = $1.frame.intersection(selection.rect)
-                return (left.isNull ? 0 : left.width * left.height) < (right.isNull ? 0 : right.width * right.height)
-            }?.displayID
-            lastAreaCaptureSource = selection.source
-            if case .window(let windowID) = selection.kind {
-                guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
-                var arguments = ["-l", "\(windowID)"]
-                if !includeShadow { arguments.append("-o") }
-                NSLog("Area window capture started: window=%u shadow=%d", windowID, includeShadow)
-                return await runScreencapture(args: arguments)
-            }
-            guard let image = try await image(for: selection, delaySeconds: delaySeconds) else { return nil }
-            return try writeAreaImage(image)
+            return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
         } catch {
             NSLog("Area capture failed: %@", String(describing: error))
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
+        }
+    }
+
+    func capture(_ selection: AreaCaptureSelectionResult, includeShadow: Bool, delaySeconds: Int) async throws -> URL? {
+        lastAreaCaptureDisplayID = nil
+        lastAreaCaptureSource = nil
+        lastAreaCaptureDisplayID = selection.snapshots.max {
+            let left = $0.frame.intersection(selection.rect)
+            let right = $1.frame.intersection(selection.rect)
+            return (left.isNull ? 0 : left.width * left.height) < (right.isNull ? 0 : right.width * right.height)
+        }?.displayID
+        lastAreaCaptureSource = selection.source
+        if case .window(let windowID) = selection.kind {
+            guard await prepareCapture(selection, delaySeconds: delaySeconds) else { return nil }
+            var arguments = ["-l", "\(windowID)"]
+            if !includeShadow { arguments.append("-o") }
+            NSLog("Area window capture started: window=%u shadow=%d", windowID, includeShadow)
+            return await runScreencapture(args: arguments)
+        }
+        guard let image = try await image(for: selection, delaySeconds: delaySeconds) else { return nil }
+        let url = try writeAreaImage(image)
+        AreaSelectionMemory.rememberScreenshot(rect: selection.rect)
+        return url
+    }
+
+    func capturePreviousArea(delaySeconds: Int = 0) async -> URL? {
+        guard let rect = AreaSelectionMemory.previousScreenshotRect else {
+            NSLog("Previous screenshot area unavailable: missing selection or changed display layout")
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "No previous screenshot area", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return nil
+        }
+        do {
+            let snapshots = try await AreaCaptureSnapshot.captureAll()
+            let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: CaptureSourceProbe(tracksPointer: false).finish(.area))
+            NSLog("Previous screenshot area capture started")
+            return try await capture(selection, includeShadow: false, delaySeconds: delaySeconds)
+        } catch {
+            NSLog("Previous screenshot area capture failed: %@", String(describing: error))
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }

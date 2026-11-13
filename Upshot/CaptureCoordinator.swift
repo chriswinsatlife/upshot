@@ -36,6 +36,16 @@ final class CaptureCoordinator {
         Task { await performCaptureArea() }
     }
 
+    func capturePreviousArea() {
+        Task { await capturePreviousAreaAwaiting() }
+    }
+
+    @discardableResult
+    func capturePreviousAreaAwaiting() async -> URL? {
+        guard let url = await ScreenshotManager.shared.capturePreviousArea(delaySeconds: UpshotPreferences.captureDelaySeconds) else { return nil }
+        return finishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
+    }
+
     func captureText() {
         Task { await performCaptureText() }
     }
