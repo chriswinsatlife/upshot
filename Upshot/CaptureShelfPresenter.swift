@@ -84,6 +84,7 @@ final class CaptureShelfPresenter {
 
     private func installMonitors() {
         CaptureShelfKeyboardShortcuts.shared.start()
+        CaptureShelfActiveScreenFollower.shared.start()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             Self.handleKey(event) ? nil : event
         }
@@ -102,6 +103,7 @@ final class CaptureShelfPresenter {
 
     private func removeMonitors() {
         CaptureShelfKeyboardShortcuts.shared.stop()
+        CaptureShelfActiveScreenFollower.shared.stop()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let globalKeyMonitor { NSEvent.removeMonitor(globalKeyMonitor) }
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
