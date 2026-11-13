@@ -41,6 +41,7 @@ struct CaptureLibraryInspector: View {
         .safeAreaBarIfAvailable(edge: .bottom) {
             if !items.isEmpty {
                 CaptureLibraryInspectorActions(model: model, items: items, pendingCloudDelete: $pendingCloudDelete)
+                    .background(Palette.panel)
                     .transition(.opacity)
             }
         }
@@ -63,16 +64,8 @@ struct CaptureLibraryInspector: View {
             guard !Task.isCancelled else { return }
             byteCount = size
         }
-        .alert("Delete from cloud?", isPresented: Binding(
-            get: { pendingCloudDelete != nil }, set: { if !$0 { pendingCloudDelete = nil } }
-        ), presenting: pendingCloudDelete) { item in
-            Button("Delete", role: .destructive) {
-                model.deleteCloudCopy(item)
-                pendingCloudDelete = nil
-            }
-            Button("Cancel", role: .cancel) { pendingCloudDelete = nil }
-        } message: { _ in
-            Text("This permanently removes the cloud copy and breaks its share link. Your local capture stays in the Library.")
+        .appAlert(item: $pendingCloudDelete, alert: { _ in AppAlerts.cloudCopyDeletion }) { action, item in
+            if action == .delete { model.deleteCloudCopy(item) }
         }
     }
 

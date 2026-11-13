@@ -125,30 +125,25 @@ struct CaptureLibraryView: View {
             if !enabled, case .category = scope { model.scope = .kind(.all) }
         }
         .animation(.morphIfAllowed, value: showsSortOffer)
-        .alert("Rename Capture", isPresented: Binding(
+        .alert(AppAlerts.libraryRename.title, isPresented: Binding(
             get: { model.renamingItem != nil },
             set: { if !$0 { model.renamingItem = nil } }
         )) {
             TextField("Name", text: $model.renameText)
-            Button("Rename") { model.rename() }
+            Button(AppAlertAction.rename.title) { model.rename() }
                 .disabled(model.renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("Cancel", role: .cancel) { model.renamingItem = nil }
+            Button(AppAlertAction.cancel.title, role: .cancel) { model.renamingItem = nil }
         }
-        .alert("Move \(model.pendingTrash.count == 1 ? "capture" : "\(model.pendingTrash.count) captures") to Trash?", isPresented: Binding(
-            get: { !model.pendingTrash.isEmpty },
-            set: { if !$0 { model.pendingTrash = [] } }
-        )) {
-            Button("Move to Trash", role: .destructive) { model.movePendingItemsToTrash() }
-            Button("Cancel", role: .cancel) { model.pendingTrash = [] }
-        } message: {
-            Text("The local files and their edits will move to Trash. Exported copies and cloud links will remain available.")
+        .appAlert(
+            item: Binding(
+                get: { model.pendingTrash.isEmpty ? nil : model.pendingTrash.count },
+                set: { if $0 == nil { model.pendingTrash = [] } }
+            ),
+            alert: { AppAlerts.libraryTrash(count: $0) }
+        ) { action, _ in
+            if action == .moveToTrash { model.movePendingItemsToTrash() }
         }
-        .alert("The Library action could not be completed", isPresented: Binding(
-            get: { model.errorMessage != nil },
-            set: { if !$0 { model.errorMessage = nil } }
-        )) {
-            Button("OK") { model.errorMessage = nil }
-        } message: { Text(model.errorMessage ?? "") }
+        .appAlert(item: $model.errorMessage, alert: { AppAlerts.libraryActionFailed(message: $0) })
     }
 
     private func resignInitialTextFocus(in window: NSWindow?) {
