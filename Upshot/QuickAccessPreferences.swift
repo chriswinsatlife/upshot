@@ -43,6 +43,7 @@ enum QuickAccessAutoCloseAction: String, CaseIterable, Identifiable {
 extension UpshotPreferences {
     static let previewOverlaySizeKey = "previewOverlaySize"
     static let previewAutoCloseActionKey = "previewAutoCloseAction"
+    static let previewCloseAfterUploadingKey = "previewCloseAfterUploading"
 
     static var previewOverlaySize: QuickAccessOverlaySize {
         QuickAccessOverlaySize(rawValue: UserDefaults.standard.string(forKey: previewOverlaySizeKey) ?? "") ?? .small
@@ -50,5 +51,9 @@ extension UpshotPreferences {
 
     static var previewAutoCloseAction: QuickAccessAutoCloseAction {
         QuickAccessAutoCloseAction(rawValue: UserDefaults.standard.string(forKey: previewAutoCloseActionKey) ?? "") ?? .close
+    }
+
+    static var previewCloseAfterUploading: Bool {
+        UserDefaults.standard.bool(forKey: previewCloseAfterUploadingKey)
     }
 }

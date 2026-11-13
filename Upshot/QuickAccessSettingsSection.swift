@@ -3,6 +3,7 @@ import SwiftUI
 struct QuickAccessSettingsSection: View {
     @AppStorage(UpshotPreferences.previewOverlaySizeKey) private var overlaySize = QuickAccessOverlaySize.small
     @AppStorage(UpshotPreferences.previewAutoCloseActionKey) private var autoCloseAction = QuickAccessAutoCloseAction.close
+    @AppStorage(UpshotPreferences.previewCloseAfterUploadingKey) private var closeAfterUploading = false
 
     var body: some View {
         Section("Quick Access") {
@@ -19,6 +20,8 @@ struct QuickAccessSettingsSection: View {
             Text("Save and Close saves to the configured export folder. Failed saves or copies keep the card open.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Toggle("Close after uploading", isOn: $closeAfterUploading)
+                .toggleStyle(.ink)
         }
     }
 }

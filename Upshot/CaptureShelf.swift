@@ -344,9 +344,11 @@ final class CaptureShelf {
     }
 
     func upload(id: ShelfItem.ID) {
-        guard let item = item(id: id), CloudUploader.shared.isConfigured else { return }
-        if item.kind == .video { engage(id) }
+        guard let item = item(id: id), CloudUploader.shared.isConfigured,
+              !CloudUploader.shared.uploadingItems.contains(id) else { return }
+        engage(id)
         let url = item.url
+        NSLog("Quick Access upload item=%@ outcome=started", id.uuidString)
         Task {
             do {
                 let result = try await CloudUploader.shared.upload(
@@ -356,12 +358,26 @@ final class CaptureShelf {
                 )
                 copyString(result.url)
                 ScreenshotHistoryStore.shared.setCloudURL(for: url, cloudURL: result.url)
-                flash(.linkCopied, on: id)
+                guard self.item(id: id)?.url == url else {
+                    NSLog("Quick Access upload item=%@ outcome=succeeded card=changedOrRemoved", id.uuidString)
+                    return
+                }
+                if UpshotPreferences.previewCloseAfterUploading {
+                    dismiss(id: id)
+                    NSLog("Quick Access upload item=%@ outcome=succeeded card=closed", id.uuidString)
+                } else {
+                    flash(.linkCopied, on: id)
+                    NSLog("Quick Access upload item=%@ outcome=succeeded card=retained", id.uuidString)
+                }
             } catch is CancellationError {
+                NSLog("Quick Access upload item=%@ outcome=cancelled card=retained", id.uuidString)
                 return
             } catch {
                 CloudUploader.shared.clearFailed(for: id)
-                flash(.uploadFailed, on: id)
+                if self.item(id: id)?.url == url {
+                    flash(.uploadFailed, on: id)
+                }
+                NSLog("Quick Access upload item=%@ outcome=failed card=retained error=%@", id.uuidString, error.localizedDescription)
             }
         }
     }
