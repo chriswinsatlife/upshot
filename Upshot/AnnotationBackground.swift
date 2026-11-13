@@ -16,6 +16,7 @@ struct AnnotationBackgroundSettings: Equatable {
     var camera = AnnotationCameraSettings()
     var progressiveBlur = AnnotationProgressiveBlurSettings()
     var watermark = AnnotationWatermarkSettings()
+    var colorAdjustments = AnnotationColorAdjustments()
 
     var isEnabled: Bool {
         style != .none
@@ -41,6 +42,7 @@ struct AnnotationBackgroundSettings: Equatable {
             || progressiveBlur.isActive
             || border.isVisible
             || watermark.isVisible
+            || !colorAdjustments.isDefault
     }
 }
 

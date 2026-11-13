@@ -1,7 +1,3 @@
-//
-//  AnnotationBackgroundPresetTransfer.swift
-//  Upshot
-//
 
 import Foundation
 import SwiftUI
@@ -14,9 +10,6 @@ extension UTType {
     )
 }
 
-/// A portable, versioned preset document. This deliberately does not reuse
-/// `StoredBackground`: that persistence model contains local wallpaper paths,
-/// while a shared preset must not be able to represent a path or image asset.
 struct AnnotationBackgroundPresetTransferFile: Codable {
     static let currentVersion = 1
     static let formatIdentifier = "upshot-screenshot-presets"
@@ -127,6 +120,7 @@ struct PortableBackgroundSettings: Codable {
     var progressiveBlur: StoredProgressiveBlurSettings?
     var border: StoredScreenshotBorder?
     var watermark: StoredWatermark?
+    var colorAdjustments: AnnotationColorAdjustments?
 
     private(set) var didOmitWallpaper = false
 
@@ -142,6 +136,7 @@ struct PortableBackgroundSettings: Codable {
         case progressiveBlur
         case border
         case watermark
+        case colorAdjustments
     }
 
     init(_ settings: AnnotationBackgroundSettings) {
@@ -167,6 +162,7 @@ struct PortableBackgroundSettings: Codable {
         progressiveBlur = StoredProgressiveBlurSettings(settings.progressiveBlur)
         border = StoredScreenshotBorder(settings.border)
         watermark = StoredWatermark(settings.watermark)
+        colorAdjustments = settings.colorAdjustments
     }
 
     var annotationSettings: AnnotationBackgroundSettings {
@@ -222,7 +218,7 @@ struct PortableBackgroundSettings: Codable {
             watermark.density = CGFloat(Self.clamp(Double(watermark.density), to: 2...10))
             watermark.fontSize = CGFloat(Self.clamp(Double(watermark.fontSize), to: 8...160))
             watermark.rotationDegrees = CGFloat(Self.clamp(Double(watermark.rotationDegrees), to: -90...90))
-            watermark.opacity = CGFloat(Self.clamp(Double(watermark.opacity), to: 0...0.75))
+            watermark.opacity = CGFloat(Self.clamp(Double(watermark.opacity), to: 0...1))
             watermark.color = AnnotationWatermarkColor(
                 red: CGFloat(Self.clamp(Double(watermark.color.red), to: 0...1)),
                 green: CGFloat(Self.clamp(Double(watermark.color.green), to: 0...1)),
@@ -232,6 +228,7 @@ struct PortableBackgroundSettings: Codable {
             output.watermark = watermark
         }
 
+        output.colorAdjustments = colorAdjustments ?? AnnotationColorAdjustments()
         return output
     }
 

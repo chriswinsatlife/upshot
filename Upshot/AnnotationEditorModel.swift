@@ -1,38 +1,18 @@
-//
-//  AnnotationEditorModel.swift
-//  Upshot
-//
 
 import AppKit
 import Observation
 import SwiftUI
 
-/// The editor window's model.
-///
-/// Annotations themselves live in `engine` - the ported drawing-app editor - which owns the
-/// document, the selection and the pointer state machine. This type keeps the things that are
-/// Upshot's rather than the engine's: the image being edited, the background recipe, crop, zoom
-/// and the inspector's current style.
 @MainActor
 @Observable
 final class AnnotationEditorModel {
-    /// The shape engine. Not observable itself, so `revision` stands in for it.
     @ObservationIgnored let engine = AnnoEditor()
-    /// Bumped on every engine change. Views read this to pick up edits the engine made.
     private(set) var revision = 0
 
-    /// The display/history image being edited. Used to match the preview item
-    /// and to locate the sidecar document.
     var sourceURL: URL?
-    /// The untouched image the annotations are rendered on top of. When
-    /// re-editing an existing document this is the preserved base image;
-    /// otherwise it is the same as `sourceURL`.
     var baseImageURL: URL?
     var previewImage: NSImage?
-    /// The preview image's pixels, for the canvas's redaction passes to sample.
-    @ObservationIgnored private(set) var previewCGImage: CGImage?
-    /// Whether the currently displayed `previewImage` is a downscaled copy of
-    /// the source (low-resolution preview preference). Exports are unaffected.
+    @ObservationIgnored var previewCGImage: CGImage?
     var isPreviewDownscaled = false
     var imageSize: CGSize = .zero
 
@@ -42,37 +22,20 @@ final class AnnotationEditorModel {
     var redactionDensity: CGFloat = 0.55
     var backgroundSettings = AnnotationBackgroundSettings()
     var appliedBackgroundPresetID: AnnotationBackgroundPreset.ID?
-    /// A fill shown on the canvas while the pointer rests on it in the
-    /// background picker. Never saved or exported; picking it writes the
-    /// settings.
     var previewBackground: AnnotationBackgroundStyle?
     var errorMessage: String?
     var isSmartRedacting = false
     var smartRedactionMessage: String?
 
-    // MARK: Crop
-    /// Whether the modal crop overlay is currently active.
     var isCropping = false
-    /// The working crop selection in image pixels (top-left origin), on
-    /// whole pixels. Only meaningful while `isCropping` is true.
     var cropPixelRect: CGRect = .zero
-    /// The crop drag in progress (AnnotationEditorCrop.swift).
     var cropDrag: CropDrag?
-    /// The aspect-ratio constraint applied while cropping.
     var cropAspect: CropAspectRatio = .freeform
 
-    // MARK: Zoom & pan
-    /// The rendered camera and active gesture are committed as one value.
     var canvasViewport = AnnotationCanvasViewport()
-    /// Bumped when the viewport has been placed where the image already shows
-    /// and should now animate to the fit; the canvas runs that animation.
     var canvasRevealID = 0
-    /// While cropping, the image is fit with this much breathing room (in
-    /// points) on every side so the crop resize handles - which are centered on
-    /// the crop edges - never spill outside the interactive canvas bounds.
     static let cropHandleMargin: CGFloat = 26
 
-    // Text style defaults (applied to new text, updated when selecting existing text)
     var textFontFamily: AnnoFontFamily = .pro
     var textFontSize: CGFloat = 48
     var textIsBold = true
@@ -80,8 +43,6 @@ final class AnnotationEditorModel {
     var textIsUnderline = false
     var textAlignment: NSTextAlignment = .left
 
-    /// A full snapshot of the editor's image state, captured before a crop so
-    /// the operation can be undone/redone.
     private struct CropSnapshot {
         var baseImageURL: URL?
         var imageSize: CGSize
@@ -93,8 +54,7 @@ final class AnnotationEditorModel {
     private var cropRedoStack: [CropSnapshot] = []
     private var ownedCropURLs: Set<URL> = []
 
-    /// Longest-edge cap (in pixels) for the downscaled editing preview.
-    private let previewImageMaxPixelSize: CGFloat = 2880
+    let previewImageMaxPixelSize: CGFloat = 2880
     @ObservationIgnored private var wallpaperCacheLease: BoundedCGImageCache.Lease?
     @ObservationIgnored private var smartRedactionTask: Task<Void, Never>?
     private var smartRedactionGeneration = UUID()
@@ -105,7 +65,6 @@ final class AnnotationEditorModel {
         }
     }
 
-    // MARK: - Engine surface
 
     var shapes: [AnnoShape] { engine.shapes }
     var bindings: [ArrowBinding] { engine.document.bindings }
@@ -146,7 +105,6 @@ final class AnnotationEditorModel {
         return selected.contains { supportsStyle($0.tool) }
     }
 
-    // MARK: - Loading
 
     func load(url: URL?, dismiss: DismissAction) {
         cancelSmartRedaction()
@@ -164,9 +122,6 @@ final class AnnotationEditorModel {
         let document = ScreenshotHistoryStore.shared.loadEditDocument(for: url)
         let candidateBaseURL = ScreenshotHistoryStore.baseImageURL(for: url)
         let renderSourceURL: URL
-        // Background-only and crop-only edits still have a preserved base.
-        // Reopening their composite would bake the previous styling into the
-        // image and apply it again. Legacy v1 shapes remain raster-only.
         if let document, document.version >= 2,
            FileManager.default.fileExists(atPath: candidateBaseURL.path) {
             renderSourceURL = candidateBaseURL
@@ -222,8 +177,6 @@ final class AnnotationEditorModel {
     func releaseEditorResources() {
         cancelSmartRedaction()
         wallpaperCacheLease = nil
-        // A closed SwiftUI scene can outlive its window. Release decoded
-        // pixels and edit history now instead of waiting for model deinit.
         savedSnapshot = nil
         sourceURL = nil
         baseImageURL = nil
@@ -239,14 +192,6 @@ final class AnnotationEditorModel {
         RedactionImageProcessor.removeAllCachedPreviewImages()
     }
 
-    /// Renders the composite, writes the `.upshot` sidecar, and repoints
-    /// the editor at the preserved base image so continued edits don't re-bake
-    /// annotations onto an already-composited picture. Returns nil when there
-    /// is nothing to persist.
-    ///
-    /// This is the only thing that puts annotations on disk, so every route
-    /// out of the editor - Done, Save, Upload, the close prompt - goes
-    /// through it.
     private(set) var isCommitting = false
 
     @discardableResult
@@ -264,7 +209,6 @@ final class AnnotationEditorModel {
         let hasContent = !shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
         let hadDocument = ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
 
-        // Nothing drawn and nothing previously saved: there is no work to lose.
         guard hasContent || hadDocument else {
             self.markSaved()
             return nil
@@ -290,8 +234,6 @@ final class AnnotationEditorModel {
             )
             self.baseImageURL = ScreenshotHistoryStore.baseImageURL(for: resultURL)
         } else {
-            // All annotations were cleared on a previously-edited image:
-            // restore the untouched original.
             resultURL = try ScreenshotHistoryStore.shared.removeAnnotations(displayURL: sourceURL)
             self.baseImageURL = resultURL
         }
@@ -301,11 +243,7 @@ final class AnnotationEditorModel {
         return resultURL
     }
 
-    // MARK: - Unsaved changes
 
-    /// Everything a commit would persist. The crop rides along as the base
-    /// image URL, since cropping replaces the image the annotations render on
-    /// rather than adding anything to the document.
     private struct EditSnapshot: Equatable {
         var baseImageURL: URL?
         var shapes: [AnnoShape]
@@ -324,31 +262,21 @@ final class AnnotationEditorModel {
         )
     }
 
-    /// Whether closing now would throw work away. The baseline is taken at the
-    /// end of `load` rather than from an empty document, so a background
-    /// preset applied automatically on open is not mistaken for a user edit.
     var hasUnsavedChanges: Bool {
-        // The engine isn't observable; touching `revision` is what makes this
-        // recompute when a shape is drawn, moved, or deleted.
         _ = revision
         guard sourceURL != nil, let savedSnapshot else { return false }
         return currentSnapshot() != savedSnapshot
     }
 
-    /// Re-baselines after a successful commit, and at the end of a load.
     func markSaved() {
         savedSnapshot = currentSnapshot()
     }
 
-    // MARK: - Pointer
 
-    /// Keep the engine's camera in step with where the canvas is drawing the image.
     func updateViewport(imageFrame: CGRect) {
         engine.viewport = AnnoViewport(imageFrame: imageFrame, imageSize: imageSize)
     }
 
-    /// Tells the engine which part of the page an export contains, so moved
-    /// and resized shapes stay inside it.
     private func updatePageLimits(boundaryFrame: CGRect) {
         guard !boundaryFrame.isEmpty else {
             engine.pageLimits = nil
@@ -375,9 +303,6 @@ final class AnnotationEditorModel {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
         updatePageLimits(boundaryFrame: boundaryFrame)
-        // Drawing tools only start on the image (or its canvas), which is all
-        // an export contains. A press outside still ends text editing.
-        // Selecting is allowed everywhere so edge handles stay reachable.
         if engine.tool != .select, !boundaryFrame.contains(location) {
             engine.stopEditingText()
             selectedTool = engine.tool
@@ -403,8 +328,6 @@ final class AnnotationEditorModel {
         syncStyleFromSelection()
     }
 
-    /// A shape being drawn stops at the boundary rather than running off
-    /// the image. Moving and resizing existing shapes is left free.
     private func drawingLocation(_ location: CGPoint, in boundaryFrame: CGRect) -> CGPoint {
         guard engine.tool != .select, !boundaryFrame.isEmpty else { return location }
         return CGPoint(
@@ -419,7 +342,6 @@ final class AnnotationEditorModel {
         return engine.hitShape(at: engine.screenToPage(Vec(location)))
     }
 
-    /// Whether a selection handle sits under the pointer, so the canvas can show a resize cursor.
     func hoveredHandle(at location: CGPoint, imageFrame: CGRect) -> AnnoSelectionHandle? {
         updateViewport(imageFrame: imageFrame)
         return engine.handle(at: Vec(location))
@@ -429,7 +351,6 @@ final class AnnotationEditorModel {
         boundaryFrame.contains(location)
     }
 
-    // MARK: - Tools and style
 
     func selectTool(_ tool: AnnotationTool) {
         selectedTool = tool
@@ -483,7 +404,6 @@ final class AnnotationEditorModel {
         }
     }
 
-    /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
         guard let shape = selectedShape else { return }
         if let swatch = shape.swatch, shape.tool.supportsColorStyle {
@@ -508,7 +428,6 @@ final class AnnotationEditorModel {
         }
     }
 
-    // MARK: - Editing commands
 
     func deleteSelectedAnnotation() {
         engine.deleteSelected()
@@ -549,7 +468,6 @@ final class AnnotationEditorModel {
         redoCrop()
     }
 
-    // MARK: - Smart redaction
 
     func smartRedact(using tool: AnnotationTool) {
         guard tool.isRedactionTool,
@@ -585,7 +503,6 @@ final class AnnotationEditorModel {
     }
 
     private func applySmartRedactionRegions(_ regions: [SmartRedactionRegion], tool: AnnotationTool) {
-        // Recognition reports normalized rects; page space is image pixels.
         let renderable = regions.compactMap { region -> AnnoShape? in
             let rect = CGRect(
                 x: region.bounds.minX * imageSize.width,
@@ -616,7 +533,6 @@ final class AnnotationEditorModel {
         smartRedactionMessage = "Added \(renderable.count) redaction\(renderable.count == 1 ? "" : "s")."
     }
 
-    // MARK: - Bounds
 
     func annotationBounds(for imageFrame: CGRect, boundaryFrame: CGRect) -> CGRect {
         guard imageFrame.width > 0, imageFrame.height > 0 else {
@@ -630,10 +546,7 @@ final class AnnotationEditorModel {
         )
     }
 
-    // MARK: - Presets
 
-    /// The tool chosen in Settings, Select unless changed, or the last one
-    /// picked when the setting asks for that.
     private static func startingTool(lastUsed: AnnotationTool) -> AnnotationTool {
         let choice = UserDefaults.standard.string(forKey: UpshotPreferences.annotationStartingToolKey)
             ?? AnnotationTool.select.rawValue
@@ -684,21 +597,16 @@ final class AnnotationEditorModel {
         AnnotationPresetStore.save(preset)
     }
 
-    /// Applies the complete reusable background recipe to this editor.
     func applyBackgroundPreset(_ preset: AnnotationBackgroundPreset) {
         backgroundSettings = preset.settings
         appliedBackgroundPresetID = preset.id
     }
 }
 
-// MARK: - Crop
 
 extension AnnotationEditorModel {
-    /// Whether the image has been cropped in this editing session (and can be undone).
     var isCropped: Bool { !cropUndoStack.isEmpty }
 
-    /// Bake the crop into a new full-resolution base image, move the shapes with it, and exit crop
-    /// mode. Page space is image pixels, so a crop is a translation plus a scale on every shape.
     func applyCrop() {
         guard isCropping else { return }
 
@@ -710,14 +618,11 @@ extension AnnotationEditorModel {
                 height: cropPixelRect.height / imageSize.height
             ).intersection(CropGeometry.unit)
             : .zero
-        // Leaving starts from what is on screen: the whole image, or after a
-        // crop, the box it was cut from.
         let shownImageFrame = displayedImageFrame
         var revealFrom = shownImageFrame
         defer {
             isCropping = false
             cropDrag = nil
-            // The fading box settles on the whole (new) image.
             cropPixelRect = cropBounds
             cropAspect = .freeform
             revealCanvasLeavingCrop(imageAt: revealFrom)
@@ -775,8 +680,6 @@ extension AnnotationEditorModel {
         errorMessage = nil
     }
 
-    /// Scale a shape's own dimensions, so a crop that changes the image's resolution keeps
-    /// annotations the same size relative to the picture.
     private func scaleShapeContents(_ shape: inout AnnoShape, sx: Double, sy: Double, uniform: Double) {
         switch shape.kind {
         case var .geo(p):
@@ -849,8 +752,6 @@ extension AnnotationEditorModel {
         )
     }
 
-    /// Crop history must never point at a History display URL, because annotation commits can
-    /// replace that file while this editor stays open.
     private func stableCropSnapshotURL(for url: URL) -> URL? {
         if ownedCropURLs.contains(url) { return url }
 
@@ -888,11 +789,8 @@ extension AnnotationEditorModel {
 
 }
 
-// MARK: - Background preview
 
 extension AnnotationEditorModel {
-    /// Shows or clears a hovered fill. Leaving one fill can arrive after
-    /// entering the next, so only the fill being left is cleared.
     func previewBackground(_ background: AnnotationBackgroundStyle, isHovering: Bool) {
         if isHovering {
             previewBackground = background
@@ -901,9 +799,6 @@ extension AnnotationEditorModel {
         }
     }
 
-    /// The fill the canvas draws. A preview only swaps one fill for another:
-    /// adding or removing the background would resize the canvas under the
-    /// pointer, so those wait for the click.
     var displayedBackgroundStyle: AnnotationBackgroundStyle {
         guard let previewBackground, previewBackground != .none,
               backgroundSettings.style != .none

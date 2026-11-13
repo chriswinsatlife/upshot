@@ -178,6 +178,8 @@ struct AnnotationEditorInspector: View {
 
                 InspectorGroupBreak()
 
+                AnnotationColorAdjustmentInspector(settings: $model.backgroundSettings.colorAdjustments)
+
                 InspectorSection(
                     "Watermark",
                     summary: AnnotationInspectorSummary.watermark(model.backgroundSettings.watermark),

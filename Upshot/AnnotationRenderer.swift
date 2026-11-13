@@ -71,7 +71,10 @@ enum AnnotationRenderer {
         }
 
         try autoreleasepool {
-            let sourceImage = try loadSourceImage(sourceURL: sourceURL)
+            let sourceImage = try AnnotationColorProcessor.render(
+                loadSourceImage(sourceURL: sourceURL),
+                settings: backgroundSettings.colorAdjustments
+            )
             let colorSpace = exportColorSpace(for: sourceImage)
             let renderedImage: CGImage
             if backgroundSettings.hasRenderableContent {
@@ -123,6 +126,11 @@ enum AnnotationRenderer {
             }
 
             CGImageDestinationAddImage(destination, renderedImage, options)
+            if !backgroundSettings.colorAdjustments.isDefault {
+                let adjustments = backgroundSettings.colorAdjustments
+                NSLog("Annotation color export applied exposure=%.2f contrast=%.2f saturation=%.2f temperature=%.1f",
+                      adjustments.exposure, adjustments.contrast, adjustments.saturation, adjustments.temperature)
+            }
 
             if backgroundSettings.watermark.isVisible {
                 NSLog("Annotation watermark exported kind=%@ position=%@ opacity=%.2f",

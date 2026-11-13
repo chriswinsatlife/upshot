@@ -54,6 +54,7 @@ struct StoredBackground: Codable, Equatable {
     var progressiveBlur: StoredProgressiveBlurSettings?
     var border: StoredScreenshotBorder?
     var watermark: StoredWatermark?
+    var colorAdjustments: AnnotationColorAdjustments?
 
     init(_ settings: AnnotationBackgroundSettings) {
         switch settings.style {
@@ -78,6 +79,7 @@ struct StoredBackground: Codable, Equatable {
         progressiveBlur = StoredProgressiveBlurSettings(settings.progressiveBlur)
         border = StoredScreenshotBorder(settings.border)
         watermark = StoredWatermark(settings.watermark)
+        colorAdjustments = settings.colorAdjustments
     }
 
     var settings: AnnotationBackgroundSettings {
@@ -114,6 +116,7 @@ struct StoredBackground: Codable, Equatable {
         if let watermark {
             output.watermark = watermark.settings
         }
+        output.colorAdjustments = colorAdjustments ?? AnnotationColorAdjustments()
         return output
     }
 }

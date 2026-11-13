@@ -26,6 +26,7 @@ struct AnnotationEditorWindow: View {
     var body: some View {
         mainContent
             .modifier(AnnotationEditorWindowLevel())
+            .modifier(AnnotationColorPreview(model: model))
             .disabled(model.isCommitting)
             .allowsHitTesting(!model.isCommitting)
             .modifier(CaptureLibraryEditorRegistration(url: url))
