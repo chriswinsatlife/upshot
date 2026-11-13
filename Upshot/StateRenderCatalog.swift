@@ -310,6 +310,18 @@ enum StateRenderCatalog {
                 return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: variant == "window" ? .window : variant == "element" ? .element : .area, allInOne: false, crosshair: variant == "crosshair-magnifier") })
             }
         }
+        for variant in ["magnifier-above", "magnifier-below", "area-default"] {
+            add("selector-\(variant)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
+                UpshotStorage.defaults.set(variant != "area-default", forKey: UpshotPreferences.areaSelectionCrosshairKey)
+                UpshotStorage.defaults.set(variant != "area-default", forKey: UpshotPreferences.areaSelectionMagnifierKey)
+                guard let image = fixtures.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    throw StateRenderFailure(message: "Fixture selector image could not be decoded")
+                }
+                let selection = variant == "magnifier-above" ? CGRect(x: 120, y: 60, width: 500, height: 230) : variant == "magnifier-below" ? CGRect(x: 120, y: 330, width: 500, height: 230) : nil
+                let pointer = selection.map { CGPoint(x: $0.maxX, y: variant == "magnifier-above" ? $0.maxY : $0.minY) }
+                return AnyView(StateRenderAppKitView { AreaCaptureSelection.renderView(image: image, mode: .area, allInOne: false, crosshair: false, pointer: pointer, selection: selection) })
+            }
+        }
         for renderState in ScrollingCaptureControlPanel.RenderState.allCases {
             add("scrolling-capture-\(renderState.rawValue)", "ScrollingCaptureControlPanel", "final class ScrollingCaptureControlPanel", 640, 230) {
                 AnyView(Image(nsImage: fixtures.image).resizable().aspectRatio(contentMode: .fill).overlay { ScrollingCaptureControlPanel.renderView(renderState) }.clipped())

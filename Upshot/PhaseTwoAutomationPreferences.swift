@@ -6,7 +6,7 @@ extension AutomationPreferenceDefinition {
         let booleans: [String: Bool] = [
             UpshotPreferences.areaSelectionFreezeScreenKey: false,
             UpshotPreferences.areaSelectionCrosshairKey: false,
-            UpshotPreferences.areaSelectionMagnifierKey: true,
+            UpshotPreferences.areaSelectionMagnifierKey: false,
             UpshotPreferences.screenshotConvertToSRGBKey: false,
             UpshotPreferences.screenshotScaleToOneXKey: false,
             UpshotPreferences.screenshotBorderKey: false,

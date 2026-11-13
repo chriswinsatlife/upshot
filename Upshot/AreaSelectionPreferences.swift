@@ -62,7 +62,7 @@ extension UpshotPreferences {
     }
 
     static var areaSelectionMagnifier: Bool {
-        get { UpshotStorage.defaults.object(forKey: areaSelectionMagnifierKey) as? Bool ?? true }
+        get { UpshotStorage.defaults.object(forKey: areaSelectionMagnifierKey) as? Bool ?? false }
         set { UpshotStorage.defaults.set(newValue, forKey: areaSelectionMagnifierKey) }
     }
 

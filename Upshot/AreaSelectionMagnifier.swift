@@ -73,6 +73,7 @@ enum AreaSelectionMagnifier {
     private static let textInset: CGFloat = 10
     private static let lineSpacing: CGFloat = 3
     private static let pointerOffset: CGFloat = 22
+    private static let selectionGap: CGFloat = 10
     private static let screenMargin: CGFloat = 8
 
     private static let sizeFont = font(size: 12, weight: .semibold)
@@ -103,7 +104,7 @@ enum AreaSelectionMagnifier {
         context.restoreGState()
     }
 
-    static func draw(in context: CGContext, bounds: CGRect, point: CGPoint, image: CGImage?, samplePosition: CGPoint, readout: AreaSelectionReadout, showsCrosshair: Bool, showsMagnifier: Bool) {
+    static func draw(in context: CGContext, bounds: CGRect, point: CGPoint, selection: CGRect?, image: CGImage?, samplePosition: CGPoint, readout: AreaSelectionReadout, showsCrosshair: Bool, showsMagnifier: Bool) {
         if showsCrosshair {
             context.saveGState()
             context.setStrokeColor(crosshairOuter)
@@ -114,6 +115,7 @@ enum AreaSelectionMagnifier {
             crosshair(in: context, bounds: bounds, point: point)
             context.restoreGState()
         }
+        guard showsCrosshair || showsMagnifier else { return }
         let primary = OverlayTextLayout(readout.size ?? readout.coordinates, font: sizeFont, color: primaryTextColor)
         let secondaryText = [readout.size == nil ? nil : readout.coordinates, readout.note].compactMap { $0 }.joined(separator: " · ")
         let secondary = secondaryText.isEmpty ? nil : OverlayTextLayout(secondaryText, font: detailFont, color: secondaryTextColor)
@@ -121,11 +123,7 @@ enum AreaSelectionMagnifier {
         let textHeight = primary.size.height + (secondary.map { $0.size.height + lineSpacing } ?? 0)
         let width = showsMagnifier ? max(loupeSide + panelPadding * 2, textWidth + textInset * 2) : textWidth + textInset * 2 + 4
         let height = showsMagnifier ? panelPadding + loupeSide + textInset - 2 + textHeight + textInset - 1 : textHeight + textInset + 4
-        let x = point.x + pointerOffset + width <= bounds.maxX - screenMargin ? point.x + pointerOffset : point.x - width - pointerOffset
-        let y = point.y - pointerOffset - height >= bounds.minY + screenMargin ? point.y - pointerOffset - height : point.y + pointerOffset
-        let frame = CGRect(x: min(max(screenMargin, x), max(screenMargin, bounds.maxX - width - screenMargin)),
-                           y: min(max(screenMargin, y), max(screenMargin, bounds.maxY - height - screenMargin)),
-                           width: width, height: height).integral
+        guard let frame = placement(size: CGSize(width: width, height: height), point: point, selection: selection, bounds: bounds) else { return }
         let radius = showsMagnifier ? panelRadius : frame.height / 2
         let panel = CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil)
         context.saveGState()
@@ -149,6 +147,37 @@ enum AreaSelectionMagnifier {
         if let secondary {
             secondary.draw(at: CGPoint(x: frame.midX - secondary.size.width / 2, y: textTop - primary.size.height - lineSpacing - secondary.size.height), in: context)
         }
+    }
+
+    static func placement(size: CGSize, point: CGPoint, selection: CGRect?, bounds: CGRect) -> CGRect? {
+        let available = bounds.insetBy(dx: screenMargin, dy: screenMargin)
+        let pointerZone = CGRect(x: point.x - pointerOffset, y: point.y - pointerOffset, width: pointerOffset * 2, height: pointerOffset * 2)
+        let avoided = selection.map { $0.insetBy(dx: -selectionGap, dy: -selectionGap) }
+        func clamped(_ value: CGFloat, length: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+            min(max(value, minimum), max(minimum, maximum - length))
+        }
+        func fits(_ frame: CGRect) -> Bool {
+            available.contains(frame) && !frame.intersects(pointerZone) && !(avoided.map(frame.intersects) ?? false)
+        }
+        guard let avoided else {
+            let x = point.x + pointerOffset + size.width <= available.maxX ? point.x + pointerOffset : point.x - pointerOffset - size.width
+            let y = point.y - pointerOffset - size.height >= available.minY ? point.y - pointerOffset - size.height : point.y + pointerOffset
+            let frame = CGRect(x: clamped(x, length: size.width, minimum: available.minX, maximum: available.maxX),
+                               y: clamped(y, length: size.height, minimum: available.minY, maximum: available.maxY),
+                               width: size.width, height: size.height).integral
+            return fits(frame) ? frame : nil
+        }
+        let alongX = clamped(point.x + pointerOffset, length: size.width, minimum: available.minX, maximum: available.maxX)
+        let alongY = clamped(point.y - size.height / 2, length: size.height, minimum: available.minY, maximum: available.maxY)
+        let below = CGRect(x: alongX, y: avoided.minY - size.height, width: size.width, height: size.height)
+        let above = CGRect(x: alongX, y: avoided.maxY, width: size.width, height: size.height)
+        let right = CGRect(x: avoided.maxX, y: alongY, width: size.width, height: size.height)
+        let left = CGRect(x: avoided.minX - size.width, y: alongY, width: size.width, height: size.height)
+        let candidates = [
+            (abs(point.y - avoided.minY), below), (abs(point.y - avoided.maxY), above),
+            (abs(point.x - avoided.maxX), right), (abs(point.x - avoided.minX), left)
+        ].sorted { $0.0 < $1.0 }.map { $0.1.integral }
+        return candidates.first(where: fits)
     }
 
     private static func drawLoupe(in context: CGContext, loupe: CGRect, image: CGImage?, samplePosition: CGPoint) {
