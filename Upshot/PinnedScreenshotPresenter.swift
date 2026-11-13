@@ -1,25 +1,23 @@
-//
-//  PinnedScreenshotPresenter.swift
-//  Upshot
-//
-
 import AppKit
 import SwiftUI
 
-/// Pins a screenshot to the screen as a floating, always-on-top window the user
-/// can keep around for reference while they work. Supports multiple pins.
 @MainActor
 final class PinnedScreenshotPresenter {
     static let shared = PinnedScreenshotPresenter()
 
     private var panels: Set<NSPanel> = []
+    private var appearanceObserver: NSObjectProtocol?
+    private var appearance = PinnedScreenshotAppearance()
 
     private init() {}
 
     func pin(url: URL) {
         guard let image = ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: 1600) else {
+            NSLog("Pinned screenshot outcome=failed reason=imageUnavailable")
             return
         }
+
+        observeAppearance()
 
         let contentSize = displaySize(forPixelSize: image.size)
         let panel = PinnedPanel(
@@ -30,7 +28,7 @@ final class PinnedScreenshotPresenter {
         )
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = UpshotPreferences.pinnedScreenshotShadow
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.isMovableByWindowBackground = true
@@ -53,16 +51,43 @@ final class PinnedScreenshotPresenter {
         panel.setFrameOrigin(cascadedOrigin(for: contentSize))
         panel.orderFrontRegardless()
         panels.insert(panel)
+        NSLog("Pinned screenshot outcome=opened roundedCorners=%@ shadow=%@ border=%@", UpshotPreferences.pinnedScreenshotRoundedCorners.description, UpshotPreferences.pinnedScreenshotShadow.description, UpshotPreferences.pinnedScreenshotBorder.description)
     }
 
     private func close(_ panel: NSPanel) {
         panel.orderOut(nil)
         panel.contentView = nil
         panels.remove(panel)
+        if panels.isEmpty, let appearanceObserver {
+            NotificationCenter.default.removeObserver(appearanceObserver)
+            self.appearanceObserver = nil
+        }
+        NSLog("Pinned screenshot outcome=closed remaining=%d", panels.count)
     }
 
-    /// Convert pixel dimensions to a sensible point size for the pinned window,
-    /// scaled for the display and clamped so pins stay handy but readable.
+    private func observeAppearance() {
+        guard appearanceObserver == nil else { return }
+        appearance = PinnedScreenshotAppearance()
+        appearanceObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshAppearance() }
+        }
+    }
+
+    private func refreshAppearance() {
+        let updated = PinnedScreenshotAppearance()
+        guard updated != appearance else { return }
+        appearance = updated
+        for panel in panels {
+            panel.hasShadow = updated.shadow
+            panel.invalidateShadow()
+        }
+        NSLog("Pinned screenshot appearance roundedCorners=%@ shadow=%@ border=%@ panels=%d", updated.roundedCorners.description, updated.shadow.description, updated.border.description, panels.count)
+    }
+
     private func displaySize(forPixelSize pixelSize: CGSize) -> NSSize {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         var width = pixelSize.width / scale
@@ -89,6 +114,12 @@ final class PinnedScreenshotPresenter {
     }
 }
 
+private struct PinnedScreenshotAppearance: Equatable {
+    let roundedCorners = UpshotPreferences.pinnedScreenshotRoundedCorners
+    let shadow = UpshotPreferences.pinnedScreenshotShadow
+    let border = UpshotPreferences.pinnedScreenshotBorder
+}
+
 private final class PinnedPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -101,16 +132,21 @@ private struct PinnedScreenshotView: View {
 
     @State private var isHovered = false
     @State private var didCopy = false
+    @AppStorage(UpshotPreferences.pinnedScreenshotRoundedCornersKey) private var roundedCorners = true
+    @AppStorage(UpshotPreferences.pinnedScreenshotBorderKey) private var border = true
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: roundedCorners ? 10 : 0, style: .continuous)
+    }
 
     var body: some View {
         Image(nsImage: image)
             .resizable()
             .aspectRatio(contentMode: .fill)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(shape)
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(.white.opacity(0.25), lineWidth: 1)
+                shape.strokeBorder(.white.opacity(border ? 0.25 : 0), lineWidth: 1)
             }
             .overlay(alignment: .top) {
                 if isHovered {
@@ -119,7 +155,7 @@ private struct PinnedScreenshotView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(shape)
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.15)) {
                     isHovered = hovering

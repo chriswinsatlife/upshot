@@ -76,6 +76,9 @@ extension UpshotPreferences {
     static let previewCloseAfterUploadingKey = "previewCloseAfterUploading"
     static let previewSwipeTowardEdgeActionKey = "previewSwipeTowardEdgeAction"
     static let previewSwipeAwayFromEdgeActionKey = "previewSwipeAwayFromEdgeAction"
+    static let pinnedScreenshotRoundedCornersKey = "pinnedScreenshotRoundedCorners"
+    static let pinnedScreenshotShadowKey = "pinnedScreenshotShadow"
+    static let pinnedScreenshotBorderKey = "pinnedScreenshotBorder"
 
     static var previewOverlaySize: QuickAccessOverlaySize {
         QuickAccessOverlaySize(rawValue: UserDefaults.standard.string(forKey: previewOverlaySizeKey) ?? "") ?? .small
@@ -95,5 +98,17 @@ extension UpshotPreferences {
 
     static var previewSwipeAwayFromEdgeAction: QuickAccessSwipeAction {
         QuickAccessSwipeAction(rawValue: UserDefaults.standard.string(forKey: previewSwipeAwayFromEdgeActionKey) ?? "") ?? .none
+    }
+
+    static var pinnedScreenshotRoundedCorners: Bool {
+        UserDefaults.standard.object(forKey: pinnedScreenshotRoundedCornersKey) as? Bool ?? true
+    }
+
+    static var pinnedScreenshotShadow: Bool {
+        UserDefaults.standard.object(forKey: pinnedScreenshotShadowKey) as? Bool ?? true
+    }
+
+    static var pinnedScreenshotBorder: Bool {
+        UserDefaults.standard.object(forKey: pinnedScreenshotBorderKey) as? Bool ?? true
     }
 }

@@ -6,6 +6,9 @@ struct QuickAccessSettingsSection: View {
     @AppStorage(UpshotPreferences.previewCloseAfterUploadingKey) private var closeAfterUploading = false
     @AppStorage(UpshotPreferences.previewSwipeTowardEdgeActionKey) private var swipeTowardEdgeAction = QuickAccessSwipeAction.tuck
     @AppStorage(UpshotPreferences.previewSwipeAwayFromEdgeActionKey) private var swipeAwayFromEdgeAction = QuickAccessSwipeAction.none
+    @AppStorage(UpshotPreferences.pinnedScreenshotRoundedCornersKey) private var pinnedRoundedCorners = true
+    @AppStorage(UpshotPreferences.pinnedScreenshotShadowKey) private var pinnedShadow = true
+    @AppStorage(UpshotPreferences.pinnedScreenshotBorderKey) private var pinnedBorder = true
 
     var body: some View {
         Section("Quick Access") {
@@ -40,6 +43,14 @@ struct QuickAccessSettingsSection: View {
             Text("Two-finger horizontal swipes act on the card where the swipe starts. Swiping away from the tucked shelf always opens the shelf.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+        Section("Pinned Screenshots") {
+            Toggle("Rounded corners", isOn: $pinnedRoundedCorners)
+                .toggleStyle(.ink)
+            Toggle("Shadow", isOn: $pinnedShadow)
+                .toggleStyle(.ink)
+            Toggle("Border", isOn: $pinnedBorder)
+                .toggleStyle(.ink)
         }
     }
 }
