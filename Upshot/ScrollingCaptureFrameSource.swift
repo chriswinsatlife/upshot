@@ -39,10 +39,7 @@ final class ScrollingCaptureFrameSource {
             return left.width * left.height < right.width * right.height
         }?.displayID
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let ownApplication = content.applications.first { $0.processID == getpid() }
-        let panelWindows = content.windows.filter { $0.windowID == panelID }
-        let ownWindows = UpshotPreferences.includeAppWindowsInCaptures
-            ? content.windows.filter { $0.owningApplication?.processID == getpid() && $0.windowID != panelID } : []
+        let excludedWindows = AreaCaptureWindowFilter.excludedWindows(in: content, additionallyExcluding: [panelID])
         regions = try participating.map { region in
             guard let display = content.displays.first(where: { $0.displayID == region.displayID }) else {
                 throw ScrollingCaptureError.displayChanged
@@ -56,13 +53,7 @@ final class ScrollingCaptureFrameSource {
             configuration.height = Int(ceil(intersection.height * scale))
             configuration.showsCursor = false
             configuration.colorSpaceName = CGColorSpace.sRGB
-            let filter: SCContentFilter
-            if let ownApplication {
-                filter = SCContentFilter(display: display, excludingApplications: [ownApplication], exceptingWindows: ownWindows)
-            } else {
-                guard !panelWindows.isEmpty else { throw ScrollingCaptureError.invalidImage }
-                filter = SCContentFilter(display: display, excludingWindows: panelWindows)
-            }
+            let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
             return DisplayRegion(displayID: region.displayID, frame: intersection, filter: filter, configuration: configuration)
         }
         NSLog("Scrolling capture source prepared: displays=%ld scale=%.2f excludedPanel=%u", regions.count, scale, panelID)

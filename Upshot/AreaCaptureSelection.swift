@@ -285,6 +285,7 @@ final class AreaCaptureSelection {
             views.append(view)
             panel.orderFrontRegardless()
         }
+        AreaCaptureWindowFilter.alwaysExcludedWindowIDs.formUnion(panels.map { CGWindowID($0.windowNumber) })
         let panel = panels.first { $0.frame.contains(pointer) } ?? panels.first
         panel?.makeKey()
         panel?.makeFirstResponder(panel?.contentView)
@@ -607,6 +608,7 @@ final class AreaCaptureSelection {
         self.continuation = nil
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
+        AreaCaptureWindowFilter.alwaysExcludedWindowIDs.subtract(panels.map { CGWindowID($0.windowNumber) })
         for panel in panels { panel.orderOut(nil) }
         panels.removeAll()
         views.removeAll()
