@@ -195,10 +195,10 @@ struct RecordingStudioStyleStrip: View {
         .padding(Space.xl)
         .frame(width: InspectorMetrics.columnIdealWidth)
         .presentationBackground(Palette.panel)
-        .onAppear {
-            Task { @MainActor in
-                isNameFieldFocused = true
-            }
+        .onWindowChange { window in
+            guard let window else { return }
+            window.makeFirstResponder(nil)
+            DispatchQueue.main.async { [weak window] in window?.makeFirstResponder(nil) }
         }
     }
 
