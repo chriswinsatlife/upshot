@@ -225,7 +225,10 @@ enum StateRenderer {
     private static func verifyWindows() throws {
         guard NSApp.activationPolicy() == .prohibited,
               NSApp.windows.allSatisfy({ $0.level.rawValue < desktopLevel || !$0.isVisible }) else {
-            throw StateRenderFailure(message: "State renderer display safety invariant failed")
+            let windows = NSApp.windows.filter(\.isVisible).map {
+                "\(type(of: $0)) number=\($0.windowNumber) level=\($0.level.rawValue) title=\($0.title)"
+            }.joined(separator: "; ")
+            throw StateRenderFailure(message: "State renderer display safety invariant failed state=\(scenario) policy=\(NSApp.activationPolicy().rawValue) windows=\(windows)")
         }
     }
 
