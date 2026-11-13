@@ -24,6 +24,7 @@ struct AreaCaptureSelectionResult {
     var selectionTime: TimeInterval?
     var desktopIconLease: UUID?
     var composedImageScale: CGFloat?
+    var windowIncludesShadow = false
 
     func logTiming(composedAt time: TimeInterval, acquisition: String, frames: [AreaCaptureSnapshot]? = nil) {
         guard let selectionTime else { return }
@@ -317,7 +318,7 @@ final class AreaCaptureSelection {
     }
 
     private func updateWindowStream() {
-        desiredWindowID = mode == .window && delaySeconds == 0 && !includeWindowShadow ? hoveredWindow?.id : nil
+        desiredWindowID = mode == .window && delaySeconds == 0 ? hoveredWindow?.id : nil
         guard windowStreamTask == nil, currentWindowID != desiredWindowID else { return }
         windowStreamTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -453,16 +454,15 @@ final class AreaCaptureSelection {
         result.skipBackgroundPreset = NSEvent.modifierFlags.contains(.shift)
         result.selectionTime = eventTime
         result.capturedAt = Date(timeIntervalSinceNow: eventTime - ProcessInfo.processInfo.systemUptime)
-        if case .window(let windowID) = kind, delaySeconds == 0 && !includeWindowShadow {
+        result.windowIncludesShadow = includeWindowShadow
+        if case .window(let windowID) = kind, delaySeconds == 0 {
             completeWindowSelection(result, windowID: windowID, eventTime: eventTime)
             return
         }
         switch kind {
         case .scrolling, .recording: break
         default:
-            let needsWindowShadow: Bool
-            if case .window = kind { needsWindowShadow = includeWindowShadow } else { needsWindowShadow = false }
-            if delaySeconds == 0 && !needsWindowShadow {
+            if delaySeconds == 0 {
                 do {
                     if !frozen {
                         result = try selectionUsingLiveFrames(result, eventTime: eventTime)
