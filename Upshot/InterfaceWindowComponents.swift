@@ -758,7 +758,7 @@ struct InterfaceSidebarRow: View {
 
     var body: some View {
         Button(action: action) {
-            InterfaceSidebarRowLabel(title: title, icon: icon, count: count)
+            InterfaceSidebarRowLabel(title: title, icon: icon, count: count, isSelected: isSelected)
         }
         .buttonStyle(InterfaceSidebarRowButtonStyle(isSelected: isSelected))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -769,6 +769,7 @@ struct InterfaceSidebarRowLabel: View {
     let title: String
     let icon: InterfaceSidebarIcon
     var count: Int? = nil
+    var isSelected = false
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -776,7 +777,7 @@ struct InterfaceSidebarRowLabel: View {
         HStack(spacing: InterfaceMetrics.sidebarIconToLabelSpacing) {
             InterfaceSidebarIconTile(icon: icon)
             Text(title)
-                .font(.dsBody)
+                .font(isSelected ? .dsHeadline : .dsBody)
                 .foregroundStyle(isEnabled ? Palette.label : Palette.disabledLabel)
                 .lineLimit(1)
                 .truncationMode(.tail)

@@ -99,7 +99,7 @@ The run writes `design-gallery-light.png`, `design-gallery-dark.png`, and `conta
 
 ### Buttons and Values
 
-- `InterfaceActionButtonStyle`, written `.buttonStyle(.interfaceAction)`, and `InterfaceActionButton`: the one action button style. A `Button(role: .destructive)` with the same style is the destructive variant, with red text on a red fill. There is no prominent, bordered, borderless, capsule, or glass variant in windows.
+- `InterfaceActionButtonStyle`, written `.buttonStyle(.interfaceAction)`, and `InterfaceActionButton`: the one action button style. A `Button(role: .destructive)` with the same style is the destructive variant, with red text on a red fill. There is no prominent, bordered, borderless, capsule, or glass variant in windows. A screen marks its main action by position and wording, not by a filled accent button, so a full-width or accent-filled button such as the current Deploy to Cloudflare capsule in the Cloud pane is replaced with this style.
 - `InterfaceResetButton`: the small circular arrow that restores a default, placed before the control it resets.
 - `InterfaceValueWithUnitField`: an editable number followed by its unit inside one field, such as 30 days. Use `unitSpacing: .none` for units written without a space, such as 80%.
 - `InterfaceValueWithUnitLabel`: the same layout for a value that is not editable, such as the value beside a slider.

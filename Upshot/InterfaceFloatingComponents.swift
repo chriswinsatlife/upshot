@@ -407,6 +407,7 @@ struct InterfaceFlyoutRow: View {
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.interfacePresentedControlState) private var presentedState
 
     init(_ title: String, systemImage: String, keyHint: String? = nil, isHighlighted: Bool = false, action: @escaping () -> Void) {
         self.title = title
@@ -429,7 +430,7 @@ struct InterfaceFlyoutRow: View {
                 if let keyHint {
                     Text(keyHint)
                         .font(.dsKeyHint)
-                        .foregroundStyle(isEnabled ? Palette.secondaryLabel : Palette.disabledLabel)
+                        .foregroundStyle(keyHintStyle)
                         .accessibilityLabel("Shortcut \(keyHint)")
                 }
             }
@@ -444,6 +445,11 @@ struct InterfaceFlyoutRow: View {
             pressedScale: 1
         ))
         .accessibilityAddTraits(isHighlighted ? .isSelected : [])
+    }
+
+    private var keyHintStyle: Color {
+        guard isEnabled else { return Palette.disabledLabel }
+        return isHighlighted || presentedState == .pressed ? Palette.label : Palette.secondaryLabel
     }
 }
 
