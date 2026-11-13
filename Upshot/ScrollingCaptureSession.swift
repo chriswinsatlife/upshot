@@ -23,6 +23,7 @@ final class ScrollingCaptureSession {
     private var task: Task<Void, Never>?
     private var processor = ScrollingCaptureProcessor()
     private var frameSource: ScrollingCaptureFrameSource?
+    private var autoScroll: ScrollingCaptureAutoScroll?
     private var geometry: [ScrollingCaptureFrameSource.Geometry] = []
     private var rect = CGRect.zero
     private var source: CaptureSource?
@@ -41,6 +42,7 @@ final class ScrollingCaptureSession {
             panel?.close()
             panel = nil
             frameSource = nil
+            autoScroll = nil
             geometry.removeAll()
             source = nil
             processor = ScrollingCaptureProcessor()
@@ -62,6 +64,7 @@ final class ScrollingCaptureSession {
             height = 0
             stopRequested = false
             finishing = false
+            autoScroll = ScrollingCaptureAutoScroll(rect: rect)
             return await withTaskCancellationHandler {
                 await withCheckedContinuation { continuation in
                     self.continuation = continuation
@@ -152,6 +155,10 @@ final class ScrollingCaptureSession {
             try Task.checkCancellation()
             if stopRequested { await save() }
         } catch is CancellationError {
+        } catch let error as ScrollingCaptureAutoScroll.Failure {
+            guard !Task.isCancelled, continuation != nil else { return }
+            NSLog("Scrolling capture auto-scroll stopped: window=%u height=%ld reason=%@", autoScroll?.windowID ?? 0, height, error.localizedDescription)
+            update(status: "\(error.localizedDescription) Stop saves captured content.", running: false)
         } catch {
             guard !Task.isCancelled, continuation != nil else { return }
             if stopRequested && height > 0 {
@@ -179,16 +186,10 @@ final class ScrollingCaptureSession {
     }
 
     private func postScroll(in rect: CGRect) throws {
-        guard CGPreflightPostEventAccess(), let panel else { throw ScrollingCaptureError.unverifiedOverlap }
-        let points = [CGPoint(x: rect.midX, y: rect.midY), CGPoint(x: rect.midX, y: rect.maxY - rect.height / 5),
-                      CGPoint(x: rect.minX + rect.width / 5, y: rect.midY), CGPoint(x: rect.maxX - rect.width / 5, y: rect.midY)]
-        guard let point = points.first(where: { !panel.frame.insetBy(dx: -4, dy: -4).contains($0) }),
-              let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
-                                  wheel1: -Int32(max(1, min(200, rect.height / 4))), wheel2: 0, wheel3: 0) else {
+        guard CGPreflightPostEventAccess(), let panel, let autoScroll else {
             throw ScrollingCaptureError.unverifiedOverlap
         }
-        event.location = ActiveDisplayResolver.quartzPoint(fromAppKit: point)
-        event.post(tap: .cghidEventTap)
+        try autoScroll.scroll(in: rect, excluding: panel.frame)
     }
 
     private func stop() {
