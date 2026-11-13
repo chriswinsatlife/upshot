@@ -343,11 +343,11 @@ private struct LibrarySidebarRow<Icon: View>: View {
 
     var body: some View {
 
-        HStack(spacing: 12) {
+        HStack(spacing: 6) {
             icon()
                 .symbolVariant(.fill)
                 .foregroundStyle(.secondary)
-                .frame(width: 20, alignment: .center)
+                .frame(width: 16, alignment: .center)
             Text(title)
                 .lineLimit(1)
             Spacer(minLength: 8)
