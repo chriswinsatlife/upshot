@@ -1,18 +1,3 @@
-//
-//  ScreenRecordingManager.swift
-//  Upshot
-//
-//  Created by Codex on 01/05/26.
-//
-//  Recording engine invariants:
-//  - A recording that has started is never silently discarded. Stream errors
-//    (display reconfig, sleep, window closed, GPU reset) finalize and KEEP
-//    the footage captured so far.
-//  - The writer produces fragmented QuickTime movies, so even a hard crash
-//    leaves a playable file up to the last fragment.
-//  - Writer failures (disk full, encoder death) are detected on the write
-//    path and surface immediately instead of impersonating a live recording.
-//
 
 import AppKit
 import AVFoundation
@@ -67,8 +52,6 @@ struct ScreenRecordingSource {
 
     let kind: Kind
 
-    /// A window recording knows its app outright; a display or area falls
-    /// back to the frontmost app's window on that display.
     var captureSource: CaptureSource? {
         switch kind {
         case .window(let window):
@@ -103,7 +86,6 @@ private enum ScreenRecordingFinishAction: Equatable {
     case terminate
 }
 
-/// What gets captured besides screen pixels, resolved from preferences at start.
 nonisolated struct ScreenRecordingCaptureOptions: Sendable {
     var capturesSystemAudio = false
     var microphoneDeviceID: String?
@@ -160,7 +142,17 @@ final class ScreenRecordingManager {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    var menuBarTimerText: String? {
+        switch state {
+        case .recording, .paused:
+            formattedElapsedTime
+        case .idle, .starting, .finishing:
+            nil
+        }
+    }
+    
     private init() {}
+
 
     func startRecording(source: ScreenRecordingSource) {
         guard state == .idle else { return }
@@ -190,17 +182,12 @@ final class ScreenRecordingManager {
                     Self.presentInputWarnings(inputWarnings)
                 }
 
-                // The teleprompter session starts before the capture wires
-                // its callbacks so the microphone tee below can capture the
-                // engine once, without a main-actor hop per audio buffer.
                 TeleprompterController.shared.beginRecordingSession(
                     displayID: targetDisplayID,
                     microphoneActive: options.microphoneDeviceID != nil
                 )
 
                 let session = try RecordingSessionStore.createSession()
-                // Own the session as soon as it exists. Any failure after this
-                // point must be able to remove or recover the directory.
                 self.session = session
                 let content = try await ScreenRecordingCapture.availableContent()
                 guard isStarting(session: session) else { return }
@@ -251,18 +238,12 @@ final class ScreenRecordingManager {
                     }
                 }
 
-                // Input logging starts before the stream so the first frame's
-                // ScreenCaptureKit geometry and the first pointer event share
-                // one host-clock timeline. Pre-frame events are discarded when
-                // the writer's first presentation timestamp becomes known.
                 pointerActivityRecorder.start(
                     mapping: target.inputMapping,
                     tracksDynamicGeometry: target.tracksDynamicGeometry
                 )
                 keystrokeRecorder.start()
 
-                // Camera setup and every permission prompt complete before the
-                // screen stream begins, so setup UI is never baked into video.
                 try await capture.startCapture(filter: target.filter, configuration: target.configuration)
                 guard isStarting(session: session) else { return }
 
@@ -273,8 +254,6 @@ final class ScreenRecordingManager {
                 manifest.sourceDisplayID = target.displayID
                 manifest.pointerSynthesized = true
                 manifest.pressEffectsBaked = false
-                // Press feedback is a Studio-side choice now; the manifest
-                // keeps the field so older builds still render the effects.
                 manifest.pressEffectsEnabled = true
                 manifest.includesSystemAudio = options.capturesSystemAudio
                 manifest.includesMicrophone = options.microphoneDeviceID != nil
@@ -288,6 +267,7 @@ final class ScreenRecordingManager {
                 accumulatedPauseDuration = 0
                 elapsedTime = 0
                 state = .recording
+                NSLog("[Upshot] Recording timer started")
                 beginActivity()
                 startTimer()
             } catch {
@@ -312,6 +292,7 @@ final class ScreenRecordingManager {
         TeleprompterController.shared.setPaused(true)
         pausedAt = Date()
         state = .paused
+        NSLog("[Upshot] Recording timer paused at \(formattedElapsedTime)")
         updateElapsedTime()
     }
 
@@ -349,9 +330,6 @@ final class ScreenRecordingManager {
         stopCaptureAndFinish()
     }
 
-    /// Finishes the active writer before AppKit allows the process to exit.
-    /// The completion receives the preserved session so the app delegate can
-    /// import it into history before replying to the termination request.
     func finishForTermination(completion: @escaping (RecordingSession?) -> Void) {
         guard state != .idle else {
             completion(nil)
@@ -455,8 +433,6 @@ final class ScreenRecordingManager {
         }
 
         if let error = result.error {
-            // The writer hit trouble mid-flight but the fragmented file is
-            // playable up to that point - deliver it instead of losing it.
             let warning = "Recording ended early (\(error.localizedDescription)). Everything captured so far was saved."
             errorMessage = [errorMessage, warning]
                 .compactMap { $0 }
@@ -487,10 +463,6 @@ final class ScreenRecordingManager {
         }
     }
 
-    /// The stream died underneath us (display reconfiguration, sleep, the
-    /// captured window closing, permission revocation...). Whatever the
-    /// cause, the footage already on disk is the user's work: finalize and
-    /// keep it. Discarding here is how recordings used to vanish.
     private func handleCaptureError(_ error: Error) {
         guard state == .recording || state == .paused || state == .starting else { return }
 
@@ -534,9 +506,6 @@ final class ScreenRecordingManager {
         state == .starting && !isStopping && self.session == session
     }
 
-    /// Resolves stale devices and TCC before creating writers or starting any
-    /// stream. Optional inputs downgrade visibly instead of poisoning the
-    /// irreplaceable screen recording when access is denied.
     private static func resolveCaptureOptions(
         _ requested: ScreenRecordingCaptureOptions
     ) async -> (ScreenRecordingCaptureOptions, [String]) {
@@ -593,10 +562,6 @@ final class ScreenRecordingManager {
         alert.runModal()
     }
 
-    /// Screen-recording TCC must be granted before SCStream will start; a
-    /// missing grant otherwise fails with a silent -3801. Trigger the system
-    /// prompt on first use and route the user to System Settings after that
-    /// (macOS only shows the prompt once per app).
     private static func ensureScreenCapturePermission() -> Bool {
         if CGPreflightScreenCaptureAccess() {
             return true
@@ -623,8 +588,6 @@ final class ScreenRecordingManager {
         return false
     }
 
-    /// A recording that never started produced no file, so silence here reads
-    /// as "the button does nothing" - say what went wrong instead.
     private static func presentStartFailureAlert(error: Error) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
@@ -635,8 +598,6 @@ final class ScreenRecordingManager {
         alert.runModal()
     }
 
-    /// Keeps App Nap, automatic termination, and idle sleep from stalling or
-    /// killing a long recording running from an accessory (menu bar) app.
     private func beginActivity() {
         endActivity()
         activityToken = ProcessInfo.processInfo.beginActivity(
@@ -697,6 +658,7 @@ final class ScreenRecordingManager {
         finishAction = .preview
         isStopping = false
         state = .idle
+        NSLog("[Upshot] Recording timer cleared")
     }
 
     private static func captureTarget(
@@ -721,10 +683,6 @@ final class ScreenRecordingManager {
                 includesAppWindows: includesAppWindows
             )
             sourceSize = CGSize(width: freshDisplay.width, height: freshDisplay.height)
-            // Input mapping rects are always Quartz top-left, the space
-            // SCDisplay.frame, SCWindow.frame, and CGEvent locations already
-            // share. Only the area selection, which arrives from AppKit, is
-            // converted - and exactly once, here rather than at normalization.
             let bounds = CGDisplayBounds(freshDisplay.displayID)
             captureRect = bounds.isEmpty ? freshDisplay.frame : bounds
             displayID = freshDisplay.displayID
@@ -733,9 +691,6 @@ final class ScreenRecordingManager {
             let freshWindow = content.windows.first(where: { $0.windowID == window.windowID }) ?? window
             filter = SCContentFilter(desktopIndependentWindow: freshWindow)
             sourceSize = freshWindow.frame.size
-            // Already Quartz top-left. Per-frame `screenRect` supersedes this
-            // as soon as the first frame lands; it only covers events that
-            // beat the stream's first frame.
             captureRect = freshWindow.frame
             displayID = nil
             tracksDynamicGeometry = true
@@ -784,10 +739,6 @@ final class ScreenRecordingManager {
         )
     }
 
-    /// AppKit's global space has its origin at the main display's bottom-left
-    /// with Y growing upward; Quartz's has it at the top-left growing downward.
-    /// Flipping about the main display's height converts between them, and
-    /// stays correct for displays placed above or beside the main one.
     private static func quartzRect(fromAppKitRect rect: CGRect) -> CGRect {
         let mainDisplayHeight = CGDisplayBounds(CGMainDisplayID()).height
         return CGRect(
@@ -939,9 +890,6 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.queueDepth = 3
-        // The OS cursor stays out of the pixels; its position is logged to
-        // input.json and Studio/exports draw a synthetic, smoothed pointer
-        // instead (see RecordingPointerTimeline).
         configuration.showsCursor = false
         configuration.showMouseClicks = false
         configuration.capturesAudio = options.capturesSystemAudio
@@ -998,14 +946,9 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
 nonisolated struct ScreenRecordingWriterResult: Sendable {
     let url: URL?
     let error: Error?
-    /// Host-clock seconds of the first written video frame.
     let sessionStartUptime: TimeInterval?
-    /// Duration of the written movie in seconds (pause time excluded).
     let duration: TimeInterval
 
-    /// Whether there is a playable file worth keeping. Thanks to movie
-    /// fragments, a writer that failed mid-recording still leaves usable
-    /// footage as long as at least one frame was written.
     var fileIsUsable: Bool {
         url != nil && sessionStartUptime != nil && duration > 0.1
     }
@@ -1041,8 +984,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         try? FileManager.default.removeItem(at: outputURL)
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
-        // Fragmented movie: a crash or hard failure mid-recording still
-        // leaves a file playable up to the last fragment.
         writer.movieFragmentInterval = CMTime(seconds: 2, preferredTimescale: 600)
 
         let bitRate = max(20_000_000, videoWidth * videoHeight * 4)
@@ -1138,11 +1079,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
 
     func writeVideoSample(_ sampleBuffer: CMSampleBuffer) {
         let sendableSampleBuffer = SendableSampleBuffer(sampleBuffer)
-        // Apply backpressure at the ScreenCaptureKit callback boundary. An
-        // unbounded async hop retains full-resolution IOSurfaces when the
-        // encoder falls behind and can terminate a long 4K recording through
-        // memory pressure. SCStream's small queue can intentionally drop a
-        // frame instead; losing a frame is preferable to losing the session.
         writingQueue.sync { [weak self, sendableSampleBuffer] in
             autoreleasepool {
                 guard let self = self,
@@ -1189,7 +1125,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                 case .microphone:
                     input = self.microphoneInput
                 }
-                // Audio before the first video frame has no timeline home yet.
                 guard let input, self.isSessionStarted, !self.isPaused else { return }
 
                 let sampleBuffer = sendableSampleBuffer.sampleBuffer
@@ -1208,9 +1143,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         }
     }
 
-    /// Returns false - and reports the failure exactly once - when the
-    /// asset writer has silently entered the failed state (disk full,
-    /// encoder error, non-monotonic timestamps).
     private func checkWriterHealth() -> Bool {
         guard let assetWriter else { return false }
         guard assetWriter.status == .failed else { return true }
@@ -1244,8 +1176,6 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                 let priorError = self.failureError
 
                 guard assetWriter.status == .writing else {
-                    // Already failed: finishWriting would throw an exception;
-                    // the fragmented file on disk is what we have.
                     self.cleanup()
                     continuation.resume(returning: ScreenRecordingWriterResult(
                         url: url,
