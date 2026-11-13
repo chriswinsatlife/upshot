@@ -30,6 +30,7 @@ final class AreaCaptureSelection {
     private var snapshots: [AreaCaptureSnapshot] = []
     private var windows: [WindowTarget] = []
     private var screenObserver: NSObjectProtocol?
+    private let liveMagnifier = AreaSelectionLiveMagnifier()
     private var active = false
     private var frozen = true
     private(set) var windowSelection = false
@@ -84,7 +85,44 @@ final class AreaCaptureSelection {
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.finish(nil) }
         }
-        NSLog("Area selector opened: frozen=%d displays=%ld", frozen, snapshots.count)
+        if !frozen && UpshotPreferences.areaSelectionMagnifier {
+            startLiveMagnifier()
+        }
+        NSLog("Area selector opened: frozen=%d displays=%ld crosshair=%d magnifier=%d", frozen, snapshots.count, UpshotPreferences.areaSelectionCrosshair, UpshotPreferences.areaSelectionMagnifier)
+    }
+
+    private func startLiveMagnifier() {
+        liveMagnifier.start(panelIDs: Set(panels.map { CGWindowID($0.windowNumber) }), snapshots: snapshots) { [weak self] in self?.redraw() }
+    }
+
+    func magnifierImage(for snapshot: AreaCaptureSnapshot) -> CGImage? {
+        if !frozen { return liveMagnifier.displayID == snapshot.displayID ? liveMagnifier.image : nil }
+        let x = (pointer.x - snapshot.frame.minX) * snapshot.scale
+        let y = (snapshot.frame.maxY - pointer.y) * snapshot.scale
+        let rect = CGRect(x: min(max(0, floor(x) - 8), CGFloat(snapshot.image.width) - 17),
+                          y: min(max(0, floor(y) - 8), CGFloat(snapshot.image.height) - 17), width: 17, height: 17)
+        return snapshot.image.cropping(to: rect)
+    }
+
+    func magnifierSamplePosition(for snapshot: AreaCaptureSnapshot) -> CGPoint {
+        if !frozen { return liveMagnifier.samplePosition }
+        let x = (pointer.x - snapshot.frame.minX) * snapshot.scale
+        let y = (snapshot.frame.maxY - pointer.y) * snapshot.scale
+        let originX = min(max(0, floor(x) - 8), CGFloat(snapshot.image.width) - 17)
+        let originY = min(max(0, floor(y) - 8), CGFloat(snapshot.image.height) - 17)
+        return CGPoint(x: (floor(x) + 0.5 - originX) / 17, y: 1 - (floor(y) + 0.5 - originY) / 17)
+    }
+
+    func readout(for snapshot: AreaCaptureSnapshot) -> String {
+        let x = Int(floor((pointer.x - snapshot.frame.minX) * snapshot.scale))
+        let y = Int(floor((snapshot.frame.maxY - pointer.y) * snapshot.scale))
+        var text = "X \(x) Y \(y) px"
+        if let highlightedRect {
+            let scale = snapshots.filter { $0.frame.intersects(highlightedRect) }.map(\.scale).max() ?? snapshot.scale
+            text += " · \(Int(ceil(highlightedRect.width * scale))) × \(Int(ceil(highlightedRect.height * scale))) px"
+        }
+        if !frozen && UpshotPreferences.areaSelectionMagnifier && liveMagnifier.image == nil { text += " · Live preview unavailable" }
+        return text
     }
 
     func move(to point: CGPoint) {
@@ -122,6 +160,22 @@ final class AreaCaptureSelection {
     func cancel() { finish(nil) }
 
     func keyDown(_ event: NSEvent) {
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "x":
+            UpshotPreferences.areaSelectionCrosshair.toggle()
+            NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
+            redraw()
+            return
+        case "m":
+            UpshotPreferences.areaSelectionMagnifier.toggle()
+            NSLog("Area magnifier changed: enabled=%d", UpshotPreferences.areaSelectionMagnifier)
+            if !frozen {
+                if UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() } else { liveMagnifier.stop() }
+            }
+            redraw()
+            return
+        default: break
+        }
         switch event.keyCode {
         case 53: finish(nil)
         case 49:
@@ -156,6 +210,7 @@ final class AreaCaptureSelection {
     private func finish(_ result: AreaCaptureSelectionResult?) {
         guard let continuation else { return }
         self.continuation = nil
+        liveMagnifier.stop()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
         for panel in panels { panel.orderOut(nil) }
@@ -246,6 +301,13 @@ private final class AreaCaptureSelectionView: NSView {
             let path = NSBezierPath(rect: selected)
             path.lineWidth = 1
             path.stroke()
+        }
+        if snapshot.frame.contains(selector.pointer) {
+            let point = CGPoint(x: selector.pointer.x - snapshot.frame.minX, y: selector.pointer.y - snapshot.frame.minY)
+            AreaSelectionMagnifier.draw(in: context, bounds: bounds, point: point,
+                                        image: selector.magnifierImage(for: snapshot), samplePosition: selector.magnifierSamplePosition(for: snapshot), readout: selector.readout(for: snapshot),
+                                        showsCrosshair: UpshotPreferences.areaSelectionCrosshair,
+                                        showsMagnifier: UpshotPreferences.areaSelectionMagnifier)
         }
         let text = selector.windowSelection ? "Click a window · Space: area · Esc: cancel" : "Drag across displays · Space: window · Esc: cancel"
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white]
