@@ -1,15 +1,7 @@
-//
-//  AnnotationBackgroundPresetStore.swift
-//  Upshot
-//
 
 import Foundation
 import Observation
 
-/// A named, reusable snapshot of the annotation editor's background, layout,
-/// camera, focus blur, screenshot border, and watermark settings.
-/// `StoredBackground` is shared with editable `.upshot` documents so both
-/// persistence paths round-trip identically.
 struct AnnotationBackgroundPreset: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
@@ -22,15 +14,15 @@ struct AnnotationBackgroundPreset: Identifiable, Codable, Equatable {
     ) {
         self.id = id
         self.name = name
-        self.background = StoredBackground(settings)
+        var recipe = settings
+        recipe.canvasExpansion = AnnotationCanvasExpansion()
+        self.background = StoredBackground(recipe)
     }
 
     var settings: AnnotationBackgroundSettings {
         background.settings
     }
 
-    /// Hidden recent-wallpaper state should not make an otherwise identical
-    /// solid or gradient preset appear edited.
     func matches(_ candidate: AnnotationBackgroundSettings) -> Bool {
         Self.settingsMatch(settings, candidate)
     }
@@ -56,6 +48,7 @@ struct AnnotationBackgroundPresetImportResult {
 extension AnnotationBackgroundSettings {
     fileprivate var presetComparable: AnnotationBackgroundSettings {
         var comparable = self
+        comparable.canvasExpansion = AnnotationCanvasExpansion()
         switch comparable.style {
         case .customWallpaper(let wallpaper):
             comparable.customWallpaper = wallpaper
@@ -98,8 +91,6 @@ final class AnnotationBackgroundPresetStore {
     private static let libraryKey = "annotationBackgroundPresetLibrary.v1"
     private static let recoveryLibraryKey = "annotationBackgroundPresetLibrary.v1.recovery"
 
-    // Keys used by the abandoned prototype. Reading them once makes this
-    // implementation safe for anyone who briefly ran that build.
     private static let legacyPresetsKey = "annotationBackgroundPresets"
     private static let legacyActivePresetIDKey = "annotationBackgroundActivePresetID"
 
@@ -149,8 +140,6 @@ final class AnnotationBackgroundPresetStore {
         return presets.first { Self.namesMatch($0.name, candidate) }
     }
 
-    /// Creates a new preset. Duplicate names are rejected so saving from the
-    /// naming popover can never overwrite a user's existing recipe.
     @discardableResult
     func savePreset(
         named rawName: String,
@@ -187,8 +176,6 @@ final class AnnotationBackgroundPresetStore {
         return AnnotationBackgroundPresetTransferFile(preset: preset)
     }
 
-    /// Imports portable presets with fresh local identities. Imported presets
-    /// never replace an existing preset or become the default automatically.
     @discardableResult
     func importTransferFile(
         _ transferFile: AnnotationBackgroundPresetTransferFile
