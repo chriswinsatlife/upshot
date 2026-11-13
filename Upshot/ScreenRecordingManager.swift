@@ -190,7 +190,7 @@ final class ScreenRecordingManager {
                 self.session = session
                 let focusWarning = await RecordingFocusController.shared.begin()
                 guard isStarting(session: session) else { return }
-                if let focusWarning { Self.presentInputWarnings([focusWarning]) }
+                if let focusWarning { NSLog("Recording Focus not enabled: %@", focusWarning) }
                 let content = try await ScreenRecordingCapture.availableContent()
                 guard isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)

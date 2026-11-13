@@ -13,7 +13,7 @@ extension UpshotPreferences {
     static let recordingFocusShortcutNameKey = "recordingFocusShortcutName"
 
     static var recordingDoNotDisturb: Bool {
-        UserDefaults.standard.object(forKey: recordingDoNotDisturbKey) as? Bool ?? true
+        UserDefaults.standard.object(forKey: recordingDoNotDisturbKey) as? Bool ?? false
     }
 
     static var recordingFocusShortcutName: String {
