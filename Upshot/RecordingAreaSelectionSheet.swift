@@ -61,7 +61,7 @@ final class RecordingAreaSelectionSheet: NSView {
 
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.withAlphaComponent(0.32).setFill()
+        RecordingAreaHighlightView.screenDimmingColor.setFill()
         bounds.fill()
 
         guard selection != nil, let visible = presenter.visibleRect else { return }
@@ -85,10 +85,6 @@ final class RecordingAreaSelectionSheet: NSView {
         border.stroke()
         drawHandles(around: rect)
         NSGraphicsContext.restoreGraphicsState()
-
-        if presenter.isInteracting {
-            drawSizeBadge(for: rect)
-        }
     }
 
     private func drawHandles(around rect: CGRect) {
@@ -149,32 +145,6 @@ final class RecordingAreaSelectionSheet: NSView {
             guides.line(to: CGPoint(x: rect.maxX, y: y))
         }
         guides.stroke()
-    }
-
-    private func drawSizeBadge(for rect: CGRect) {
-        guard let selection else { return }
-        let size = selection.pixelSize
-        let dimensions = OverlayTextLayout("\(size.width) × \(size.height)", font: OverlayTextLayout.selectionSizeFont)
-        let aspect = presenter.aspect.map { OverlayTextLayout("  \($0.title)", font: OverlayTextLayout.selectionAspectFont, color: CGColor(gray: 1, alpha: 0.6)) }
-        let textSize = CGSize(width: dimensions.size.width + (aspect?.size.width ?? 0), height: max(dimensions.size.height, aspect?.size.height ?? 0))
-        let padding = CGSize(width: 8, height: 4)
-        let badgeSize = CGSize(width: textSize.width + padding.width * 2, height: textSize.height + padding.height * 2)
-        let gap: CGFloat = 8
-        var origin = CGPoint(x: rect.minX, y: rect.minY - badgeSize.height - gap)
-        if origin.y < gap {
-            origin.y = rect.height > badgeSize.height + gap * 2 ? rect.minY + gap : rect.maxY + gap
-            if origin.y == rect.minY + gap { origin.x += gap }
-        }
-        origin.x = min(max(origin.x, gap), bounds.width - badgeSize.width - gap)
-        origin.y = min(max(origin.y, gap), bounds.height - badgeSize.height - gap)
-
-        let badge = CGRect(origin: origin, size: badgeSize)
-        NSColor.black.withAlphaComponent(0.72).setFill()
-        NSBezierPath(roundedRect: badge, xRadius: 6, yRadius: 6).fill()
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let textOrigin = CGPoint(x: badge.minX + padding.width, y: badge.minY + padding.height)
-        dimensions.draw(at: textOrigin, in: context, flipped: isFlipped)
-        aspect?.draw(at: CGPoint(x: textOrigin.x + dimensions.size.width, y: textOrigin.y), in: context, flipped: isFlipped)
     }
 
 
@@ -374,19 +344,25 @@ private struct RecordingAreaSheetOverlay: View {
     let screenFrame: CGRect
 
     @State private var presenter = RecordingAreaSelectionPresenter.shared
-    @State private var pillSize = CGSize(width: 170, height: 32)
+    @State private var pillSize = CGSize(width: InterfaceMetrics.flyoutMinimumWidth, height: InterfaceMetrics.flyoutRowHeight)
+    @State private var badgeSize = CGSize(width: 96, height: 28)
 
-    private static let pillGap: CGFloat = 14
-    private static let margin: CGFloat = 12
+    private static let pillGap = Space.l
+    private static let badgeGap = Space.m
+    private static let margin = Space.l
 
     var body: some View {
         GeometryReader { proxy in
-            if presenter.selection?.displayID == displayID,
-               !presenter.isInteracting,
-               let visible = presenter.visibleRect {
-                startPill
-                    .position(pillCenter(for: local(visible), in: proxy.size))
-                    .transition(.opacity)
+            if presenter.selection?.displayID == displayID, let visible = presenter.visibleRect {
+                if presenter.isInteracting, let selection = presenter.selection {
+                    sizeBadge(for: selection)
+                        .position(badgeCenter(for: local(visible), in: proxy.size))
+                        .transition(.opacity)
+                } else {
+                    startPill
+                        .position(pillCenter(for: local(visible), in: proxy.size))
+                        .transition(.opacity)
+                }
             } else if presenter.selection == nil, presenter.isHome(displayID) {
                 hint
                     .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
@@ -400,24 +376,9 @@ private struct RecordingAreaSheetOverlay: View {
     }
 
     private var startPill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "record.circle")
-                .font(.system(size: 13, weight: .semibold))
-            Text("Start Recording")
-                .font(.system(size: 13, weight: .semibold))
-            Text("↩")
-                .font(.system(size: 12, weight: .semibold))
-                .opacity(0.7)
+        InterfacePanel(.flyout, padding: InterfaceMetrics.flyoutPadding) {
+            InterfaceFlyoutRow("Start Recording", systemImage: "record.circle", keyHint: "↩", isHighlighted: presenter.isPillPressed) {}
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 14)
-        .frame(height: 32)
-        .background(Palette.record, in: Capsule())
-        .overlay {
-            Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-        }
-        .opacity(presenter.isPillPressed ? 0.75 : 1)
-        .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
         .fixedSize()
         .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .global)
@@ -431,21 +392,51 @@ private struct RecordingAreaSheetOverlay: View {
         .accessibilityLabel("Start Recording")
     }
 
-    private var hint: some View {
-        VStack(spacing: 4) {
-            Text(presenter.aspect.map { "Drag to select a \($0.title) area" } ?? "Drag to select an area")
-                .font(.system(size: 13, weight: .semibold))
-            Text(presenter.aspect == nil
-                 ? "Shift for a square · Option to draw from the center"
-                 : "Option to draw from the center · Esc to cancel")
-                .font(.system(size: 11, weight: .medium))
-                .opacity(0.65)
+    private func sizeBadge(for selection: RecordingAreaSelectionPresenter.Selection) -> some View {
+        let size = selection.pixelSize
+        return InterfacePanel(.pill) {
+            HStack(spacing: Space.s) {
+                Text(verbatim: "\(size.width) × \(size.height)")
+                    .foregroundStyle(Palette.label)
+                if let aspect = presenter.aspect {
+                    Text(aspect.title)
+                        .foregroundStyle(Palette.secondaryLabel)
+                }
+            }
+            .font(.dsNumeric)
+            .padding(.horizontal, Space.xs)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .fixedSize()
+        .onGeometryChange(for: CGSize.self) {
+            $0.size
+        } action: { size in
+            badgeSize = size
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var hint: some View {
+        InterfaceToast(
+            presenter.aspect.map { "Drag to select a \($0.title) area" } ?? "Drag to select an area",
+            detail: presenter.aspect == nil
+                ? "Shift for a square · Option to draw from the center"
+                : "Option to draw from the center · Esc to cancel",
+            systemImage: "rectangle.dashed"
+        )
+    }
+
+    private func badgeCenter(for rect: CGRect, in size: CGSize) -> CGPoint {
+        let gap = Self.badgeGap
+        var origin = CGPoint(x: rect.minX, y: rect.minY - badgeSize.height - gap)
+        if origin.y < gap {
+            let fitsInside = rect.height > badgeSize.height + gap * 2
+            origin = fitsInside
+                ? CGPoint(x: rect.minX + gap, y: rect.minY + gap)
+                : CGPoint(x: rect.minX, y: rect.maxY + gap)
+        }
+        origin.x = min(max(origin.x, gap), size.width - badgeSize.width - gap)
+        origin.y = min(max(origin.y, gap), size.height - badgeSize.height - gap)
+        return CGPoint(x: origin.x + badgeSize.width / 2, y: origin.y + badgeSize.height / 2)
     }
 
     private func pillCenter(for rect: CGRect, in size: CGSize) -> CGPoint {

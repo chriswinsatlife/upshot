@@ -286,7 +286,8 @@ final class RecordingAreaSelectionPresenter {
     }
 
     func isHome(_ displayID: CGDirectDisplayID) -> Bool {
-        homeSheet?.displayID == displayID
+        if UpshotStorage.isRenderingStates { return true }
+        return homeSheet?.displayID == displayID
     }
 
     private func installKeyMonitors() {

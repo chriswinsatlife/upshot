@@ -111,12 +111,14 @@ extension ScreenRecordingSource {
 }
 
 final class RecordingAreaHighlightView: NSView {
+    static let screenDimmingColor = NSColor.black.withAlphaComponent(0.32)
+
     var highlightRect: CGRect = .zero
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill()
         bounds.fill(using: .copy)
-        NSColor.black.withAlphaComponent(0.32).setFill()
+        Self.screenDimmingColor.setFill()
         bounds.fill()
         NSColor.clear.setFill()
         let visibleRecordingRect = highlightRect.intersection(bounds)
