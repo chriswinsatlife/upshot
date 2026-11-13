@@ -89,7 +89,7 @@ enum FreehandSettings {
         }
         if let smoothing {
             options.smoothing = min(1, max(0, smoothing))
-            options.streamline = options.smoothing
+            if options.smoothing != 0.62 { options.streamline = options.smoothing }
         }
         options.last = last
         return options

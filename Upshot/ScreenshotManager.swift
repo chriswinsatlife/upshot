@@ -62,7 +62,8 @@ final class ScreenshotManager {
         let url = await runScreencapture(args: args)
         lastAreaCaptureSource = probe.finish(.window)
         lastAreaCaptureDisplayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
-        lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .window, skipBackgroundPreset: probe.selectionModifiers.contains(.shift))
+        lastCaptureMetadata = ScreenshotCaptureMetadata(captureType: .window,
+            skipBackgroundPreset: delaySeconds > 0 ? NSEvent.modifierFlags.contains(.shift) : probe.selectionModifiers.contains(.shift))
         return url
     }
 

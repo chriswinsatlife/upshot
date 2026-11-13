@@ -1,32 +1,16 @@
-//
-//  RecordingStudioActions.swift
-//  Upshot
-//
-//  Studio's two outward actions, Share and Export, as one glass group under
-//  the inspector. Each capsule carries its own job: it fills as a progress
-//  bar while running (the other action folds into a circle to give it room),
-//  flashes a green check when the job lands, and a follow-up button - Show in
-//  Finder, Copy Link - melts out beside it. A one-line status above names
-//  what the actions will do, or what they just did.
-//
 
 import AppKit
 import SwiftUI
 
 struct StudioActionFooter: View {
     @Bindable var model: RecordingStudioModel
-    /// The one-line status above the actions; dropped where the footer
-    /// floats over the stage.
     var showsStatus = true
 
     @State private var isExportOptionsPresented = false
     @State private var isShareOptionsPresented = false
     @State private var exportFlash: String?
     @State private var shareFlash: String?
-    /// Which job the status line reports on once neither is running.
     @State private var lastJob: Job = .export
-    /// A failure the status line has shown long enough; it falls back to
-    /// the format summary rather than staying until the next job.
     @State private var expiredFailure: String?
     @Namespace private var glass
 
@@ -99,7 +83,6 @@ struct StudioActionFooter: View {
         }
     }
 
-    // MARK: Capsules
 
     private var exportCapsule: some View {
         GlassActionCapsule(
@@ -153,7 +136,6 @@ struct StudioActionFooter: View {
         }
     }
 
-    // MARK: Status
 
     @ViewBuilder
     private var status: some View {
@@ -224,7 +206,6 @@ struct StudioActionFooter: View {
         return .summary(settingsSummary)
     }
 
-    /// Changes when the status line changes meaning, not on progress ticks.
     private var statusKey: String {
         switch currentStatus {
         case .summary(let text): "summary-\(text)"
@@ -234,8 +215,6 @@ struct StudioActionFooter: View {
         }
     }
 
-    /// Changes when a capsule changes shape, so the group morphs once per
-    /// state instead of springing on every progress tick.
     private var layoutKey: String {
         [
             isExportRunning, isShareRunning,
@@ -256,7 +235,6 @@ struct StudioActionFooter: View {
         ].joined(separator: " · ")
     }
 
-    // MARK: State
 
     private var isExportRunning: Bool {
         if case .exporting = model.exportState { return true }
@@ -323,8 +301,6 @@ struct StudioActionFooter: View {
     }
 }
 
-/// The determinate ring for small inline progress, such as the audio-only
-/// export button.
 struct StudioProgressRing: View {
     let progress: Double
 

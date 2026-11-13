@@ -45,7 +45,7 @@ extension AutomationPreferenceDefinition {
         values[UpshotPreferences.screenshotFilenameCounterKey] = Self(defaultValue: 0, range: 0...Double(Int.max), integral: true)
         values[UpshotPreferences.screenshotClipboardModeKey] = Self(defaultValue: "both", choices: ScreenshotClipboardMode.allCases.map(\.rawValue))
         values[UpshotPreferences.recognitionLanguageKey] = Self(defaultValue: "")
-        values[UpshotPreferences.annotationDrawingSmoothingKey] = Self(defaultValue: 0, range: 0...1)
+        values[UpshotPreferences.annotationDrawingSmoothingKey] = Self(defaultValue: 0.62, range: 0...1)
         values[UpshotPreferences.previewOverlaySizeKey] = Self(defaultValue: "small", choices: QuickAccessOverlaySize.allCases.map(\.rawValue))
         values[UpshotPreferences.previewAutoCloseActionKey] = Self(defaultValue: "close", choices: QuickAccessAutoCloseAction.allCases.map(\.rawValue))
         values[UpshotPreferences.previewSwipeTowardEdgeActionKey] = Self(defaultValue: "tuck", choices: QuickAccessSwipeAction.allCases.map(\.rawValue))

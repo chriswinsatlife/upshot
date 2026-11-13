@@ -1,15 +1,3 @@
-//
-//  RecordingStudioWindow.swift
-//  Upshot
-//
-//  The recording studio: a Screen Studio-style editor for screen recordings.
-//  The stage shows the composited live preview (background, padded rounded
-//  card, zoom-follow-pointer, draggable camera bubble) on the editor
-//  workspace; the timeline dock sits under it, and the tabbed inspector runs
-//  the full height beside both. Chrome is Liquid Glass throughout and moves
-//  with the shared spring in Motion.swift: modes such as crop arrive as
-//  floating glass bars rather than swapping the toolbar out.
-//
 
 import AppKit
 import AVFoundation
@@ -34,8 +22,6 @@ struct RecordingStudioWindow: View {
         .task(id: url) {
             guard let url else { return }
             model?.teardown()
-            // An agent may be editing this project without a window. Hand it
-            // over: its draft is flushed first, so the window opens on it.
             AgentProjects.shared.releaseAgentModel(for: url)
             let newModel = RecordingStudioModel(url: url)
             model = newModel
@@ -148,10 +134,6 @@ private struct RecordingStudioContent: View {
         }
     }
 
-    /// The workspace with the canvas, plus the floating glass that belongs
-    /// to it: the crop bar while cropping, and the Share/Export actions while
-    /// the inspector that normally holds them is hidden. Either one reserves
-    /// a strip under the canvas so it never covers the picture.
     private var stage: some View {
         StudioCanvas(model: model, bottomReserve: floatsChrome ? 72 : 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -194,9 +176,6 @@ private struct RecordingStudioContent: View {
         model.isCroppingVideo || !isInspectorPresented
     }
 
-    /// Save stays a toolbar button rather than a menu command: Studio is
-    /// reached from a menu-bar app, where the main menu isn't a reliable
-    /// place to look for ⌘S. Its glyph turns into a check when a save lands.
     private var saveButton: some View {
         Button {
             model.saveProject()
@@ -214,14 +193,11 @@ private struct RecordingStudioContent: View {
         .motion(.morphQuick, value: model.saveFlash)
     }
 
-    /// AppKit already paints the unsaved dot in the close button; the title
-    /// says it in words for anyone who reads the title bar first.
     private var windowTitle: String {
         let name = Self.friendlyTitle(for: model.projectDisplayName)
         return model.hasUnsavedChanges ? "\(name) - Edited" : name
     }
 
-    /// Length of the edited cut and the source resolution.
     private var windowSubtitle: String {
         guard model.isLoaded else { return "" }
         let total = Int(model.duration.rounded())
@@ -230,8 +206,6 @@ private struct RecordingStudioContent: View {
         return "\(clock) · \(Int(size.width))×\(Int(size.height))"
     }
 
-    /// Unrenamed recordings are named `Upshot_<timestamp>_<id>` on disk;
-    /// the title shows when it was recorded instead of the raw file name.
     private static func friendlyTitle(for name: String) -> String {
         let parts = name.split(separator: "_")
         guard parts.count >= 2, parts[0] == "Upshot" else { return name }
@@ -266,15 +240,11 @@ private struct RecordingStudioContent: View {
     }
 }
 
-// MARK: - Canvas
 
 private struct StudioCanvas: View {
     @Bindable var model: RecordingStudioModel
-    /// Height kept clear under the canvas for floating stage chrome.
     var bottomReserve: CGFloat = 0
 
-    /// A play/pause glyph that blooms in the middle of the canvas after a
-    /// click toggles playback, then fades.
     private struct PlaybackFlash: Equatable {
         let id = UUID()
         let systemImage: String
@@ -304,8 +274,6 @@ private struct StudioCanvas: View {
                     canvasSize: canvasSize,
                     isEditingVideoCrop: model.isCroppingVideo
                 )
-                // Clicking the picture plays or pauses, like a player.
-                // The camera bubble and zoom target keep their own drags.
                 .contentShape(Rectangle())
                 .gesture(
                     TapGesture().onEnded(togglePlayback),
@@ -340,9 +308,6 @@ private struct StudioCanvas: View {
             }
             .coordinateSpace(name: VideoCropOverlay.coordinateSpaceName)
             .frame(width: canvasSize.width, height: canvasSize.height)
-            // Square like the exported video, lifted off the workspace by a
-            // hairline and a soft shadow instead of a rounded mask that also
-            // clipped the camera bubble.
             .clipped()
             .overlay {
                 Rectangle()
@@ -359,8 +324,6 @@ private struct StudioCanvas: View {
         }
     }
 
-    /// The hovered timeline moment while the preview skims away from the
-    /// playhead; nil when the canvas shows the playhead frame.
     private var skimTime: TimeInterval? {
         guard !model.isPlaying,
               let hover = model.hoverPreviewTime,
@@ -395,7 +358,6 @@ private struct StudioCanvas: View {
     }
 }
 
-/// Small dark capsule for transient canvas status.
 private struct StudioCanvasBadge: View {
     let text: String
 
@@ -409,8 +371,6 @@ private struct StudioCanvasBadge: View {
     }
 }
 
-/// The paused-preview time while skimming the timeline, on clear glass so
-/// the frame underneath stays readable.
 private struct StudioSkimBadge: View {
     let time: TimeInterval
 
@@ -440,14 +400,6 @@ private struct StudioPlaybackFlashView: View {
     }
 }
 
-/// The complete canvas composition. A video crop changes only the screen card
-/// layout and viewport; background, camera and captions remain in canvas space.
-/// Original sizes that canvas to the visible source plus an equal border.
-///
-/// The camera layout timeline moves the card and the camera every frame, the
-/// same way the exporter resolves them. An edit made while paused (picking a
-/// layout, adding a cue) morphs from what was on screen into the new frame
-/// instead of jumping.
 private struct StudioCanvasComposition: View {
     @Bindable var model: RecordingStudioModel
     let canvasSize: CGSize
@@ -460,8 +412,6 @@ private struct StudioCanvasComposition: View {
         let start: Date
     }
 
-    /// The viewport last drawn, which a morph starts from. A reference, so
-    /// recording it while drawing doesn't draw the canvas again.
     private final class ShownViewport {
         private(set) var frame = ViewportFrame.identity
 
@@ -474,10 +424,6 @@ private struct StudioCanvasComposition: View {
     private static let editMorphDuration: TimeInterval = 0.45
 
     @State private var layoutMorph: LayoutMorph?
-    /// The layout timeline the canvas draws. An edit reaches the model a
-    /// pass before onChange can start its morph; drawing the edit's layout
-    /// for that pass would drop a cutout's layer, and its readiness with
-    /// it, so the framed camera would show in full all the way to a split.
     @State private var shownTimeline: RecordingCameraLayoutTimeline?
     @State private var shownViewport = ShownViewport()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -500,8 +446,6 @@ private struct StudioCanvasComposition: View {
         )
     }
 
-    /// Where the layout timeline puts everything at the playhead. Cropping
-    /// works on the bare screen.
     private func targetFrame(
         _ resolver: RecordingCameraLayoutResolver,
         timeline: RecordingCameraLayoutTimeline
@@ -533,15 +477,9 @@ private struct StudioCanvasComposition: View {
             } ?? target
             let layout = resolver.base.applying(frame)
             let zoomTarget = zoomTargetCue
-            // While a zoom's target is on show the frame stays unzoomed, so
-            // the target reads against the whole picture.
             let viewport = isEditingVideoCrop || zoomTarget != nil
                 ? ViewportFrame.identity
                 : model.previewViewportFrame(at: model.displayTime)
-            // The viewport follows an edit as soon as the model has it: a
-            // split's side-aligned crop in a card still the old width would
-            // slide the screen off one side. It holds until the morph
-            // starts, then blends along with the card.
             let isEditPending = shownTimeline != nil && shownTimeline != model.cameraLayoutTimeline
             let state = shownViewport.show(
                 isEditPending
@@ -580,8 +518,6 @@ private struct StudioCanvasComposition: View {
                     .opacity(layout.cameraOpacity)
                 }
 
-                // Images and text sit on the canvas above the camera and
-                // under the subtitles, as in the export.
                 if !isEditingVideoCrop {
                     let texts = model.texts(atEditorTime: model.displayTime)
                     let images = overlayImages
@@ -613,8 +549,6 @@ private struct StudioCanvasComposition: View {
                     )
                 }
 
-                // Regions and texts can be picked and arranged while paused;
-                // playing, a click on the picture still means pause.
                 if !isEditingVideoCrop, !model.isPlaying {
                     if layout.screenOpacity > 0.5 {
                         let regions = model.redactions(atEditorTime: model.displayTime)
@@ -638,9 +572,6 @@ private struct StudioCanvasComposition: View {
                 }
             }
             .frame(width: canvasSize.width, height: canvasSize.height)
-            // The canvas animates layout changes itself, frame by frame. An
-            // animated edit from the inspector would otherwise also spring
-            // the card and camera toward each frame, overshooting the morph.
             .transaction { $0.animation = nil }
         }
         .frame(width: canvasSize.width, height: canvasSize.height)
@@ -657,8 +588,6 @@ private struct StudioCanvasComposition: View {
         }
     }
 
-    /// Moves the corner camera to `corner` of whichever layout is showing,
-    /// settling from where it was let go.
     private func dropCamera(at dropped: CGRect, into corner: RecordingCameraLayout.Corner, from frame: RecordingCameraLayoutFrame) {
         if !reduceMotion {
             var from = frame
@@ -677,13 +606,9 @@ private struct StudioCanvasComposition: View {
         }
     }
 
-    /// Starts a short morph from what the canvas showed before an edit.
-    /// Playback already moves through the timeline's own morphs.
     private func morphFromEdit(previous: RecordingCameraLayoutFrame, resolver: RecordingCameraLayoutResolver) {
         guard !model.isPlaying, !reduceMotion else { return }
         let now = Date()
-        // Mid-morph, start from where the canvas is rather than where the
-        // interrupted morph began.
         let from = layoutMorph.map { morph in
             RecordingCameraLayoutFrame.interpolate(
                 morph.from,
@@ -750,8 +675,6 @@ private struct StudioCanvasComposition: View {
             .position(x: layout.cardRect.midX, y: layout.cardRect.midY)
     }
 
-    /// The showing images whose files have been decoded. Reading the
-    /// revision redraws the canvas as decoding finishes.
     private var overlayImages: [(overlay: RecordingImageOverlay, image: RecordingOverlayImage)] {
         _ = model.overlayImageRevision
         return model.images(atEditorTime: model.displayTime).compactMap { overlay in
@@ -761,7 +684,6 @@ private struct StudioCanvasComposition: View {
         }
     }
 
-    /// The selected zoom, shown as a target on the paused canvas.
     private var zoomTargetCue: ZoomCue? {
         guard !isEditingVideoCrop,
               !model.isPlaying,
@@ -772,10 +694,6 @@ private struct StudioCanvasComposition: View {
     }
 }
 
-/// Where the selected zoom will look, drawn over the unzoomed frame with
-/// everything outside it dimmed. Fixed zooms can be dragged to re-aim them;
-/// pointer and smart zooms follow the pointer, so their target is shown at
-/// the pointer's position under the playhead and can't be moved.
 private struct StudioZoomTargetOverlay: View {
     @Bindable var model: RecordingStudioModel
     let cue: ZoomCue
@@ -852,8 +770,6 @@ private struct StudioZoomTargetOverlay: View {
     }
 
     private func moveGesture(contentSize: CGSize) -> some Gesture {
-        // Global coordinates: the target moves under the pointer, so local
-        // translations would chase their own updates.
         DragGesture(coordinateSpace: .global)
             .onChanged { value in
                 if dragStartPoint == nil {
@@ -877,16 +793,11 @@ private struct StudioZoomTargetOverlay: View {
     }
 }
 
-/// Studio's crop: the screenshot editor's box and interaction over the
-/// uncropped video. One drag covers the canvas and the model hit-tests the
-/// press, so a corner, an edge, the inside and the outside each do what they
-/// do in the editor.
 private struct VideoCropOverlay: View {
     static let coordinateSpaceName = "VideoCropSpace"
 
     @Bindable var model: RecordingStudioModel
     let canvasSize: CGSize
-    /// The uncropped screen-video card inside the surrounding canvas.
     let videoFrame: CGRect
     @State private var keyMonitor: Any?
 
@@ -925,8 +836,6 @@ private struct VideoCropOverlay: View {
             }
     }
 
-    /// The drag's own cursor while dragging, so a fast pointer can't flicker
-    /// it through other zones; otherwise whatever a press would grab.
     private func cursor(at location: CGPoint) -> NSCursor {
         switch model.videoCropDrag?.target ?? model.videoCropTarget(at: location, in: videoFrame) {
         case .handle(let handle): .frameResize(position: handle.frameResizePosition, directions: .all)
@@ -935,7 +844,6 @@ private struct VideoCropOverlay: View {
         }
     }
 
-    /// Arrow keys nudge the selection, ahead of the timeline's frame step.
     private func installKeyMonitor(in window: NSWindow?) {
         removeKeyMonitor()
         guard let window else { return }
@@ -957,15 +865,11 @@ private struct VideoCropOverlay: View {
     }
 }
 
-/// Recorded pointer artwork, placed through the same viewport transform the
-/// video card uses (see RecordingPointerTimeline for why it is reconstructed).
 private struct StudioCursorOverlay: View {
     let pointer: PointerFrame
     let artwork: PointerArtwork?
     let state: ViewportFrame
     let cardSize: CGSize
-    /// The video's draw size at magnification 1 - equal to the card
-    /// normally, larger when a reframe aspect-fills it.
     var contentSize: CGSize?
     let cursorScale: CGFloat
     let showsClickEffect: Bool
@@ -1053,9 +957,6 @@ private struct StudioCursorOverlay: View {
     }
 }
 
-/// The keystroke caption pill: one rounded container with the chord's
-/// modifiers and key. Geometry comes from KeystrokeCaptionMetrics so the
-/// exporter draws the identical pill.
 private struct StudioKeystrokeCaptionView: View {
     let caption: KeystrokeCaptionFrame
     let placement: RecordingKeystrokePlacement
@@ -1084,9 +985,6 @@ private struct StudioKeystrokeCaptionView: View {
     }
 }
 
-/// The "2× ›››" badge over a sped-up clip. Geometry comes from
-/// SpeedBadgeMetrics and its animation from the editor time, so the exporter
-/// draws the identical badge on the identical frame.
 private struct StudioSpeedBadgeView: View {
     let badge: SpeedBadgeFrame
     let placement: RecordingKeystrokePlacement
@@ -1139,10 +1037,6 @@ private struct StudioSpeedBadgeView: View {
     }
 }
 
-/// The narration subtitle bar: rounded black bar, white text, center-locked
-/// horizontally at the style's vertical position on the full canvas
-/// (background included). Geometry comes from SubtitleBarMetrics so the
-/// exporter draws the identical bar.
 private struct StudioSubtitleBarView: View {
     let text: String
     var karaokeLine: KaraokeTimeline.Line?
@@ -1154,9 +1048,6 @@ private struct StudioSubtitleBarView: View {
 
         barText
             .font(.system(size: metrics.fontSize, weight: .semibold, design: .rounded))
-            // Long lines wrap into centered lines on narrow canvases,
-            // matching the exporter's framesetter layout; the scale
-            // factor only kicks in past the shared line cap.
             .lineLimit(SubtitleBarMetrics.maximumLineCount)
             .multilineTextAlignment(.center)
             .lineSpacing(metrics.fontSize * (SubtitleBarMetrics.lineSpacingFactor - 1))
@@ -1168,9 +1059,6 @@ private struct StudioSubtitleBarView: View {
                 RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous)
                     .fill(.black.opacity(SubtitleBarMetrics.backgroundAlpha))
             )
-            // Invisible width cap: constrains where the text wraps while
-            // the pill above hugs the text, so the bar never spans the
-            // canvas.
             .frame(
                 maxWidth: metrics.maximumTextWidth(canvasWidth: canvasSize.width)
                     + metrics.paddingHorizontal * 2
@@ -1183,8 +1071,6 @@ private struct StudioSubtitleBarView: View {
             .allowsHitTesting(false)
     }
 
-    /// Plain white cue text, or karaoke-colored words matching the
-    /// exporter's palette exactly (SubtitleBarMetrics.karaoke*).
     private var barText: Text {
         guard let karaokeLine, !karaokeLine.words.isEmpty else {
             return Text(text).foregroundStyle(.white)
@@ -1221,8 +1107,6 @@ private extension RecordingKeystrokePlacement {
     }
 }
 
-/// A circle pointer's material in the preview: the light window-chrome
-/// material. Export draws its own match from the frame.
 struct PointerMaterialView: View {
     let material: PointerMaterial
     let diameter: CGFloat
@@ -1237,8 +1121,6 @@ struct PointerMaterialView: View {
     }
 }
 
-/// Blends within the window so it frosts the video, not the desktop, and
-/// stays light so it matches the export in either appearance.
 private struct StudioChromeMaterial: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -1267,21 +1149,11 @@ private enum StudioCursorImageCache {
     }
 }
 
-/// The camera on the canvas. A corner camera can be picked up and dropped
-/// anywhere; it settles into whichever corner of the screen card it was let
-/// go nearest, with that corner previewed while dragging. Other layouts
-/// place the camera themselves, so there it takes no clicks at all.
-///
-/// A cutout draws the person into a layer over the framed picture, which
-/// fades out as far as the camera is cut out. Until the cutout's first
-/// frame is ready the framed picture stays, so the camera never blinks out.
 private struct StudioCameraBubble: View {
     @Bindable var model: RecordingStudioModel
     let layout: RecordingStudioLayout
     let isMovable: Bool
-    /// Where the camera would land in each corner.
     let destination: (RecordingCameraLayout.Corner) -> (rect: CGRect, radius: CGFloat)
-    /// Called with the rect it was let go at and the corner it snaps to.
     let onDrop: (CGRect, RecordingCameraLayout.Corner) -> Void
 
     private static let hoverRingPadding: CGFloat = 3
@@ -1324,7 +1196,6 @@ private struct StudioCameraBubble: View {
                     }
                     .overlay {
                         if isActive {
-                            // Nested radius: the ring sits `hoverRingPadding` outside.
                             RoundedRectangle(
                                 cornerRadius: radius + Self.hoverRingPadding,
                                 style: .continuous
@@ -1344,12 +1215,9 @@ private struct StudioCameraBubble: View {
                     .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
                     .onHover { isHovering = $0 }
                     .pointerStyle(isMovable ? (dragOffset == nil ? PointerStyle.grabIdle : .grabActive) : nil)
-                    // Swallow clicks so they don't toggle playback underneath.
                     .onTapGesture {}
                     .gesture(dragGesture, including: isMovable ? .all : .none)
                     .help(isMovable ? "Drag the camera to another corner" : "")
-                    // A camera the layout places (full frame, split) lets clicks
-                    // through to the canvas, which plays and pauses.
                     .allowsHitTesting(isMovable)
                     .offset(x: rect.minX, y: rect.minY)
 
@@ -1365,8 +1233,6 @@ private struct StudioCameraBubble: View {
                 }
             }
             .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
-            // A cutout can stand wider than the canvas, which crops it as
-            // the export does.
             .clipShape(StudioCanvasClip(clips: showsCutout))
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
@@ -1375,7 +1241,6 @@ private struct StudioCameraBubble: View {
         }
     }
 
-    /// The export's feather and shadow for where the picture sits now.
     private func cutoutParameters(rect: CGRect, radius: CGFloat, cutout: CGFloat) -> StudioCutoutLayerParameters {
         let aspect = model.cameraVideoAspect
         let fill = max(rect.width / aspect, rect.height)
@@ -1389,7 +1254,6 @@ private struct StudioCameraBubble: View {
         )
     }
 
-    /// The card corner nearest the camera's center.
     private func corner(for rect: CGRect) -> RecordingCameraLayout.Corner {
         let card = layout.cardRect
         switch (rect.midX < card.midX, rect.midY < card.midY) {
@@ -1401,8 +1265,6 @@ private struct StudioCameraBubble: View {
     }
 
     private var dragGesture: some Gesture {
-        // Global coordinates: the camera moves under the pointer, so local
-        // translations would chase their own updates.
         DragGesture(coordinateSpace: .global)
             .onChanged { value in
                 dragOffset = value.translation
@@ -1415,9 +1277,6 @@ private struct StudioCameraBubble: View {
     }
 }
 
-/// The canvas when `clips`; otherwise far past it, so a corner camera
-/// dragged over the edge still shows whole. One shape either way keeps the
-/// camera's player layer in place when a cutout comes and goes.
 private struct StudioCanvasClip: Shape {
     var clips: Bool
 
@@ -1438,7 +1297,6 @@ private extension ViewportFrame {
     }
 }
 
-/// Renders an AnnotationBackgroundStyle as a live SwiftUI layer.
 private struct StudioBackgroundView: View {
     let style: AnnotationBackgroundStyle
 
@@ -1466,7 +1324,6 @@ private struct StudioBackgroundView: View {
     }
 }
 
-/// AVPlayerLayer host for the preview canvas.
 private struct StudioPlayerLayerView: NSViewRepresentable {
     let player: AVPlayer
     let gravity: AVLayerVideoGravity

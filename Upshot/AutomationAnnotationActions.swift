@@ -13,6 +13,7 @@ enum AutomationAnnotationActions {
         let model = try AutomationEditorActions.activeModel()
         guard model.sourceURL != nil else { throw AutomationError.message("The screenshot editor has no image loaded.") }
         let operation = try operation(action, parameters: parameters, model: model)
+        model.errorMessage = nil
         if let operation { await AnnotationEditorAction.perform(operation, on: model) }
         if let error = model.errorMessage { throw AutomationError.message(error) }
     }
