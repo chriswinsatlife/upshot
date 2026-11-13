@@ -50,7 +50,7 @@ struct CaptureShelfCard: View {
             .onDragSessionUpdated { session in
                 switch session.phase {
                 case .active: shelf.beginDrag(id: item.id)
-                case .ended: shelf.endDrag(id: item.id)
+                case .ended(let operation): shelf.endDrag(id: item.id, operation: operation)
                 default: break
                 }
             }

@@ -260,11 +260,14 @@ final class CaptureShelf {
         draggingID = id
     }
 
-    func endDrag(id: ShelfItem.ID) {
-        if UpshotPreferences.previewCloseAfterDragging {
+    func endDrag(id: ShelfItem.ID, operation: DropOperation) {
+        let completed = operation != .cancel && operation != .forbidden
+        if completed && UpshotPreferences.previewCloseAfterDragging {
             dismiss(id: id)
+            NSLog("Quick Access drag item=%@ outcome=completed card=closed", id.uuidString)
         } else {
             withAnimation(.morphQuickIfAllowed) { draggingID = nil }
+            NSLog("Quick Access drag item=%@ outcome=%@ card=retained", id.uuidString, completed ? "completed" : "cancelled")
         }
     }
 
