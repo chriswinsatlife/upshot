@@ -57,7 +57,7 @@ extension UpshotPreferences {
     static let areaSelectionMagnifierKey = "areaSelectionMagnifier"
 
     static var areaSelectionCrosshair: Bool {
-        get { UserDefaults.standard.object(forKey: areaSelectionCrosshairKey) as? Bool ?? true }
+        get { UserDefaults.standard.object(forKey: areaSelectionCrosshairKey) as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: areaSelectionCrosshairKey) }
     }
 
@@ -69,7 +69,7 @@ extension UpshotPreferences {
     static let areaSelectionFreezeScreenKey = "areaSelectionFreezeScreen"
 
     static var areaSelectionFreezeScreen: Bool {
-        get { UserDefaults.standard.object(forKey: areaSelectionFreezeScreenKey) as? Bool ?? true }
+        get { UserDefaults.standard.object(forKey: areaSelectionFreezeScreenKey) as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: areaSelectionFreezeScreenKey) }
     }
 }

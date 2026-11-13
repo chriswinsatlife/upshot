@@ -101,8 +101,8 @@ Settings → General → Configuration File provides Reveal Configuration, Reloa
 
 ## Area Selection Preferences
 
-- `areaSelectionFreezeScreen`: Boolean, default true.
-- `areaSelectionCrosshair`: Boolean, default true.
+- `areaSelectionFreezeScreen`: Boolean, default false.
+- `areaSelectionCrosshair`: Boolean, default false.
 - `areaSelectionMagnifier`: Boolean, default true.
 - `allInOneLastMode`: string, default `area`; values `area`, `window`, `fullscreen`, `previousArea`, `element`, `scrolling`, and `recording`.
 - `areaSelectionLastScreenshotRect`: empty array until a screenshot succeeds; otherwise `[x, y, width, height]` in global AppKit points. Width and height must each be at least one.

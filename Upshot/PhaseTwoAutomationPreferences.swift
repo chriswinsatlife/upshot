@@ -4,8 +4,8 @@ extension AutomationPreferenceDefinition {
     static var phaseTwoCatalog: [String: Self] {
         var values: [String: Self] = [:]
         let booleans: [String: Bool] = [
-            UpshotPreferences.areaSelectionFreezeScreenKey: true,
-            UpshotPreferences.areaSelectionCrosshairKey: true,
+            UpshotPreferences.areaSelectionFreezeScreenKey: false,
+            UpshotPreferences.areaSelectionCrosshairKey: false,
             UpshotPreferences.areaSelectionMagnifierKey: true,
             UpshotPreferences.screenshotConvertToSRGBKey: false,
             UpshotPreferences.screenshotScaleToOneXKey: false,
