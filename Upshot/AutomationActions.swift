@@ -155,8 +155,9 @@ enum AutomationActions {
                 }
                 seconds = delay
             } else { seconds = UpshotPreferences.captureDelaySeconds }
+            let probe = CaptureSourceProbe(tracksPointer: true)
             if let raw = await ScreenshotManager.shared.captureArea(includeShadow: UpshotPreferences.captureWindowShadow, delaySeconds: seconds) {
-                captured = ScreenshotHistoryStore.shared.importScreenshot(from: raw)
+                captured = ScreenshotHistoryStore.shared.importScreenshot(from: raw, source: probe.finish(.area))
             } else { captured = nil }
         default: throw AutomationError.message("Unsupported capture action.")
         }
@@ -179,9 +180,15 @@ enum AutomationActions {
             try FileManager.default.copyItem(at: captured, to: destination)
             result["path"] = .string(destination.path)
         }
-        if [.areaCopy, .areaSave, .areaUpload, .selfTimer].contains(action),
+        if action == .selfTimer {
+            CaptureShelf.shared.add(url: captured)
+        }
+        if [.areaCopy, .areaSave, .areaUpload].contains(action),
            AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot) {
             CaptureShelf.shared.show(existing: captured, kind: .image)
+        }
+        if [.areaCopy, .areaSave, .areaUpload, .selfTimer].contains(action),
+           AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot) {
             CaptureShelfPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
         }
         NSLog("Automation capture completed action=%@ path=%@", action.route, result["path"]?.stringValue ?? captured.path)
