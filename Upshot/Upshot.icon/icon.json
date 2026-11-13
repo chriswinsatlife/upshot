@@ -1,23 +1,44 @@
 {
   "fill" : {
-    "solid" : "extended-gray:1.00000,1.00000"
+    "solid" : "srgb:0.00000,0.00000,0.00000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
           "glass" : false,
-          "image-name" : "SVG Image 10.svg",
-          "name" : "SVG Image 10"
+          "image-name" : "obsidian_frame.png",
+          "name" : "Obsidian Frame"
         }
       ],
+      "name" : "Frame",
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "none",
+        "opacity" : 0
       },
+      "specular" : false,
       "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
+        "enabled" : false,
+        "value" : 0
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "golden_hour_sky.png",
+          "name" : "Golden Hour Sky"
+        }
+      ],
+      "name" : "Sky",
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
       }
     }
   ],
