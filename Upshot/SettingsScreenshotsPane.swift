@@ -1,124 +1,79 @@
-
 import SwiftUI
 
 struct ScreenshotsSettingsPane: View {
-    @AppStorage(UpshotPreferences.autoCompressKey) private var autoCompress = false
-    @AppStorage(UpshotPreferences.exportFormatKey) private var exportFormatRawValue = ""
-    @AppStorage(UpshotPreferences.compressionQualityKey) private var compressionQuality = 0.8
-    @AppStorage(UpshotPreferences.captureWindowShadowKey) private var captureWindowShadow = false
-    @AppStorage(UpshotPreferences.captureDelaySecondsKey) private var captureDelaySeconds = 0
-    @AppStorage(UpshotPreferences.lowResolutionEditorPreviewKey) private var lowResolutionEditorPreview = true
-    @AppStorage(UpshotPreferences.trimFullscreenMenuBarKey) private var trimFullscreenMenuBar = true
-    @AppStorage(UpshotPreferences.annotationStartingToolKey) private var startingTool = AnnotationTool.select.rawValue
-
-    private let delayOptions: [Int] = [0, 3, 5, 10]
-
-    private var exportFormat: ScreenshotExportFormat {
-        get {
-            ScreenshotExportFormat(rawValue: exportFormatRawValue) ?? (autoCompress ? .jpeg : .png)
+    var body: some View {
+        InterfaceFormPage {
+            ScreenshotOutputSettingsSection()
+            ScreenshotCaptureSettingsSection()
+            WindowScreenshotSettingsSection()
+            ScreenshotBackgroundPresetSettingsSection()
+            AfterCaptureActionsSection(type: .screenshot, title: "After Capture")
+            ScreenshotAnnotationEditorSettingsSection()
         }
-        nonmutating set {
-            exportFormatRawValue = newValue.rawValue
-            autoCompress = newValue.usesLossyQuality
+    }
+}
+
+private struct ScreenshotCaptureSettingsSection: View {
+    @AppStorage(UpshotPreferences.captureDelaySecondsKey) private var captureDelaySeconds = 0
+    @AppStorage(UpshotPreferences.screenshotShowCursorKey) private var showCursor = false
+    @AppStorage(UpshotPreferences.screenshotHideDesktopIconsKey) private var hideDesktopIcons = false
+    @AppStorage(UpshotPreferences.trimFullscreenMenuBarKey) private var trimFullscreenMenuBar = true
+    @AppStorage(UpshotPreferences.includeAppWindowsInCapturesKey) private var includeAppWindowsInCaptures = false
+    @State private var desktopIconsManuallyHidden = false
+    @State private var desktopIconError: String?
+
+    private let selfTimerOptions: [Int] = [0, 3, 5, 10]
+
+    var body: some View {
+        InterfaceSection("Capture") {
+            InterfacePickerRow("Self-timer", selection: $captureDelaySeconds) {
+                ForEach(selfTimerOptions, id: \.self) { seconds in
+                    Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
+                }
+            }
+            InterfaceToggleRow("Show cursor", isOn: $showCursor)
+            AreaSelectionSettingsSection()
+            InterfaceToggleRow("Hide desktop icons while capturing", isOn: $hideDesktopIcons)
+            InterfaceRow("Desktop icons", detail: desktopIconError, detailIsCritical: desktopIconError != nil) {
+                InterfaceActionButton(desktopIconsManuallyHidden ? "Show" : "Hide", action: toggleDesktopIcons)
+            }
+            InterfaceToggleRow("Trim menu bar from fullscreen captures", isOn: $trimFullscreenMenuBar)
+            InterfaceToggleRow("Include floating Upshot UI in captures", isOn: $includeAppWindowsInCaptures)
+        }
+        .onAppear {
+            desktopIconsManuallyHidden = DesktopIconVisibilityService.shared.manuallyHidden
+        }
+        .onChange(of: includeAppWindowsInCaptures) { _, _ in
+            PreviewWindowCaptureExclusion.shared.refreshRegisteredWindows()
         }
     }
 
+    private func toggleDesktopIcons() {
+        do {
+            try DesktopIconVisibilityService.toggleDesktopIcons()
+            desktopIconError = nil
+        } catch {
+            desktopIconError = error.localizedDescription
+        }
+        desktopIconsManuallyHidden = DesktopIconVisibilityService.shared.manuallyHidden
+    }
+}
+
+private struct ScreenshotAnnotationEditorSettingsSection: View {
+    @AppStorage(UpshotPreferences.annotationStartingToolKey) private var startingTool = AnnotationTool.select.rawValue
+    @AppStorage(UpshotPreferences.lowResolutionEditorPreviewKey) private var lowResolutionEditorPreview = true
+
     var body: some View {
-        InterfaceFormPage {
-            CaptureHotkeySettingsSection(actions: [.allInOne, .fullscreen, .window, .area, .previousArea, .smartElement, .scrollingCapture, .textCapture])
-
-            Section("Capture") {
-                Picker(selection: $captureDelaySeconds) {
-                    ForEach(delayOptions, id: \.self) { seconds in
-                        Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
-                    }
-                } label: {
-                    InterfaceRowLabel(
-                        "Self-timer",
-                        detail: "Show a countdown before the capture is taken."
-                    )
-                }
-
-                Toggle(isOn: $captureWindowShadow) {
-                    InterfaceRowLabel(
-                        "Capture window shadow",
-                        detail: "Include the window's drop shadow when capturing a window."
-                    )
-                }
-                .toggleStyle(.ink)
-
-                Toggle(isOn: $trimFullscreenMenuBar) {
-                    InterfaceRowLabel(
-                        "Trim menu bar from fullscreen captures",
-                        detail: "On notched Macs, removes the empty black bar at the top of a fullscreen capture. A visible menu bar is kept."
-                    )
-                }
-                .toggleStyle(.ink)
-            }
-
-            AreaSelectionSettingsSection()
-
-            ScreenshotOutputSettingsSection()
-
-            TextRecognitionSettingsSection()
-
-            Section("Annotation Editor") {
-                Picker(selection: $startingTool) {
-                    Text("Last Used").tag(UpshotPreferences.startingToolLastUsed)
-                    Divider()
-                    ForEach(AnnotationTool.allCases) { tool in
-                        Text(tool.title).tag(tool.rawValue)
-                    }
-                } label: {
-                    InterfaceRowLabel(
-                        "Starting tool",
-                        detail: "The tool picked when the editor opens."
-                    )
-                }
-
-                Toggle(isOn: $lowResolutionEditorPreview) {
-                    InterfaceRowLabel(
-                        "Use low-resolution preview to save memory",
-                        detail: "Shows a downscaled image while editing to reduce memory use. Saved and exported screenshots are always full resolution."
-                    )
-                }
-                .toggleStyle(.ink)
-
-                AnnotationEditorSettingsSection()
-            }
-
-            AfterCaptureActionsSection(type: .screenshot, title: "After Capture")
-
-            Section("File Format") {
-                Picker("Format", selection: Binding(
-                    get: { exportFormat },
-                    set: { exportFormat = $0 }
-                )) {
-                    ForEach(ScreenshotExportFormat.allCases) { format in
-                        Text(format.title).tag(format)
-                    }
-                }
-
-                if exportFormat.usesLossyQuality {
-                    LabeledContent("Compression quality") {
-                        HStack(spacing: 12) {
-                            Slider(value: $compressionQuality, in: 0.1...1, step: 0.05)
-                                .frame(width: 180)
-                                .accessibilityLabel("Compression quality")
-                                .accessibilityValue(compressionQuality.formatted(.percent.precision(.fractionLength(0))))
-
-                            Text(compressionQuality, format: .percent.precision(.fractionLength(0)))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .frame(width: 40, alignment: .trailing)
-                        }
-                    }
-
-                    Text("Lower values produce smaller files with reduced image quality.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        InterfaceSection("Annotation Editor") {
+            InterfacePickerRow("Starting tool", selection: $startingTool) {
+                Text("Last Used").tag(UpshotPreferences.startingToolLastUsed)
+                Divider()
+                ForEach(AnnotationTool.allCases) { tool in
+                    Text(tool.title).tag(tool.rawValue)
                 }
             }
+            InterfaceToggleRow("Use low-resolution preview to save memory", isOn: $lowResolutionEditorPreview)
+            AnnotationEditorSettingsSection()
         }
     }
 }

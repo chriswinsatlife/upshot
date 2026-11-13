@@ -5,10 +5,44 @@ struct AfterCaptureActionsSection: View {
     let title: String
 
     var body: some View {
-        InterfaceSection(title) {
-            ForEach(AfterCaptureAction.actions(for: type)) { action in
-                AfterCaptureToggleRow(action: action, type: type)
+        switch type {
+        case .screenshot:
+            InterfaceSection(title) {
+                ForEach(AfterCaptureAction.actions(for: type)) { action in
+                    ScreenshotAfterCaptureRow(action: action)
+                }
             }
+        case .recording:
+            InterfaceSection(title) {
+                ForEach(AfterCaptureAction.actions(for: type)) { action in
+                    AfterCaptureToggleRow(action: action, type: type)
+                }
+            }
+        }
+    }
+}
+
+private struct ScreenshotAfterCaptureRow: View {
+    @AppStorage private var isOn: Bool
+    private let action: AfterCaptureAction
+
+    init(action: AfterCaptureAction) {
+        _isOn = AppStorage(wrappedValue: action.defaultValue, action.storageKey(for: .screenshot))
+        self.action = action
+    }
+
+    var body: some View {
+        if action == .upload && !CloudCredentialStore.shared.isConfigured {
+            InterfaceRow(
+                action.title,
+                detail: isOn ? "Paused until Cloud is set up." : nil
+            ) {
+                InterfaceActionButton("Set Up Cloud…") { SettingsWindowController.show(tab: .cloud) }
+                InspectorToggle(action.title, isOn: $isOn)
+                    .disabled(!isOn)
+            }
+        } else {
+            InterfaceToggleRow(action.title, isOn: $isOn)
         }
     }
 }
