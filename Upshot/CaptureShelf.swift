@@ -53,6 +53,7 @@ final class CaptureShelf {
     @ObservationIgnored private var autoCloseTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
     @ObservationIgnored private var flashTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
     @ObservationIgnored private var compressionTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var keepCardAfterDrag = false
 
     private init() {}
 
@@ -256,18 +257,24 @@ final class CaptureShelf {
     }
 
     func beginDrag(id: ShelfItem.ID) {
+        guard draggingID != id else { return }
         QuickLookPreviewPresenter.dismiss()
+        keepCardAfterDrag = NSEvent.modifierFlags.contains(.option)
+        engage(id)
         draggingID = id
+        NSLog("Quick Access drag item=%@ keepWithOption=%@ outcome=started", id.uuidString, keepCardAfterDrag.description)
     }
 
     func endDrag(id: ShelfItem.ID, operation: DropOperation) {
         let completed = operation != .cancel && operation != .forbidden
-        if completed && UpshotPreferences.previewCloseAfterDragging {
+        let keepWithOption = keepCardAfterDrag || NSEvent.modifierFlags.contains(.option)
+        keepCardAfterDrag = false
+        if completed && !keepWithOption && UpshotPreferences.previewCloseAfterDragging {
             dismiss(id: id)
             NSLog("Quick Access drag item=%@ outcome=completed card=closed", id.uuidString)
         } else {
             withAnimation(.morphQuickIfAllowed) { draggingID = nil }
-            NSLog("Quick Access drag item=%@ outcome=%@ card=retained", id.uuidString, completed ? "completed" : "cancelled")
+            NSLog("Quick Access drag item=%@ outcome=%@ keepWithOption=%@ card=retained", id.uuidString, completed ? "completed" : "cancelled", keepWithOption.description)
         }
     }
 
