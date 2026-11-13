@@ -1,5 +1,5 @@
 ---
-review_status: implementation_verified
+review_status: self_reviewed
 approval_status: not_approved
 ---
 
@@ -7,7 +7,7 @@ approval_status: not_approved
 
 ## Locations
 
-Upshot writes application events to `~/Library/Logs/Upshot/upshot.log` and Apple's unified log. The subsystem is `co.chrisyork.upshot`. Categories identify application, capture, annotation, recording, library, quick_access, settings, automation, rendering, crash, and verification events.
+Upshot writes application events to `~/Library/Logs/Upshot/upshot.log` and Apple's unified log. The subsystem is `co.chrisyork.upshot`. Categories identify application, capture, annotation, recording, library, quick_access, settings, automation, rendering, crash, logging, and verification events.
 
 The file rotates before an append would exceed 5 MiB. Three backups, `upshot.log.1` through `upshot.log.3`, retain earlier events. The newest backup is `.1`. A crash and its breadcrumbs remain together in one append; a single crash record larger than 5 MiB can exceed the rotation threshold. Files use owner-only permissions. A process lock coordinates concurrent writers and rotation.
 
@@ -26,7 +26,7 @@ Each event occupies one physical line:
 
 Timestamps use ISO 8601 in UTC. Fields use `key="value"`. Backslashes, quotes, tabs, carriage returns, and newlines are escaped. `session_id` identifies one process execution; `pid` identifies the operating system process. Home-directory paths use `~`. Library identifiers are hashed because recording identifiers can contain paths.
 
-`AppLog.event` writes the same public, sanitized line to both destinations. Each area has its own `Logger`. Dynamic values use explicit public privacy after the caller selects non-sensitive fields. Capture processing and automation completion events include outcome, duration, and operation identifier. Existing feature events provide progress, configuration, counts, geometry, and failure context.
+`AppLog.event` writes the same public, sanitized line to both destinations. Each area has its own `Logger`. Failure events use the error level, crash records use the fault level, and other events use the notice level. Dynamic values use explicit public privacy after the caller selects non-sensitive fields. Capture processing and automation completion events include outcome, duration, and operation identifier. Existing feature events provide progress, configuration, counts, geometry, and failure context.
 
 Screenshot pixels, recognized text, clipboard contents, keystroke contents, credentials, user-selected filenames, and raw error descriptions are excluded. Errors contain the NSError domain and code. Exception reasons preserve recognized Foundation nil-dictionary messages and the verification exception. Other exception reasons are reduced to a category or `redacted_exception_reason`, because framework reasons can embed document or clipboard contents. MetricKit records include numeric exception details and the call-stack tree; the full diagnostic payload and exception arguments are excluded.
 
@@ -40,7 +40,7 @@ On launch, `event=system_crash_report` summarizes new regular Upshot or Upshot D
 
 MetricKit registration occurs before application startup. The subscriber processes past diagnostic payloads and later diagnostic deliveries. `event=metrickit_crash` includes a diagnostic identifier, reporting period, signal, exception codes, available exception name, sanitized reason, and call-stack tree. `metrickit-checkpoint.json` prevents repeated imports of the same diagnostic. System delivery determines when diagnostics become available.
 
-A signal, Swift trap, or process kill does not invoke the Objective-C handler. Every event already exists in the file. On a later launch, system and MetricKit crash imports attach the retained events from the preceding logged process execution. The original breadcrumb process identifier and timestamp establish whether that execution corresponds to the reported crash; delayed MetricKit delivery may refer to an earlier execution.
+A signal, Swift trap, or process kill does not invoke the Objective-C handler. Every event already exists in the file. On a later launch, system and MetricKit crash imports attach the retained events from the preceding logged process execution. The `breadcrumb_source` field distinguishes current-process events from a preceding logged process. When a modern system report supplies its process identifier, the importer includes only preceding breadcrumbs with that process identifier. Delayed MetricKit delivery may refer to an earlier execution; use original timestamps and identifiers when correlating its breadcrumbs.
 
 To investigate a crash, locate its `crash_id`, read the associated breadcrumbs in increasing index order, and correlate the original `session_id` and `pid` with completion events. The system report filename locates the complete operating system report for symbolication. Keep all rotated files when collecting evidence.
 
