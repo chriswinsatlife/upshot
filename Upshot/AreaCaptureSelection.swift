@@ -76,7 +76,11 @@ final class AreaCaptureSelection {
             requestAccessibilityPermission()
             return nil
         }
-        if mode == .element && !AreaSelectionAccessibility.hasPermission { mode = .area }
+        if mode == .element && !AreaSelectionAccessibility.hasPermission {
+            mode = .area
+            requestAccessibilityPermission()
+            NSLog("All-In-One element mode unavailable without Accessibility permission; using area mode")
+        }
         if mode == .previousArea { highlightedRect = AreaSelectionMemory.previousScreenshotRect }
         snapshots = try await AreaCaptureSnapshot.captureAll()
         try Task.checkCancellation()
@@ -119,7 +123,7 @@ final class AreaCaptureSelection {
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.finish(nil) }
         }
-        move(to: pointer)
+        if highlightedRect == nil { move(to: pointer) } else { redraw() }
         if !frozen && UpshotPreferences.areaSelectionMagnifier { startLiveMagnifier() }
         NSLog("Area selector opened: frozen=%d displays=%ld crosshair=%d magnifier=%d", frozen, snapshots.count, UpshotPreferences.areaSelectionCrosshair, UpshotPreferences.areaSelectionMagnifier)
         if isAllInOne { NSLog("All-In-One opened: mode=%@ restoredSelection=%d", mode.rawValue, highlightedRect != nil) }
