@@ -17,14 +17,6 @@ enum AreaCaptureWindowFilter {
     }
 
     static func displayFilter(display: SCDisplay, content: SCShareableContent) -> SCContentFilter {
-        guard let application = content.applications.first(where: { $0.processID == getpid() }) else {
-            return SCContentFilter(display: display, excludingWindows: excludedWindows(in: content))
-        }
-        let excluded = Set(excludedWindows(in: content).map(\.windowID))
-        let covers = DesktopIconVisibilityService.shared.coverWindowIDs
-        let included = content.windows.filter {
-            covers.contains($0.windowID) || $0.owningApplication?.processID == getpid() && !excluded.contains($0.windowID)
-        }
-        return SCContentFilter(display: display, excludingApplications: [application], exceptingWindows: included)
+        SCContentFilter(display: display, excludingWindows: excludedWindows(in: content))
     }
 }
