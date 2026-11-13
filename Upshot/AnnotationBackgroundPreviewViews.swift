@@ -1,7 +1,3 @@
-//
-//  AnnotationBackgroundPreviewViews.swift
-//  Upshot
-//
 
 import AppKit
 import CoreGraphics
@@ -37,35 +33,15 @@ struct AnnotationWatermarkOverlay: View {
 
     var body: some View {
         Canvas { context, size in
-            let rows = max(2, Int(round(settings.density)))
-            let spacingY = size.height / CGFloat(rows)
-            let spacingX = max(1, spacingY * 2.2)
-            let diagonal = hypot(size.width, size.height)
-            let columnCount = max(2, Int(ceil(diagonal / spacingX)))
-            let rowCount = max(2, Int(ceil(diagonal / spacingY)))
-            let originX = size.width / 2 - CGFloat(columnCount) * spacingX / 2
-            let originY = size.height / 2 - CGFloat(rowCount) * spacingY / 2
-            let label = Text(settings.text)
-                .font(AnnotationWatermarkTypography.font(size: settings.fontSize * fontScale))
-                .foregroundStyle(settings.color.color.opacity(min(0.75, max(0, settings.opacity))))
-
-            context.translateBy(x: size.width / 2, y: size.height / 2)
-            context.rotate(by: .degrees(Double(settings.rotationDegrees)))
-            context.translateBy(x: -size.width / 2, y: -size.height / 2)
-
-            for row in 0...rowCount {
-                for column in 0...columnCount {
-                    context.draw(
-                        label,
-                        at: CGPoint(
-                            x: originX + CGFloat(column) * spacingX,
-                            y: originY + CGFloat(row) * spacingY
-                        ),
-                        anchor: .center
-                    )
-                }
+            context.withCGContext { graphics in
+                var scaled = settings
+                scaled.fontSize *= fontScale
+                graphics.translateBy(x: 0, y: size.height)
+                graphics.scaleBy(x: 1, y: -1)
+                AnnotationBackgroundRenderer.drawWatermark(scaled, in: CGRect(origin: .zero, size: size), context: graphics)
             }
         }
+
     }
 }
 

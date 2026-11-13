@@ -1,9 +1,3 @@
-//
-//  AnnotationBackground.swift
-//  Upshot
-//
-//  Created by Codex on 28/04/26.
-//
 
 import AppKit
 import CoreGraphics
@@ -27,23 +21,16 @@ struct AnnotationBackgroundSettings: Equatable {
         style != .none
     }
 
-    /// Camera transforms and scene blur need a stage even without an explicit
-    /// background so their pixels have transparent breathing room instead of
-    /// being cropped to the original screenshot bounds.
     var usesCanvasLayout: Bool {
         isEnabled
             || camera.hasEffect
             || (progressiveBlur.isActive && progressiveBlur.edgeMode == .bleed)
     }
 
-    /// An outer screenshot border needs a canvas large enough to preserve the
-    /// ring even when no fill, camera transform, or scene blur is active.
     var requiresCanvasLayout: Bool {
         usesCanvasLayout || border.isVisible
     }
 
-    /// Once the card leaves the flat plane, "stuck" edges no longer describe
-    /// the projected geometry. Camera pan replaces alignment for that mode.
     var effectiveCanvasAlignment: AnnotationBackgroundAlignment {
         camera.hasEffect || !usesCanvasLayout ? .center : alignment
     }
@@ -60,8 +47,6 @@ struct AnnotationBackgroundSettings: Equatable {
 struct AnnotationScreenshotBorderSettings: Equatable {
     var isEnabled = false
     var color: AnnotationSwatch = .white
-    /// Thickness as a fraction of the screenshot's shortest edge so saved
-    /// presets keep the same visual weight across different capture sizes.
     var thickness: CGFloat = 0.012
     var opacity: CGFloat = 1
 
@@ -76,23 +61,15 @@ struct AnnotationScreenshotBorderSettings: Equatable {
 }
 
 struct AnnotationCameraSettings: Equatable {
-    /// Translation as a fraction of the final canvas dimensions.
     var panX: CGFloat = 0
     var panY: CGFloat = 0
-    /// Horizontal/vertical camera orbit around the card center, in degrees.
     var tiltXDegrees: CGFloat = 0
     var tiltYDegrees: CGFloat = 0
-    /// Local card rotation around its horizontal and vertical axes.
     var rotationXDegrees: CGFloat = 0
     var rotationYDegrees: CGFloat = 0
-    /// Rotation around the viewing axis.
     var rollDegrees: CGFloat = 0
-    /// Lens angle controlling the strength of perspective.
     var fieldOfViewDegrees: CGFloat = 24
-    /// Explicit final scale around the card center. Rotation never changes it.
     var zoom: CGFloat = 1
-    /// Version 1 used shear-based Tilt and hidden angle-dependent auto-fit.
-    /// Version 2 uses center-origin camera orbit and explicit-only Zoom.
     var projectionVersion: Int = 2
 
     var isDefault: Bool {
@@ -164,16 +141,10 @@ struct AnnotationProgressiveBlurSettings: Equatable, Sendable {
     var isEnabled = false
     var edgeMode: AnnotationProgressiveBlurEdgeMode = .bleed
     var mode: AnnotationProgressiveBlurMode = .radial
-    /// Maximum blur radius, normalized by the preview/export scale at render time.
     var strength: CGFloat = 18
-    /// Width of the transition from sharp to blurred, normalized to 0...1.
     var falloff: CGFloat = 0.55
-    /// Size of the sharp focal area, normalized from a small detail to the
-    /// farthest image edge. A larger default keeps the screenshot as the hero.
     var focusSize: CGFloat = 0.45
-    /// Top-left-origin normalized focal point within the active blur layer.
     var focusPosition = CGPoint(x: 0.5, y: 0.5)
-    /// Direction of the in-focus band. Zero degrees is horizontal.
     var directionDegrees: CGFloat = 0
 
     var isActive: Bool {
@@ -450,10 +421,13 @@ struct AnnotationWatermarkSettings: Equatable {
     var rotationDegrees: CGFloat = 45
     var opacity: CGFloat = 0.18
     var color: AnnotationWatermarkColor = .mercury
+    var imageData: Data?
+    var position: AnnotationWatermarkPosition = .tiled
+    var imageWidth: CGFloat = 0.2
 
     var isVisible: Bool {
         isEnabled
-            && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (imageData != nil || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             && opacity > 0
     }
 }
@@ -607,7 +581,6 @@ enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether the image sticks to the top edge (zero top padding).
     var sticksToTop: Bool {
         switch self {
         case .topLeading, .top, .topTrailing: true
@@ -615,7 +588,6 @@ enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether the image sticks to the bottom edge (zero bottom padding).
     var sticksToBottom: Bool {
         switch self {
         case .bottomLeading, .bottom, .bottomTrailing: true
@@ -623,7 +595,6 @@ enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether the image sticks to the leading (left) edge (zero left padding).
     var sticksToLeading: Bool {
         switch self {
         case .topLeading, .leading, .bottomLeading: true
@@ -631,7 +602,6 @@ enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether the image sticks to the trailing (right) edge (zero right padding).
     var sticksToTrailing: Bool {
         switch self {
         case .topTrailing, .trailing, .bottomTrailing: true
@@ -639,8 +609,6 @@ enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Per-corner radius multipliers. A corner that touches a stuck edge gets 0.
-    /// Returns (topLeft, topRight, bottomLeft, bottomRight) multipliers (0 or 1).
     var cornerRadiusMultipliers: (topLeft: CGFloat, topRight: CGFloat, bottomLeft: CGFloat, bottomRight: CGFloat) {
         switch self {
         case .center:

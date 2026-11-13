@@ -1,7 +1,3 @@
-//
-//  AnnotationRenderer.swift
-//  Upshot
-//
 
 import AppKit
 import CoreImage
@@ -10,13 +6,8 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum AnnotationRenderer {
-    /// `CIContext` is immutable after creation and documented for reuse across
-    /// render calls (same contract as `AnnotationMockupEffectsRenderer`).
     nonisolated(unsafe) private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    /// Off-main variants: large exports (full-resolution compose + Core Image
-    /// blur) are slow enough to beachball the UI, and the whole render graph
-    /// is nonisolated, so hop to a background thread and await the result.
     static func renderInBackground(
         sourceURL: URL,
         shapes: [AnnoShape],
@@ -81,9 +72,6 @@ enum AnnotationRenderer {
 
         try autoreleasepool {
             let sourceImage = try loadSourceImage(sourceURL: sourceURL)
-            // Keep the screenshot's own (typically Display P3) color space so
-            // wide-gamut colors survive the export instead of being pulled
-            // down to device RGB. Previews already render this way.
             let colorSpace = exportColorSpace(for: sourceImage)
             let renderedImage: CGImage
             if backgroundSettings.hasRenderableContent {
@@ -136,6 +124,11 @@ enum AnnotationRenderer {
 
             CGImageDestinationAddImage(destination, renderedImage, options)
 
+            if backgroundSettings.watermark.isVisible {
+                NSLog("Annotation watermark exported kind=%@ position=%@ opacity=%.2f",
+                      backgroundSettings.watermark.imageData == nil ? "text" : "image",
+                      backgroundSettings.watermark.position.rawValue, backgroundSettings.watermark.opacity)
+            }
             guard CGImageDestinationFinalize(destination) else {
                 throw CocoaError(.fileWriteUnknown)
             }
@@ -160,9 +153,6 @@ enum AnnotationRenderer {
     }
 
     nonisolated private static func exportColorSpace(for image: CGImage) -> CGColorSpace {
-        // Fall back to device RGB unless the source space can actually back
-        // the 8-bit premultiplied contexts the render pipeline creates -
-        // otherwise an exotic embedded profile would fail the whole export.
         guard let colorSpace = image.colorSpace,
               colorSpace.model == .rgb,
               CGContext(
@@ -218,10 +208,6 @@ enum AnnotationRenderer {
         return renderedImage
     }
 
-    /// Draw the annotations over an already-composed context.
-    ///
-    /// `imageRect` is where the screenshot sits in the context; page space is the screenshot's own
-    /// pixel space, so the transform between them is the only thing that differs from the canvas.
     nonisolated static func drawAnnotations(
         _ shapes: [AnnoShape],
         in imageRect: CGRect,
@@ -236,15 +222,9 @@ enum AnnotationRenderer {
         let document = AnnoDocument()
         document.restore(AnnoDocument.Snapshot(shapes: shapes, bindings: []))
 
-        // Page space is the screenshot's own pixels; `imageRect` is where those pixels ended up in
-        // this context, which is smaller than page space whenever the render is downscaled (the
-        // settled scene preview does exactly that).
         guard pageSize.width > 0, pageSize.height > 0 else { return }
         let scale = imageRect.width / pageSize.width
 
-        // Page space is y-down from the image's top-left; the bitmap is y-up. One reflecting
-        // transform carries the whole engine across, rather than flipping the context globally and
-        // having to un-flip every image and glyph run inside it.
         let transform = CGAffineTransform(
             a: scale, b: 0, c: 0, d: -scale,
             tx: imageRect.minX, ty: imageRect.maxY
@@ -254,8 +234,6 @@ enum AnnotationRenderer {
             transform: transform,
             pageSize: pageSize,
             sample: { rect in
-                // Snapshot what has been composed so far, so a blur picks up the background behind
-                // a transparent screenshot as well as the screenshot itself.
                 guard let snapshot = context.makeImage() else { return nil }
                 let flipped = CGRect(
                     x: rect.minX,

@@ -1,27 +1,12 @@
-//
-//  AnnotationDocument.swift
-//  Upshot
-//
-//  Codable sidecar document that stores the editable annotation state for a
-//  screenshot. Persisted next to the rendered image as `<image>.upshot`
-//  so annotations remain non-destructive and can be re-opened for editing.
-//
 
 import AppKit
 import Foundation
 import SwiftUI
 
-/// The persisted edit document for a single screenshot.
-///
-/// Version 2 stores engine shapes. Version 1 stored the old normalized-rect annotation items,
-/// which had no rotation and no shared geometry; there is no faithful conversion, so a v1 sidecar
-/// is ignored and its screenshot opens as a flat image.
 struct AnnotationDocument: Codable, Equatable {
     static let currentVersion = 2
 
-    /// Schema version, for forward-compatible migrations.
     var version: Int
-    /// File name of the untouched base image stored in the same directory.
     var baseImageFileName: String
     var shapes: [AnnoShape]
     var bindings: [ArrowBinding]
@@ -46,8 +31,6 @@ struct AnnotationDocument: Codable, Equatable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         baseImageFileName = try container.decodeIfPresent(String.self, forKey: .baseImageFileName) ?? ""
         background = try container.decode(StoredBackground.self, forKey: .background)
-        // A v1 document's annotations can't be expressed in the shape model, so only its
-        // background survives.
         shapes = version >= 2 ? (try container.decodeIfPresent([AnnoShape].self, forKey: .shapes) ?? []) : []
         bindings = version >= 2 ? (try container.decodeIfPresent([ArrowBinding].self, forKey: .bindings) ?? []) : []
     }
@@ -57,7 +40,6 @@ struct AnnotationDocument: Codable, Equatable {
     }
 }
 
-// MARK: - Background
 
 struct StoredBackground: Codable, Equatable {
     var style: StoredBackgroundStyle
@@ -210,8 +192,6 @@ struct StoredProgressiveBlurSettings: Codable, Equatable {
     var focusX: Double
     var focusY: Double
     var directionDegrees: Double
-    /// Retained as `false` so documents remain readable by builds that exposed
-    /// the abandoned highlight-bloom control.
     var isBokehEnabled: Bool?
 
     init(_ settings: AnnotationProgressiveBlurSettings) {
@@ -316,6 +296,9 @@ struct StoredWatermark: Codable, Equatable {
     var rotationDegrees: Double
     var opacity: Double
     var color: StoredWatermarkColor
+    var imageData: Data?
+    var position: AnnotationWatermarkPosition?
+    var imageWidth: Double?
 
     init(_ settings: AnnotationWatermarkSettings) {
         isEnabled = settings.isEnabled
@@ -325,6 +308,9 @@ struct StoredWatermark: Codable, Equatable {
         rotationDegrees = Double(settings.rotationDegrees)
         opacity = Double(settings.opacity)
         color = StoredWatermarkColor(settings.color)
+        imageData = settings.imageData
+        position = settings.position
+        imageWidth = Double(settings.imageWidth)
     }
 
     var settings: AnnotationWatermarkSettings {
@@ -335,7 +321,10 @@ struct StoredWatermark: Codable, Equatable {
             fontSize: CGFloat(fontSize),
             rotationDegrees: CGFloat(rotationDegrees),
             opacity: CGFloat(opacity),
-            color: color.watermarkColor
+            color: color.watermarkColor,
+            imageData: imageData,
+            position: position ?? .tiled,
+            imageWidth: CGFloat(imageWidth ?? 0.2)
         )
     }
 }

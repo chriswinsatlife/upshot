@@ -1,7 +1,3 @@
-//
-//  AnnotationBackgroundRenderer.swift
-//  Upshot
-//
 
 import AppKit
 import CoreGraphics
@@ -87,9 +83,6 @@ nonisolated enum AnnotationBackgroundRenderer {
         }
 
         if settings.camera.hasEffect {
-            // Perspective can bring pixels outside the original canvas back
-            // into view. Keep the shadow's full falloff in the source bitmap;
-            // clipping it here exposes a hard, transformed canvas edge.
             let casterRect = settings.border.isVisible && frameGeometry.borderWidth > 0
                 ? frameGeometry.cardRect
                 : frameGeometry.imageRect
@@ -235,6 +228,10 @@ nonisolated enum AnnotationBackgroundRenderer {
         in rect: CGRect,
         context: CGContext
     ) {
+        if settings.imageData != nil || settings.position != .tiled {
+            AnnotationWatermarkPlacement.draw(settings, in: rect, context: context)
+            return
+        }
         let text = settings.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard settings.isVisible,
               !text.isEmpty,
@@ -253,7 +250,7 @@ nonisolated enum AnnotationBackgroundRenderer {
         let originY = rect.midY - CGFloat(rowCount) * spacingY / 2
 
         let font = AnnotationWatermarkTypography.nsFont(size: settings.fontSize)
-        let color = settings.color.nsColor.withAlphaComponent(min(0.75, max(0, settings.opacity)))
+        let color = settings.color.nsColor.withAlphaComponent(min(1, max(0, settings.opacity)))
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color
@@ -351,8 +348,6 @@ nonisolated enum AnnotationBackgroundRenderer {
     }
 
     private static func loadCGImageForAspectFill(at url: URL, fillSize: CGSize) -> CGImage? {
-        // An export can outlive its editor; keep its current decode usable
-        // until this call completes, even when the last window has closed.
         let lease = wallpaperCache.beginUse()
         defer { withExtendedLifetime(lease) {} }
         let generation = wallpaperCache.generation
@@ -374,8 +369,6 @@ nonisolated enum AnnotationBackgroundRenderer {
 
         let drawScale = max(fillSize.width / sourceSize.width, fillSize.height / sourceSize.height)
         let requiredMaxPixelSize = max(sourceSize.width, sourceSize.height) * drawScale
-        // Bucket the decode size so settled previews and exports of similar
-        // sizes share one cache entry instead of decoding near-duplicates.
         let bucketedMaxPixelSize = (requiredMaxPixelSize / 512).rounded(.up) * 512
         let cacheKey = AnnotationWallpaperPreviewCache.cacheID(
             for: url,
@@ -432,12 +425,6 @@ nonisolated enum AnnotationBackgroundRenderer {
         context.stroke(rect.insetBy(dx: 8, dy: 8))
     }
 
-    /// Paints the shadow without laying any ink: the caster is parked just
-    /// outside the clip and the shadow offset carries its spill back under the
-    /// card, so no solid black ever reaches the bitmap. The card interior is
-    /// then clipped away with its exact path. A clipped black caster left a
-    /// dark antialiased fringe around rounded borders; clipping only the soft
-    /// shadow leaves nothing darker than the shadow itself.
     private static func drawShadow(
         path: CGPath,
         strength: CGFloat,
@@ -461,8 +448,6 @@ nonisolated enum AnnotationBackgroundRenderer {
         context.addPath(exterior)
         context.clip(using: .evenOdd)
 
-        // Shadow offsets live in device space while paths follow the CTM. The
-        // export contexts only ever translate, so both use the same units.
         let casterShift = ceil(rect.maxX - clipBounds.minX) + 1
         var parked = CGAffineTransform(translationX: -casterShift, y: 0)
         guard let caster = path.copy(using: &parked) else {

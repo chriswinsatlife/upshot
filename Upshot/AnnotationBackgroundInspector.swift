@@ -1,7 +1,3 @@
-//
-//  AnnotationBackgroundInspector.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
@@ -20,8 +16,6 @@ private enum AnnotationBackgroundFillLibrary: CaseIterable, Hashable {
     }
 }
 
-/// The card on its background: the fill as one row that opens the full
-/// picker, then padding, corners, shadow and alignment.
 struct AnnotationFrameInspector: View {
     @Binding var settings: AnnotationBackgroundSettings
     @Bindable var wallpaperStore: AnnotationWallpaperStore
@@ -48,9 +42,6 @@ struct AnnotationFrameInspector: View {
             }
 
             frameControls
-                // Without a canvas there is nothing to pad, round or shadow.
-                // Dimmed rather than hidden, so picking a fill doesn't shift
-                // the list.
                 .disabled(!settings.requiresCanvasLayout)
                 .opacity(settings.requiresCanvasLayout ? 1 : 0.4)
         }
@@ -120,7 +111,6 @@ extension AnnotationBackgroundStyle {
     }
 }
 
-/// A background drawn small: the fill itself, or a quiet empty well for none.
 struct BackgroundSwatch: View {
     let style: AnnotationBackgroundStyle
 
@@ -148,9 +138,6 @@ struct BackgroundSwatch: View {
     }
 }
 
-/// The background as one row in both editors: its swatch and name. The full
-/// picker opens beside the inspector, over the canvas, so hovering a fill
-/// shows it on the content right there.
 struct InspectorBackgroundRow: View {
     @Binding var style: AnnotationBackgroundStyle
     var rememberedWallpaper: AnnotationCustomWallpaper? = nil
@@ -158,9 +145,7 @@ struct InspectorBackgroundRow: View {
     var onEditorAction: () -> Void = {}
     let onPickWallpaper: () -> Void
     var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
-    /// A fill the pointer enters (true) or leaves (false).
     let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
-    /// The picker closed: drop any preview.
     let onEndPreview: () -> Void
 
     @State private var isPickerPresented = false
@@ -225,8 +210,6 @@ struct InspectorBackgroundRow: View {
     }
 }
 
-/// Every fill in one scrolling popover. Hovering previews; clicking keeps
-/// it; closing without a click leaves the background as it was.
 private struct BackgroundPickerPopover: View {
     @Binding var style: AnnotationBackgroundStyle
     let rememberedWallpaper: AnnotationCustomWallpaper?
@@ -279,37 +262,24 @@ private struct BackgroundPickerPopover: View {
     }
 }
 
-/// The background fill browser shared by the annotator and Studio: Color,
-/// Gradient and Wallpaper tile grids, with recent wallpapers, built-in packs,
-/// an add tile and Unsplash search, laid out one under another. Both editors show it in a
-/// popover from their background row.
 struct InspectorBackgroundFillPicker: View {
     @Binding var style: AnnotationBackgroundStyle
-    /// A wallpaper to keep visible in Recent even when the fill is currently
-    /// a color or gradient.
     let rememberedWallpaper: AnnotationCustomWallpaper?
     @Bindable var wallpaperStore: AnnotationWallpaperStore
     let onEditorAction: () -> Void
     let onPickWallpaper: () -> Void
     var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
-    /// Called as the pointer enters (true) and leaves (false) a fill, so a
-    /// host can show it before it is picked.
     var onPreview: ((AnnotationBackgroundStyle, Bool) -> Void)? = nil
 
     private let swatchColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 8)
-    /// Five recents plus the add tile fill two rows of the shared
-    /// three-column wallpaper grid.
     private static let maxVisibleRecentWallpapers = 5
     private let wallpaperColumns = Array(repeating: GridItem(.flexible(), spacing: 7), count: 3)
-    /// Packs unfolded past their first row.
     @State private var expandedPackIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
             ForEach(AnnotationBackgroundFillLibrary.allCases, id: \.self) { library in
                 if library == .wallpaper {
-                    // Wallpapers bring their own labels: Recent and each
-                    // pack.
                     unfoldedWallpaperGroup
                 } else {
                     VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
@@ -367,8 +337,6 @@ struct InspectorBackgroundFillPicker: View {
         }
     }
 
-    /// Every wallpaper source laid out in turn: Recent, then each pack under
-    /// its own label.
     private var unfoldedWallpaperGroup: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
             VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
@@ -389,11 +357,8 @@ struct InspectorBackgroundFillPicker: View {
         }
     }
 
-    /// One row of the three-column wallpaper grid.
     private static let packPreviewCount = 3
 
-    /// The pack's name, with a quiet link that unfolds the rest of its
-    /// wallpapers in place when they run past the first row.
     private func packHeader(_ pack: AnnotationWallpaperPack) -> some View {
         let count = wallpaperStore.wallpapers(for: pack).count
         let isExpanded = expandedPackIDs.contains(pack.id)
@@ -515,9 +480,6 @@ struct AnnotationWatermarkInspector: View {
     let onFocusCleared: () -> Void
 
 
-    /// The watermark stores its own color type; the shared swatch strip
-    /// speaks `AnnotationSwatch`, so presets match by value and anything else
-    /// shows in the custom well.
     private var watermarkSwatch: AnnotationSwatch {
         let color = settings.color
         return AnnotationSwatch.allCases.first {
@@ -529,12 +491,19 @@ struct AnnotationWatermarkInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            // The section's switch alone turns the watermark on or off;
-            // empty text just draws nothing yet.
+            AnnotationWatermarkSourceControls(settings: $settings)
+            Picker("Position", selection: $settings.position) {
+                ForEach(AnnotationWatermarkPosition.allCases) { position in
+                    Text(position.title).tag(position)
+                }
+            }
             watermarkTextField
 
-            if hasWatermarkText {
+            if hasWatermarkText || settings.imageData != nil {
                 VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+                    if settings.imageData != nil {
+                        InspectorSlider("Image size", value: $settings.imageWidth, range: 0.02...0.9, format: .percent())
+                    }
                     InspectorFieldPair {
                         InspectorSlider(
                             "Density",
@@ -562,7 +531,7 @@ struct AnnotationWatermarkInspector: View {
                         InspectorSlider(
                             "Opacity",
                             value: $settings.opacity,
-                            range: 0...0.75,
+                            range: 0...1,
                             format: .percent()
                         )
                     }
@@ -580,7 +549,6 @@ struct AnnotationWatermarkInspector: View {
             }
         }
         .onAppear {
-            // Switched on with nothing to show yet: start typing straight away.
             if !hasWatermarkText { focusedField.wrappedValue = .watermarkText }
         }
     }
@@ -628,7 +596,6 @@ private struct AnnotationAddWallpaperTile: View {
     }
 }
 
-/// A tiny, unobtrusive credit linking to the wallpaper pack's author.
 private struct AnnotationWallpaperCreditView: View {
     let pack: AnnotationWallpaperPack
 
