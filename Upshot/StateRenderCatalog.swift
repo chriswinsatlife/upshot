@@ -237,16 +237,47 @@ enum StateRenderCatalog {
                 AnyView(PinnedScreenshotView(image: fixtures.image, url: fixtures.screenshots[0], onClose: {}))
             }
         }
+        func historyOverDesktop(_ view: some View) -> AnyView {
+            AnyView(view.background {
+                Image(nsImage: fixtures.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            })
+        }
         for filter in CaptureHistoryFilter.allCases {
-            add("history-\(filter.rawValue)", "CaptureHistoryView", "struct CaptureHistoryView", 1140, 285) {
+            add("history-\(filter.rawValue)", "CaptureHistoryView", "struct CaptureHistoryView", 1140, CaptureHistoryStrip.preferredHeight) {
                 let model = CaptureHistoryModel()
                 model.installRenderItems(fixtures.items)
                 model.filter = filter
-                return AnyView(CaptureHistoryView(model: model))
+                return historyOverDesktop(CaptureHistoryView(model: model))
             }
         }
-        add("history-empty", "CaptureHistoryView", "struct CaptureHistoryView", 1140, 285) {
-            AnyView(CaptureHistoryView(model: CaptureHistoryModel()))
+        add("history-selection-moved", "CaptureHistoryView", "struct CaptureHistoryView", 1140, CaptureHistoryStrip.preferredHeight) {
+            let model = CaptureHistoryModel()
+            model.installRenderItems(fixtures.items)
+            model.moveSelection(by: 2)
+            return historyOverDesktop(CaptureHistoryView(model: model))
+        }
+        add("history-restore-failed", "CaptureHistoryView", "struct CaptureHistoryView", 1140, CaptureHistoryStrip.preferredHeight) {
+            let model = CaptureHistoryModel()
+            model.installRenderItems(fixtures.items)
+            model.errorMessage = "The capture could not be restored. The file may have moved or become unreadable."
+            return historyOverDesktop(CaptureHistoryView(model: model))
+        }
+        add("history-empty", "CaptureHistoryView", "struct CaptureHistoryView", 1140, CaptureHistoryStrip.preferredHeight) {
+            historyOverDesktop(CaptureHistoryView(model: CaptureHistoryModel()))
+        }
+        add("history-empty-filter", "CaptureHistoryView", "struct CaptureHistoryView", 1140, CaptureHistoryStrip.preferredHeight) {
+            let model = CaptureHistoryModel()
+            model.installRenderItems(fixtures.items.filter(CaptureHistoryFilter.screenshots.includes))
+            model.filter = .gifs
+            return historyOverDesktop(CaptureHistoryView(model: model))
+        }
+        add("history-loading", "CaptureHistoryView", "struct CaptureHistoryStrip", 1140, CaptureHistoryStrip.preferredHeight) {
+            historyOverDesktop(CaptureHistoryStrip(
+                filter: .constant(.all), selectedID: .constant(nil), items: [], isLoading: true,
+                errorMessage: nil, restore: {}, close: {}
+            ))
         }
         for mode in AllInOneCaptureMode.allCases {
             add("selector-all-in-one-\(mode.rawValue)", "AreaCaptureSelection", "final class AreaCaptureSelectionView", 1000, 625) {
