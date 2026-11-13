@@ -66,6 +66,8 @@ The renderer uses activation policy `prohibited`. Render windows cannot become k
 
 Rendering requires existing Screen Recording access for the rendering app. The renderer never requests it and fails when it is missing.
 
+The isolation check compares the installed Upshot app's real data, so a full-catalog run fails when that app captures, indexes its Library, or rewrites its configuration during the run. Rendering each state with `--state` in its own process shortens each check to a few seconds; a state whose check fails can be rendered again.
+
 ## Fixture Isolation
 
 `UpshotStorage` routes direct defaults access to a unique render suite. The SwiftUI root supplies the same suite through `defaultAppStorage`. History, recording projects, wallpapers, the Library index, exports, the agent socket path, and the configuration path resolve inside a temporary fixture directory. Normal launches retain their existing storage locations.
