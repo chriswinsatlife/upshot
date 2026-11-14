@@ -530,7 +530,7 @@ enum StateRenderLivePresentation {
         presented?.stage.tearDown()
         presented = nil
         for window in NSApp.windows { window.orderOut(nil) }
-        UpshotStorage.defaults.removePersistentDomain(forName: UpshotStorage.fixtureIdentifier)
+        UpshotStorage.defaults.removePersistentDomain(forName: UpshotStorage.defaultsSuiteName)
         if let root = UpshotStorage.fixtureRoot { try? FileManager.default.removeItem(at: root) }
         if let isolation {
             do {

@@ -212,7 +212,7 @@ enum StateRenderer {
         try isolation.writeSnapshot(to: output.appendingPathComponent("isolation-before.json"))
         defer {
             for window in NSApp.windows { window.orderOut(nil) }
-            UpshotStorage.defaults.removePersistentDomain(forName: UpshotStorage.fixtureIdentifier)
+            UpshotStorage.defaults.removePersistentDomain(forName: UpshotStorage.defaultsSuiteName)
             if let root = UpshotStorage.fixtureRoot { try? FileManager.default.removeItem(at: root) }
         }
         let definitions = try await loadDefinitions()
@@ -243,7 +243,7 @@ enum StateRenderer {
         try await Task.sleep(for: .seconds(2))
         try isolation.verify(to: output)
         let manifest = StateRenderManifest(states: entries, isolationVerified: true,
-                                          defaultsSuite: UpshotStorage.fixtureIdentifier,
+                                          defaultsSuite: UpshotStorage.defaultsSuiteName,
                                           statesPerAppearance: selected.count,
                                           displaySize: [Int(StateRenderDisplay.size.width), Int(StateRenderDisplay.size.height)],
                                           contactSheet: "contact_sheet.png")

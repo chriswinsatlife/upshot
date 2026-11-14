@@ -64,7 +64,7 @@ struct StateRenderFixtures {
 
     static func resetPreferences() {
         let defaults = UpshotStorage.defaults
-        defaults.removePersistentDomain(forName: UpshotStorage.fixtureIdentifier)
+        defaults.removePersistentDomain(forName: UpshotStorage.defaultsSuiteName)
         defaults.register(defaults: [
             UpshotPreferences.exportDirectoryPathKey: UpshotStorage.applicationSupportDirectory.appendingPathComponent("Exports").path,
             UpshotPreferences.playSoundsKey: false,

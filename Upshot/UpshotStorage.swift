@@ -8,10 +8,11 @@ nonisolated enum UpshotStorage {
     static let fixtureRoot: URL? = isRenderingStates
         ? FileManager.default.temporaryDirectory.appendingPathComponent(fixtureIdentifier, isDirectory: true)
         : nil
+    static let defaultsSuiteName = fixtureRoot?.appendingPathComponent("Preferences/\(fixtureIdentifier).plist").path ?? fixtureIdentifier
 
     static var defaults: UserDefaults {
         guard isRenderingStates else { return .standard }
-        guard let defaults = UserDefaults(suiteName: fixtureIdentifier) else {
+        guard let defaults = UserDefaults(suiteName: defaultsSuiteName) else {
             fatalError("State renderer could not create its isolated defaults suite")
         }
         return defaults
