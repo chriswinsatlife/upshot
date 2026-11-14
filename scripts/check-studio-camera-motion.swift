@@ -135,6 +135,7 @@ struct MotionChecks {
                             }
                             let during = motion.layoutFrame(at: 3.5, canvasSize: canvas)!
                             check(during.screenRect.width >= frame.screenRect.width - 0.1, "Screen expands during zoom")
+                            check(during.screenRect.height >= frame.screenRect.height - 0.1, "Screen keeps its height during zoom")
                             if fit == .fill {
                                 check(during.cameraRect.height < frame.cameraRect.height || during.cameraRect.width < frame.cameraRect.width,
                                       "Full-height split camera shrinks into overlay")

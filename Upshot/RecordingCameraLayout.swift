@@ -471,7 +471,10 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
                 height: cameraSize.height
             )
             let zoomed = RecordingCameraLayoutFrame(
-                screenRect: card,
+                screenRect: card.insetBy(
+                    dx: -max(0, split.screen.width - card.width) / 2,
+                    dy: -max(0, split.screen.height - card.height) / 2
+                ),
                 screenOpacity: 1,
                 cameraRect: camera,
                 cameraCornerRadius: base.cardCornerRadius,
