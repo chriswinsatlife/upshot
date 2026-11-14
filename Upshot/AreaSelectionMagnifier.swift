@@ -14,7 +14,7 @@ final class AreaSelectionLiveMagnifier {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
                 let excluded = AreaCaptureWindowFilter.excludedWindows(in: content)
-                NSLog("Area live magnifier started: excludedWindows=%ld", excluded.count)
+                AppLog.event("capture", "area_live_magnifier_started", fields: ["excluded_windows": String(describing: excluded.count)])
                 var receivedFrame = false
                 while !Task.isCancelled {
                     let pointer = NSEvent.mouseLocation
@@ -38,14 +38,14 @@ final class AreaSelectionLiveMagnifier {
                     self?.displayID = snapshot.displayID
                     if !receivedFrame {
                         receivedFrame = true
-                        NSLog("Area live magnifier updated: display=%u pixels=%ldx%ld", snapshot.displayID, image.width, image.height)
+                        AppLog.event("capture", "area_live_magnifier_updated", fields: ["display": String(describing: snapshot.displayID), "height": String(describing: image.height), "width": String(describing: image.width)])
                     }
                     didUpdate()
                     try await Task.sleep(for: .milliseconds(120))
                 }
             } catch is CancellationError {
             } catch {
-                NSLog("Area live magnifier failed: %@", String(describing: error))
+                AppLog.event("capture", "area_live_magnifier_failed", fields: ["error": AppLog.error(error)])
             }
         }
     }

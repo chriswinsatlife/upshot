@@ -21,8 +21,7 @@ struct AreaCaptureWindowSnapshot {
         let configuration = configuration(includeShadow: includeShadow, showsCursor: showsCursor)
         let requestTime = ProcessInfo.processInfo.systemUptime
         if let eventTime {
-            NSLog("Area window screenshot requested: window=%u shadow=%d selectionToRequestMs=%.3f",
-                  window.windowID, includeShadow, (requestTime - eventTime) * 1000)
+            AppLog.event("capture", "area_window_screenshot_requested", fields: ["selection_to_request_ms": String(format: "%.3f", (requestTime - eventTime) * 1000), "shadow": String(describing: includeShadow), "window": String(describing: window.windowID)])
         }
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         guard let image = output.sdrImage else { throw CocoaError(.fileReadCorruptFile) }
@@ -32,11 +31,9 @@ struct AreaCaptureWindowSnapshot {
     func logTiming(windowID: CGWindowID, shadow: Bool, eventTime: TimeInterval, acquisition: String) {
         let completed = (ProcessInfo.processInfo.systemUptime - eventTime) * 1000
         if let presentationTime {
-            NSLog("Area capture timing: acquisition=%@ window=%u shadow=%d selectionToFrameMs=%.3f selectionToComposedMs=%.3f",
-                  acquisition, windowID, shadow, (presentationTime - eventTime) * 1000, completed)
+            AppLog.event("capture", "area_capture_timing_measured", fields: ["acquisition": acquisition, "selection_to_composed_ms": String(format: "%.3f", completed), "selection_to_frame_ms": String(format: "%.3f", (presentationTime - eventTime) * 1000), "shadow": String(describing: shadow), "window": String(describing: windowID)])
         } else {
-            NSLog("Area capture timing: acquisition=%@ window=%u shadow=%d selectionToFrameMs=unavailable selectionToRequestMs=%.3f selectionToComposedMs=%.3f",
-                  acquisition, windowID, shadow, (requestTime - eventTime) * 1000, completed)
+            AppLog.event("capture", "area_capture_timing_measured", fields: ["acquisition": acquisition, "selection_to_composed_ms": String(format: "%.3f", completed), "selection_to_frame_ms": "unavailable", "selection_to_request_ms": String(format: "%.3f", (requestTime - eventTime) * 1000), "shadow": String(describing: shadow), "window": String(describing: windowID)])
         }
     }
 }

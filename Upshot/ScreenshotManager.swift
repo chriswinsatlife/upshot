@@ -48,7 +48,7 @@ final class ScreenshotManager {
                                                                               includeWindowShadow: includeShadow) else { return nil }
             return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
         } catch {
-            NSLog("Window capture failed: %@", error.localizedDescription)
+            AppLog.event("capture", "window_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
@@ -61,7 +61,7 @@ final class ScreenshotManager {
                                                                               includeWindowShadow: includeShadow) else { return nil }
             return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
         } catch {
-            NSLog("Area capture failed: %@", String(describing: error))
+            AppLog.event("capture", "area_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
@@ -114,17 +114,17 @@ final class ScreenshotManager {
 
     func capturePreviousArea(delaySeconds: Int = 0) async -> URL? {
         guard let rect = AreaSelectionMemory.previousScreenshotRect else {
-            NSLog("Previous screenshot area unavailable: missing selection or changed display layout")
+            AppLog.event("capture", "previous_screenshot_area_unavailable", fields: ["reason": "missing_selection_or_changed_display_layout"])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "No previous screenshot area", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
         do {
             let snapshots = try await AreaCaptureSnapshot.captureAll()
             let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: AreaCaptureSelection.captureSource(in: rect), cursor: ScreenshotCursorService.snapshot(), skipBackgroundPreset: NSEvent.modifierFlags.contains(.shift))
-            NSLog("Previous screenshot area capture started")
+            AppLog.event("capture", "previous_screenshot_area_capture_started")
             return try await capture(selection, includeShadow: false, delaySeconds: delaySeconds)
         } catch {
-            NSLog("Previous screenshot area capture failed: %@", String(describing: error))
+            AppLog.event("capture", "previous_screenshot_area_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
@@ -170,7 +170,7 @@ final class ScreenshotManager {
         }
         CGImageDestinationAddImage(destination, image, [kCGImagePropertyDPIWidth: 72 * scale, kCGImagePropertyDPIHeight: 72 * scale] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
-        NSLog("Area capture saved: pixels=%ldx%ld file=%@", image.width, image.height, url.lastPathComponent)
+        AppLog.event("capture", "area_capture_saved", fields: ["file": url.lastPathComponent, "height": String(describing: image.height), "width": String(describing: image.width)])
         return url
     }
 
@@ -180,7 +180,7 @@ final class ScreenshotManager {
         do {
             lease = desktopIconsPrepared ? nil : try await DesktopIconVisibilityService.shared.beginCapture()
         } catch {
-            NSLog("Screenshot acquisition failed: %@", error.localizedDescription)
+            AppLog.event("capture", "screenshot_acquisition_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
             return nil
         }
@@ -196,7 +196,7 @@ final class ScreenshotManager {
                 do {
                     try process.run()
                     process.waitUntilExit()
-                    NSLog("Native screenshot finished: status=%d file=%@", process.terminationStatus, URL(fileURLWithPath: filePath).lastPathComponent)
+                    AppLog.event("capture", "native_screenshot_finished", fields: ["file": URL(fileURLWithPath: filePath).lastPathComponent, "status": String(describing: process.terminationStatus)])
 
                     if process.terminationStatus == 0,
                        FileManager.default.fileExists(atPath: filePath) {

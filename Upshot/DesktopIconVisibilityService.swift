@@ -50,21 +50,21 @@ final class DesktopIconVisibilityService {
             endCapture(token)
             throw error
         }
-        NSLog("Screenshot output: desktop icons hidden for capture installed=%d leases=%ld", installed, captureLeases.count)
+        AppLog.event("capture", "desktop_icons_hidden_for_capture", fields: ["installed": String(describing: installed), "leases": String(describing: captureLeases.count)])
         return token
     }
 
     func endCapture(_ token: UUID?) {
         guard let token, captureLeases.remove(token) != nil else { return }
         if captureLeases.isEmpty && !manuallyHidden { removeCovers() }
-        NSLog("Screenshot output: desktop icon capture lease released hidden=%d", !covers.isEmpty)
+        AppLog.event("capture", "desktop_icon_capture_lease_released", fields: ["hidden": String(describing: !covers.isEmpty)])
     }
 
     private func setManuallyHidden(_ hidden: Bool) throws {
         if hidden && covers.isEmpty { try installCovers() }
         manuallyHidden = hidden
         if !hidden && captureLeases.isEmpty { removeCovers() }
-        NSLog("Screenshot output: desktop icons toggled hidden=%d", !covers.isEmpty)
+        AppLog.event("capture", "desktop_icons_toggled", fields: ["hidden": String(describing: !covers.isEmpty)])
     }
 
     private func installCovers() throws {
@@ -112,7 +112,7 @@ final class DesktopIconVisibilityService {
         do {
             try installCovers()
         } catch {
-            NSLog("Screenshot output: desktop icon wallpaper refresh failed error=%@", error.localizedDescription)
+            AppLog.event("capture", "desktop_icon_wallpaper_refresh_failed", fields: ["error": AppLog.error(error)])
         }
     }
 }

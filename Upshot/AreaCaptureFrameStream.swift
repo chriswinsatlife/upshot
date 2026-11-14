@@ -148,9 +148,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
             ActiveDisplayResolver.displayID(for: $0) == displayID
         }?.maximumFramesPerSecond ?? 60)
         try await start(filter: filter, configuration: configuration, maximumFramesPerSecond: maximumFramesPerSecond)
-        NSLog("Area capture stream started: display=%u excludedFloatingWindows=%ld wallpaperCovers=%ld frameCapacity=%ld historyMs=250 maximumFrameRate=%ld",
-              displayID, AreaCaptureWindowFilter.excludedWindows(in: content).count, DesktopIconVisibilityService.shared.coverWindowIDs.count,
-              frames.capacity, maximumFramesPerSecond)
+        AppLog.event("capture", "area_capture_stream_started", fields: ["display": String(describing: displayID), "excluded_floating_windows": String(describing: AreaCaptureWindowFilter.excludedWindows(in: content).count), "frame_capacity": String(describing: frames.capacity), "history_ms": "250", "maximum_frame_rate": String(describing: maximumFramesPerSecond), "wallpaper_covers": String(describing: DesktopIconVisibilityService.shared.coverWindowIDs.count)])
     }
 
     func start(window: SCWindow, includeShadow: Bool, showsCursor: Bool) async throws {
@@ -175,7 +173,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
             ActiveDisplayResolver.displayID(for: $0) == displayID
         }?.maximumFramesPerSecond ?? 60)
         try await start(filter: filter, configuration: configuration, maximumFramesPerSecond: maximumFramesPerSecond)
-        NSLog("Area window stream started: window=%u shadow=%d frameCapacity=%ld", window.windowID, includeShadow, frames.capacity)
+        AppLog.event("capture", "area_window_stream_started", fields: ["frame_capacity": String(describing: frames.capacity), "shadow": String(describing: includeShadow), "window": String(describing: window.windowID)])
     }
 
     private func start(filter: SCContentFilter, configuration: SCStreamConfiguration, maximumFramesPerSecond: Int) async throws {
@@ -192,12 +190,11 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func snapshot(for eventTime: TimeInterval) throws -> AreaCaptureSnapshot {
         guard let selection = frames.selection(for: eventTime) else {
-            NSLog("Area capture frame unavailable: display=%u retainedFrames=%ld", displayID, frames.count)
+            AppLog.event("capture", "area_capture_frame_unavailable", fields: ["display": String(describing: displayID), "retained_frames": String(describing: frames.count)])
             throw CocoaError(.fileReadUnknown)
         }
         if selection.usedOldestFallback {
-            NSLog("Area capture frame fallback: display=%u gapMs=%.3f retainedFrames=%ld",
-                  displayID, (selection.frame.presentationTime - eventTime) * 1000, frames.count)
+            AppLog.event("capture", "area_capture_frame_fallback_used", fields: ["display": String(describing: displayID), "gap_ms": String(format: "%.3f", (selection.frame.presentationTime - eventTime) * 1000), "retained_frames": String(describing: frames.count)])
         }
         acceptingFrames = false
         return AreaCaptureSnapshot(displayID: displayID, frame: frame, image: try Self.image(from: selection.frame.value),
@@ -231,12 +228,12 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
             do {
                 try await stream.stopCapture()
             } catch {
-                NSLog("Area capture stream stop failed: display=%u error=%@", displayID, error.localizedDescription)
+                AppLog.event("capture", "area_capture_stream_stop_failed", fields: ["display": String(describing: displayID), "error": AppLog.error(error)])
                 throw error
             }
         }
-        if let windowID { NSLog("Area window stream stopped: window=%u", windowID) }
-        else { NSLog("Area capture stream stopped: display=%u", displayID) }
+        if let windowID { AppLog.event("capture", "area_window_stream_stopped", fields: ["window": String(describing: windowID)]) }
+        else { AppLog.event("capture", "area_capture_stream_stopped", fields: ["display": String(describing: displayID)]) }
     }
 
     static func image(from sample: CMSampleBuffer) throws -> CGImage {
@@ -280,7 +277,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
             } catch {
                 acceptingFrames = false
                 failed = true
-                NSLog("Area capture frame retention failed: display=%u error=%@", displayID, error.localizedDescription)
+                AppLog.event("capture", "area_capture_frame_retention_failed", fields: ["display": String(describing: displayID), "error": AppLog.error(error)])
                 didFail(error)
             }
         }
@@ -291,7 +288,7 @@ final class AreaCaptureFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
             stoppedBySystem = true
             guard acceptingFrames else { return }
             failed = true
-            NSLog("Area capture stream failed: display=%u error=%@", displayID, error.localizedDescription)
+            AppLog.event("capture", "area_capture_stream_failed", fields: ["display": String(describing: displayID), "error": AppLog.error(error)])
             didFail(error)
         }
     }

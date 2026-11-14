@@ -33,11 +33,9 @@ struct AreaCaptureSelectionResult {
         guard let selectionTime else { return }
         for snapshot in frames ?? snapshots where snapshot.frame.intersects(rect) {
             if let presentationTime = snapshot.presentationTime {
-                NSLog("Area capture timing: acquisition=%@ display=%u selectionToFrameMs=%.3f selectionToComposedMs=%.3f",
-                      acquisition, snapshot.displayID, (presentationTime - selectionTime) * 1000, (time - selectionTime) * 1000)
+                AppLog.event("capture", "area_capture_timing_measured", fields: ["acquisition": acquisition, "display": String(describing: snapshot.displayID), "selection_to_frame_ms": String(format: "%.3f", (presentationTime - selectionTime) * 1000), "selection_to_composed_ms": String(format: "%.3f", (time - selectionTime) * 1000)])
             } else {
-                NSLog("Area capture timing: acquisition=%@ display=%u selectionToFrameMs=unavailable selectionToComposedMs=%.3f",
-                      acquisition, snapshot.displayID, (time - selectionTime) * 1000)
+                AppLog.event("capture", "area_capture_timing_measured", fields: ["acquisition": acquisition, "display": String(describing: snapshot.displayID), "selection_to_frame_ms": "unavailable", "selection_to_composed_ms": String(format: "%.3f", (time - selectionTime) * 1000)])
             }
         }
     }
@@ -165,7 +163,7 @@ final class AreaCaptureSelection {
         size = CGSize(width: min(size.width, bounds.width), height: min(size.height, bounds.height))
         let resized = RecordingAreaGeometry.moved(CGRect(x: rect.minX, y: rect.maxY - size.height, width: size.width, height: size.height), by: .zero, in: bounds)
         highlightedRect = AreaCaptureSnapshot.pixelAlignedRect(resized, snapshots: snapshots)
-        if let size = selectionPixelSize { NSLog("All-In-One selection size edited: width=%.0f height=%.0f", size.width, size.height) }
+        if let size = selectionPixelSize { AppLog.event("capture", "all_in_one_selection_size_edited", fields: ["width": String(format: "%.0f", size.width), "height": String(format: "%.0f", size.height)]) }
         redraw()
     }
 
@@ -175,7 +173,7 @@ final class AreaCaptureSelection {
         if let selected, canEditSelectionSize, let rect = highlightedRect {
             highlightedRect = AreaCaptureSnapshot.pixelAlignedRect(RecordingAreaGeometry.reshaped(rect, to: selected.ratio, in: selectionBounds), snapshots: snapshots)
         }
-        NSLog("All-In-One aspect ratio changed: aspect=%@", selected?.title ?? "freeform")
+        AppLog.event("capture", "all_in_one_aspect_ratio_changed", fields: ["aspect": selected?.title ?? "freeform"])
         redraw()
     }
 
@@ -196,7 +194,7 @@ final class AreaCaptureSelection {
         }
         delaySeconds = selfTimerArmed ? Self.selfTimerSeconds : requestedDelaySeconds
         status = nil
-        NSLog("All-In-One capture action changed: action=%@ armed=%d mode=%@ delaySeconds=%ld", action.rawValue, armed, mode.rawValue, delaySeconds)
+        AppLog.event("capture", "all_in_one_capture_action_changed", fields: ["action": action.rawValue, "armed": String(describing: armed), "delay_seconds": String(describing: delaySeconds), "mode": mode.rawValue])
         if armed, mode == .area || mode == .previousArea, start == nil, let rect = highlightedRect, rect.width >= 1, rect.height >= 1 {
             commitSelection()
             return
@@ -210,7 +208,7 @@ final class AreaCaptureSelection {
         selfTimerArmed = false
         textRecognitionArmed = false
         delaySeconds = requestedDelaySeconds
-        NSLog("All-In-One capture actions cleared: mode=%@", mode.rawValue)
+        AppLog.event("capture", "all_in_one_capture_actions_cleared", fields: ["mode": mode.rawValue])
     }
 
     func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area, scrolling: Bool = false,
@@ -261,12 +259,12 @@ final class AreaCaptureSelection {
         if mode == .element && !AreaSelectionAccessibility.hasPermission {
             mode = .area
             requestAccessibilityPermission()
-            NSLog("All-In-One element mode unavailable without Accessibility permission; using area mode")
+            AppLog.event("capture", "all_in_one_element_mode_unavailable_accessibility_permission_missing", fields: ["fallback_mode": mode.rawValue])
         }
         if mode == .previousArea { highlightedRect = AreaSelectionMemory.previousScreenshotRect }
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                NSLog("Area selector display layout changed: cancelling capture")
+                AppLog.event("capture", "area_selector_display_layout_changed", fields: ["outcome": "cancelled"])
                 self?.cancel()
             }
         }
@@ -328,12 +326,12 @@ final class AreaCaptureSelection {
                     for view in views {
                         if let snapshot = captured.first(where: { $0.displayID == view.snapshot.displayID }) { view.updateSnapshot(snapshot) }
                     }
-                    NSLog("Area selector frozen snapshot ready: displays=%ld", captured.count)
+                    AppLog.event("capture", "area_selector_frozen_snapshot_ready", fields: ["displays": String(describing: captured.count)])
                 } else {
                     await startStreams(content: content)
                 }
             } catch {
-                if !Task.isCancelled { NSLog("Area selector acquisition unavailable: using screenshot fallback error=%@", error.localizedDescription) }
+                if !Task.isCancelled { AppLog.event("capture", "area_selector_acquisition_unavailable", fields: ["error": AppLog.error(error), "fallback": "screenshot"]) }
             }
         }
     }
@@ -342,17 +340,17 @@ final class AreaCaptureSelection {
         for snapshot in snapshots {
             guard !Task.isCancelled, !cancelled, !completingSelection else { return }
             guard let display = content.displays.first(where: { $0.displayID == snapshot.displayID }) else {
-                NSLog("Area capture stream unavailable: display=%u missing display; using screenshot fallback", snapshot.displayID)
+                AppLog.event("capture", "area_capture_stream_unavailable", fields: ["display": String(describing: snapshot.displayID), "fallback": "screenshot", "reason": "missing_display"])
                 continue
             }
             let stream = AreaCaptureFrameStream(displayID: snapshot.displayID, frame: snapshot.frame, didUpdate: { [weak self] in
                 if UpshotPreferences.areaSelectionMagnifier { self?.redraw() }
             }, didFail: { error in
-                NSLog("Area capture stream unavailable: display=%u using screenshot fallback error=%@", snapshot.displayID, error.localizedDescription)
+                AppLog.event("capture", "area_capture_stream_unavailable", fields: ["display": String(describing: snapshot.displayID), "error": AppLog.error(error), "fallback": "screenshot"])
             })
             streams.append(stream)
             do { try await stream.start(display: display, content: content) }
-            catch { NSLog("Area capture stream unavailable: display=%u using screenshot fallback error=%@", snapshot.displayID, error.localizedDescription) }
+            catch { AppLog.event("capture", "area_capture_stream_unavailable", fields: ["display": String(describing: snapshot.displayID), "error": AppLog.error(error), "fallback": "screenshot"]) }
         }
     }
 
@@ -375,7 +373,7 @@ final class AreaCaptureSelection {
         }
         streams.removeAll()
         windowStream = nil
-        NSLog("Area capture streams released: retained=0 stopped=%ld failed=%ld", stopped, failed)
+        AppLog.event("capture", "area_capture_streams_released", fields: ["failed": String(describing: failed), "retained": "0", "stopped": String(describing: stopped)])
     }
 
     private func requestAccessibilityPermission() {
@@ -407,8 +405,8 @@ final class AreaCaptureSelection {
         panel?.makeKey()
         panel?.makeFirstResponder(panel?.contentView)
         if highlightedRect == nil { move(to: pointer) } else { redraw() }
-        NSLog("Area selector opened: frozen=%d displays=%ld crosshair=%d magnifier=%d", frozen, snapshots.count, UpshotPreferences.areaSelectionCrosshair, UpshotPreferences.areaSelectionMagnifier)
-        if isAllInOne { NSLog("All-In-One opened: mode=%@ restoredSelection=%d", mode.rawValue, highlightedRect != nil) }
+        AppLog.event("capture", "area_selector_opened", fields: ["crosshair": String(describing: UpshotPreferences.areaSelectionCrosshair), "displays": String(describing: snapshots.count), "frozen": String(describing: frozen), "magnifier": String(describing: UpshotPreferences.areaSelectionMagnifier)])
+        if isAllInOne { AppLog.event("capture", "all_in_one_opened", fields: ["mode": mode.rawValue, "restored_selection": String(describing: highlightedRect != nil)]) }
     }
 
     func magnifierImage(for snapshot: AreaCaptureSnapshot) -> CGImage? {
@@ -451,7 +449,7 @@ final class AreaCaptureSelection {
         highlightedRect = selected == .previousArea ? AreaSelectionMemory.previousScreenshotRect : nil
         if selected.drawsArea { highlightedRect = AreaSelectionMemory.lastSelectionRect }
         move(to: NSEvent.mouseLocation)
-        NSLog("Area selection mode changed: mode=%@", mode.rawValue)
+        AppLog.event("capture", "area_selection_mode_changed", fields: ["mode": mode.rawValue])
         if selected == .previousArea { commitSelection() }
     }
 
@@ -502,12 +500,12 @@ final class AreaCaptureSelection {
                           let target = windows.first(where: { $0.id == targetID }) else { continue }
                     let displayID = snapshots.first { $0.frame.intersects(target.frame) }?.displayID ?? 0
                     let source = AreaCaptureFrameStream(displayID: displayID, frame: target.frame, didUpdate: {}, didFail: { error in
-                        NSLog("Area window stream unavailable: window=%u error=%@", targetID, error.localizedDescription)
+                        AppLog.event("capture", "area_window_stream_unavailable", fields: ["error": AppLog.error(error), "window": String(describing: targetID)])
                     })
                     windowStream = source
                     try await source.start(window: window, includeShadow: includeWindowShadow, showsCursor: windowShowsCursor)
                 } catch {
-                    NSLog("Area window stream unavailable: window=%u error=%@", targetID, error.localizedDescription)
+                    AppLog.event("capture", "area_window_stream_unavailable", fields: ["error": AppLog.error(error), "window": String(describing: targetID)])
                     if let windowStream { try? await windowStream.stop() }
                     windowStream = nil
                 }
@@ -545,7 +543,7 @@ final class AreaCaptureSelection {
         switch mode {
         case .area, .previousArea: complete(kind: .area, rect: rect, eventTime: eventTime)
         case .element:
-            NSLog("Smart element selected: x=%.1f y=%.1f width=%.1f height=%.1f", rect.minX, rect.minY, rect.width, rect.height)
+            AppLog.event("capture", "smart_element_selected", fields: ["height": String(format: "%.1f", rect.height), "width": String(format: "%.1f", rect.width), "x": String(format: "%.1f", rect.minX), "y": String(format: "%.1f", rect.minY)])
             complete(kind: .element, rect: rect, eventTime: eventTime)
         case .window:
             if let hoveredWindow { complete(kind: .window(hoveredWindow.id), rect: rect, eventTime: eventTime) }
@@ -560,13 +558,13 @@ final class AreaCaptureSelection {
 
     func toggleCrosshair() {
         UpshotPreferences.areaSelectionCrosshair.toggle()
-        NSLog("Area crosshair changed: enabled=%d", UpshotPreferences.areaSelectionCrosshair)
+        AppLog.event("capture", "area_crosshair_changed", fields: ["enabled": String(describing: UpshotPreferences.areaSelectionCrosshair)])
         redraw()
     }
 
     func toggleMagnifier() {
         UpshotPreferences.areaSelectionMagnifier.toggle()
-        NSLog("Area magnifier changed: enabled=%d", UpshotPreferences.areaSelectionMagnifier)
+        AppLog.event("capture", "area_magnifier_changed", fields: ["enabled": String(describing: UpshotPreferences.areaSelectionMagnifier)])
         redraw()
     }
 
@@ -606,7 +604,7 @@ final class AreaCaptureSelection {
         guard !completingSelection else { return }
         completingSelection = true
         startupTask?.cancel()
-        NSLog("Area selector selected: mode=%@ x=%.1f y=%.1f width=%.1f height=%.1f", mode.rawValue, rect.minX, rect.minY, rect.width, rect.height)
+        AppLog.event("capture", "area_selector_selected", fields: ["height": String(format: "%.1f", rect.height), "mode": mode.rawValue, "width": String(format: "%.1f", rect.width), "x": String(format: "%.1f", rect.minX), "y": String(format: "%.1f", rect.minY)])
         let target: WindowTarget?
         if case .window(let id) = kind {
             target = windows.first { $0.id == id }
@@ -626,7 +624,7 @@ final class AreaCaptureSelection {
         result.windowShowsCursor = windowShowsCursor
         result.delaySeconds = delaySeconds
         result.recognizesText = textRecognitionArmed
-        if selfTimerArmed || textRecognitionArmed { NSLog("All-In-One capture actions applied: selfTimer=%d delaySeconds=%ld captureText=%d", selfTimerArmed, delaySeconds, textRecognitionArmed) }
+        if selfTimerArmed || textRecognitionArmed { AppLog.event("capture", "all_in_one_capture_actions_applied", fields: ["capture_text": String(describing: textRecognitionArmed), "delay_seconds": String(describing: delaySeconds), "self_timer": String(describing: selfTimerArmed)]) }
         if case .window(let windowID) = kind, delaySeconds == 0 {
             completeWindowSelection(result, windowID: windowID, eventTime: eventTime)
             return
@@ -703,8 +701,7 @@ final class AreaCaptureSelection {
                 let content = try await loadContent()
                 var selected = result
                 selected.snapshots = try await AreaCaptureSnapshot.acquireSelection(result.snapshots, in: result.rect, retained: retained) { geometry, rect in
-                    NSLog("Area capture screenshot fallback requested: display=%u reason=missing-frame selectionToRequestMs=%.3f",
-                          geometry.displayID, (ProcessInfo.processInfo.systemUptime - eventTime) * 1000)
+                    AppLog.event("capture", "area_capture_screenshot_fallback_requested", fields: ["display": String(describing: geometry.displayID), "reason": "missing_frame", "selection_to_request_ms": String(format: "%.3f", (ProcessInfo.processInfo.systemUptime - eventTime) * 1000)])
                     return try await AreaCaptureSnapshot.capture(geometry, in: rect, content: content)
                 }
                 try Task.checkCancellation()
@@ -747,7 +744,7 @@ final class AreaCaptureSelection {
         views.removeAll()
         snapshots.removeAll()
         windows.removeAll()
-        NSLog("Area selector closed: cancelled=%d", result == nil)
+        AppLog.event("capture", "area_selector_closed", fields: ["cancelled": String(describing: result == nil)])
         continuation.resume(returning: result)
     }
 
