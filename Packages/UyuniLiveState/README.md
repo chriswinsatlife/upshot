@@ -1,0 +1,151 @@
+---
+document_type: readme
+review_status: unreviewed
+approval_status: not_approved
+created_by: Claude Code, claude-opus-5-5, session 185b4bce-e570-4280-84bc-a02f6266026c
+created_on: 2026-11-14
+---
+
+# UyuniLiveState
+
+UyuniLiveState is a Swift package that implements the app side of the live state contract in `specs/native_app_frames.md` for any macOS app. The app names its states and builds the windows of each state from its own views and fixture data. The package handles the launch arguments, the output and input lines, the window levels, the display safety check, input replay, and logging.
+
+## What an App Supplies
+
+An app supplies one class that conforms to `LiveStateApplication` and one call at the top of its entry point.
+
+- `liveStateCatalog()` returns a `LiveStateCatalog`: one `LiveStateDescription` per state, with `name`, `baseState`, `appearance` (`.light` or `.dark`), `sourceFile`, and `sourceLine`, and one `UnsupportedLiveState` with a one-sentence `reason` per state the app cannot present.
+- `makeLiveStatePresentation(for:)` builds the windows of one state and returns a `LiveStatePresentation`. The windows must not be ordered in; the package orders them in. A state the app cannot build throws `LiveStateFailure` with a one-sentence reason, which the package writes in `live_state_failed`.
+- `beginFixtureIsolation()` and `endFixtureIsolation()` are optional. The package calls the first before it asks for the catalog and the second when the run ends, so the app can point its storage at fixture data and remove that data afterwards.
+- `sharedStateRestoration()` is optional. The package calls it before each `present` and runs the returned closure when that `present` fails, so the app can undo app-wide state that building a state changed.
+- `LiveStateRuntime.runIfRequested { ... }` runs before the app's normal startup. It returns when neither `--list-live-states` nor `--present-live-state` is among the launch arguments, and otherwise never returns.
+
+A state of one window uses `LiveStatePresentation(window:)`. A state of several windows, such as a panel over a window or an alert over a window, uses `LiveStatePresentation(regionWindows:backdropWindow:regionFrame:)` with the windows from back to front. The region is the union of the windows' frames unless `regionFrame` gives it in AppKit screen coordinates, and it must lie inside the main display. A `backdropWindow`, such as a wallpaper window, is the backmost window of the region and receives no input. `settleDuration`, 100 milliseconds by default, is the wait between ordering the windows in and checking them, and `tearDown` runs after the package removes the state's windows.
+
+`LiveStateWindow` and `LiveStatePanel` are subclasses of `NSWindow` and `NSPanel` that report key appearance without becoming key, so titled windows draw active controls and a clicked text field takes typed text. A window of any other class is accepted and is presented with AppKit's inactive appearance. Window content can be SwiftUI in an `NSHostingView` or `NSHostingController`, or plain AppKit views.
+
+## Minimal Example
+
+```swift
+import AppKit
+import SwiftUI
+import UyuniLiveState
+
+@MainActor
+final class ExampleLiveStates: LiveStateApplication {
+    func liveStateCatalog() async throws -> LiveStateCatalog {
+        LiveStateCatalog(states: [
+            LiveStateDescription(name: "settings-light", baseState: "settings", appearance: .light,
+                                 sourceFile: "Sources/Example/SettingsView.swift", sourceLine: 12),
+        ])
+    }
+
+    func makeLiveStatePresentation(for state: LiveStateDescription) async throws -> LiveStatePresentation {
+        let window = LiveStateWindow(contentRect: NSRect(x: 200, y: 200, width: 640, height: 480),
+                                     styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "Settings"
+        window.contentView = NSHostingView(rootView: SettingsView(model: .fixture))
+        return LiveStatePresentation(window: window)
+    }
+}
+
+@main
+enum ExampleEntry {
+    @MainActor
+    static func main() {
+        LiveStateRuntime.runIfRequested { ExampleLiveStates() }
+        ExampleApp.main()
+    }
+}
+```
+
+## Alert States
+
+`LiveStatePresentation(alert:over:settleDuration:buttonPressed:tearDown:)` presents an `NSAlert` as part of a state. The package lays out the alert, moves its content into a window without the two style bits that keep AppKit's alert panel off the window server outside a modal session, and places that window 24 points below the title bar of the `over` window, centered on it, or centered on the main display when `over` is nil. With an `over` window the state is a region of that window and the alert; without one the state is a region of the alert with a 40-point margin on every side. As in AppKit, the alert takes all input while it is shown: a click, drag, or scroll on a window behind it is acknowledged with `input_replayed`, is not delivered, and is logged with the outcome `blocked_by_alert`, and keys go to the alert, so Return presses its default button and Escape its cancel button. Each alert button removes the alert from the state, calls `buttonPressed` with `alertFirstButtonReturn` plus the button's index, and writes an `alert_button_pressed` event; no modal session runs. The region announced in `live_state_ready` stays as announced after the alert is removed, and input then reaches the windows behind it. The alert's buttons are restored to no target when the state is removed.
+
+## Menus
+
+A menu that a control opens is shown inside the state and works there. AppKit's menu tracking never runs: the package draws the menu's items as a view in the window that opened it, so the menu is part of that window's picture and needs no new `live_state_ready`. The menu stays inside that window, moved and shortened as needed.
+
+- Placement: the menu view is added on top of the window's content view. When the menu view's layer does not join the content view's layer tree, which happens for an `NSHostingView` content view in an executable built for macOS 26 or later with, for example, a grouped `Form`, the package moves the menu view into the window's frame view directly above the content view. `menu_presented` names the placement. An app needs no container view around its hosting view.
+- Room outside the window: a presentation that sets `menuMargin` (points on each side) is announced as a region of its windows' frames plus that margin. The package adds a transparent, borderless window covering the region in front of the state's windows, below the desktop level, and draws every menu of the state in it, positioned relative to the opening control as in the opening window, so a menu can extend past a small panel. The menu window takes no input of its own; input while a menu is shown goes to the menu as described below.
+- A state whose first picture has a menu open sets `openInitialMenu`, a closure that opens the menu, for example by calling `performClick(_:)` on a pop-up button or `popUp(positioning:at:in:)` on a menu. The package runs it after the state's windows are ordered in and before `live_state_ready`, so the announced picture includes the menu. A successful `present` closes a menu only when it belongs to the previous state.
+- Item targets: `NSMenuItem.target` is a weak reference, and the package returns before an item is chosen, so it keeps every item's target alive while the menu is shown. An app does not need to retain a menu's targets itself.
+- Gestures: when a menu opens during a `mouse_down` that reached a window, the matching `mouse_up` is also delivered to that window, so a SwiftUI control's gesture ends and the next press reaches its control.
+- A menu that a different process opens over the app's windows, such as a menu drawn by a Rust process for a window owned by the Swift process, is outside the package. That app opens the menu from the Swift process that owns the window, as an `NSMenu` through one of the paths below, or draws the menu as part of the state with its own views and handles its input there.
+
+- Opening paths, each logged as `menu_presented` with its `source`:
+  - `pop_up_button_menu`: `NSPopUpButtonCell` `trackMouse:inRect:ofView:untilMouseUp:` and `performClickWithFrame:inView:`, which covers `NSPopUpButton` and a SwiftUI `Picker` in menu style. A pop-up button's menu places the selected item over the button's title, and a pull-down button's menu opens below the button without its title item.
+  - `swiftui_menu`: the private `NSCocoaMenuImpl` methods `popUpMenu:atLocation:width:view:selectedItemIndexProvider:font:positioningRect:flags:options:` and `popUpMenu:atLocation:width:forView:withSelectedItem:withFont:`, which a SwiftUI `Menu` calls; the menu opens below the control.
+  - `menu_pop_up`: `NSMenu` `popUpMenuPositioningItem:atLocation:inView:` and its `appearance:` variant, which return false at once; the item is placed at the location.
+  - `context_menu_pop_up`: `+[NSMenu popUpContextMenu:withEvent:forView:]` and its `withFont:` variant; the menu opens at the event's location.
+  - `context_menu_right_click`: the private `-[NSView _showMenuForEvent:]`, which a right click on an AppKit view or a SwiftUI `contextMenu` reaches; the package asks the view for `menu(for:)` and opens it at the click.
+  - A private method is replaced only when its type encoding matches the one recorded on macOS 27.2; a missing method or a different encoding writes `private_menu_guards_unavailable` and the run continues.
+- Drawing: titles and attributed titles, item images, the on, mixed, and off state images, disabled items, separators (consecutive and trailing separators are collapsed as AppKit does), section headers, key equivalents with their modifier symbols, indentation, and a chevron on items with a submenu, in the window's appearance, on the menu material with rounded corners and a shadow.
+- Before opening, the package posts `NSPopUpButton.willPopUpNotification` and `NSPopUpButtonCell.willPopUpNotification` for a pop-up button, calls the menu delegate's private `popUpButtonCell:willShowMenu:` when the delegate responds to it (SwiftUI fills its pop-up menus there), `menuNeedsUpdate(_:)`, `numberOfItems(in:)` with `menu(_:update:at:shouldCancel:)`, the menu's `update()`, and `menuWillOpen(_:)`, and calls `menuDidClose(_:)` when it closes.
+- Pointer input while a menu is shown goes to the menu and never to the windows behind it, and is acknowledged with `input_replayed` and logged with the outcome `menu`. A click on an enabled item performs the item's action with `performActionForItem(at:)`, so a pop-up button's selection, a SwiftUI `Picker` binding, and a SwiftUI `Menu` button action all change, and the menu closes. A click on an item with a submenu opens the submenu. A click on a disabled item, a separator, or a header does nothing. A click or `mouse_down` outside the menu closes it with no action, and the rest of that pointer gesture is not delivered. `mouse_moved` and `mouse_dragged` highlight the enabled item under the point and open its submenu. A menu that opened during a `mouse_down` stays open when the matching `mouse_up` arrives without movement, and chooses the item under the point when the pointer moved first, as AppKit's press, drag, and release does.
+- Keys while a menu is shown go to the menu: `up` and `down` move the highlight over enabled items, `right` opens the highlighted submenu or highlights the first item of an open submenu, `left` closes the innermost submenu, `return` and `space` choose the highlighted item, `escape` closes the menu with no action, and `type` highlights the first enabled item whose title starts with the text. `scroll` scrolls a menu taller than its window.
+- The menu closes, with a `menu_closed` event and its reason, when an item is chosen, on an outside click, on Escape, on a successful `present`, and on `quit`. `menu_submenu_opened` and `menu_item_chosen`, with the item's target, action, and a pop-up button's selection before and after, are logged as they happen.
+- Safeguard: a menu that still begins AppKit tracking through a path the package does not replace is cancelled with `cancelTracking()` through the main queue, a run loop block, and a timer in the common, event tracking, modal panel, and default modes, whichever runs first inside the menu's own event loop, with a `menu_tracking_cancelled` event that names the channel. The menu's windows are kept below the desktop level by the window level guards while they exist. When the menu ends tracking, and one second after the cancellation, every visible window outside the presented state is ordered out with a `window_outside_stage_ordered_out` event.
+
+## Interaction Guards
+
+A control in a state can try to show something outside the state's windows or to leave the app. The package replaces the methods below for the whole run. Each blocked call writes an `interaction_blocked` event with an `interaction` field, and the caller receives the cancellation result listed below, so its own code continues. A menu requested for a window that is not a window of the presented state is blocked the same way, under its `source`.
+
+- Drag sessions, `dragging_session`: `NSView` `beginDraggingSessionWithItems:event:source:` and `beginDraggingSessionWithItems:gesture:source:` return nil, and `dragImage:at:offset:event:pasteboard:source:slideBack:` and `dragFile:fromRect:slideBack:event:` return without a session. The mouse events of the drag still reach the view.
+- Open and save panels, `file_panel`: `NSSavePanel` `runModal` returns `cancel`, and `beginWithCompletionHandler:` and `beginSheetModalForWindow:completionHandler:` call their handler with `cancel` on the next main queue pass. `NSOpenPanel` inherits these methods.
+- Alerts and sheets, `alert_modal_session`, `alert_sheet`, `window_modal_session`, and `window_sheet`: `NSAlert` `runModal` returns the response of the button whose key equivalent is Escape, or `abort` when none has it, and `beginSheetModalForWindow:completionHandler:` calls its handler with that response. `NSApplication` `runModalForWindow:` returns `abort`, and `NSWindow` `beginSheet:completionHandler:` and `beginCriticalSheet:completionHandler:` call their handler with `abort` without attaching the sheet.
+- Workspace opens, `workspace_open_url`, `workspace_open_urls_with_application`, `workspace_open_application`, `workspace_open_file`, `workspace_activate_file_viewer`, and `workspace_select_file`: the `NSWorkspace` methods `openURL:`, `openURL:configuration:completionHandler:`, `openURLs:withApplicationAtURL:configuration:completionHandler:`, `openApplicationAtURL:configuration:completionHandler:`, `openFile:`, `activateFileViewerSelectingURLs:`, and `selectFile:inFileViewerRootedAtPath:` return false or call their handler with an error. Whether SwiftUI's `openURL` action and `Link` reach these methods is not checked.
+- Activation of another app, `application_activation`: `NSRunningApplication` `activateWithOptions:` and `activateFromApplication:options:` return false.
+
+A public method the package cannot replace stops the launch with `live_state_failed`.
+
+## What the Package Guarantees
+
+- `--list-live-states` writes one `live_states` line and exits with status 0. `--present-live-state NAME` writes `live_state_ready` and then reads commands until `quit` or the end of standard input. Invalid arguments write `live_state_failed` and exit with status 2, and any other failed launch exits with status 1.
+- Standard output carries the contract's lines: `live_states`, `live_state_ready` with `regionWindowNumbers`, `regionX`, and `regionY` for a region, `live_state_failed`, and `input_replayed`. It also carries `{"event":"input_handled","command":WORD,"handledUptime":SECONDS}` when each command is received, with `ProcessInfo.systemUptime`, which the live frame runner uses to measure the time from input to a changed frame; readers that select lines by their `event` ignore it.
+- The activation policy is `prohibited` before the app's class is created, and the app is never activated.
+- Every window of the process stays below the desktop window level. The package exchanges the implementations of `setLevel:`, `orderWindow:relativeTo:`, and `addChildWindow:ordered:` on `NSWindow` for the whole run: a requested level at or above the desktop level becomes one level below it, a window is lowered and made to ignore mouse events before it is ordered in, and a child window that AppKit or the app attaches takes its parent's level.
+- Each window of a state is configured to ignore mouse events, stay shown when the app is inactive, stay out of Mission Control and window cycling, allow capture, skip animation, and use the state's appearance. Each is confirmed ordered in below the desktop layer at the window server before `live_state_ready`.
+- The display safety check runs after each input command and every 0.25 seconds in the common run loop modes, which include the event tracking mode of a control that tracks the mouse. It reads the activation policy, rereading it up to 25 times 1 millisecond apart through `NSRunningApplication` when `NSApp` reports a policy other than `prohibited`, and reads every window's level, visibility, window-server layer, and on-screen state. A failed check writes `live_state_failed` with each failed condition and exits with status 1.
+- A `userInitiated` and `latencyCritical` process activity is held for the whole run.
+- `present NAME` builds the next state while the previous one stays presented, and removes the previous one only after the next one is ready. A failed `present` removes the next state's windows, restores the app appearance, runs the app's restoration closure, writes `live_state_failed`, and leaves the previous state and every change made to it through input in place. Commands that arrive during a `present` wait until it finishes.
+- Input coordinates are points from the top-left corner of the window frame, title bar included, or of the region. `click`, `mouse_down`, and `scroll` go to the frontmost window of the state under the point; a point outside the frame or region, or over the backdrop alone, is ignored. `mouse_dragged` and `mouse_up` go to the window that received the `mouse_down`.
+- `click` posts the mouse up to the event queue and then sends the mouse down, so a control that tracks the mouse receives the mouse up. When a control is still tracking a `mouse_down`, later mouse events are posted to the event queue that its tracking loop reads, and the `mouse_down` is acknowledged once it has been delivered.
+- `scroll X Y DELTA_X DELTA_Y` replays one continuous scroll wheel event with deltas in points. The deltas follow AppKit's `scrollingDeltaX` and `scrollingDeltaY`: a negative `DELTA_Y` moves toward the end of the content. Uyuni's canvas sends the negated browser wheel delta, which follows the same sign.
+- Two pointer commands beyond the contract in `specs/native_app_frames.md` are accepted: `mouse_moved X Y`, which highlights a shown menu's item or otherwise sends one mouse moved event to the window under the point, and `right_click X Y`, which replays a right mouse down and up and so opens a context menu.
+- `key` and `type` use US layout key codes and go to the window that received the last `click` or `mouse_down`, or to the frontmost window before any. A key with the command or control modifier is offered to `performKeyEquivalent` first.
+- In a region, after each input command and on each display safety check, the windows are put back in their order from back to front when the window server lists them in another order.
+- `quit` and the end of standard input remove the windows, call `endFixtureIsolation()`, and exit with status 0.
+
+## Standard Error Events
+
+Standard error carries one JSON object per line, each with `event`, `processIdentifier`, and `uptime`.
+
+- `live_state_command`: one line per command, with the command, its outcome (`replayed`, `presented`, `rejected`, `ignored`, or `quit`), the reason for an ignored or rejected command, the coordinates and target window, the dispatch (`sent` or `posted`), the presented state, and the milliseconds from receipt to the outcome.
+- `live_state_built`, `live_state_build_failed`, and `live_state_presented`: one line per state built, with window numbers, classes, levels, and milliseconds.
+- `display_safety`: one line whenever a check reads a state different from the previous check. `display_safety_checks`: one line at the end with the number of checks and the highest visible window level and on-screen window-server layer seen.
+- `window_level_clamped`, `window_lowered_before_ordering_in`, `child_window_lowered`, `window_outside_stage_ordered_out`, and `stage_order_restored` each time a guard changes a window.
+- `menu_presented`, `menu_submenu_opened`, `menu_item_chosen`, `menu_closed`, `menu_presentation_unavailable`, and `menu_tracking_cancelled` as described under Menus.
+- `interaction_blocked`, `alert_rehosted`, and `alert_button_pressed` as described under Interaction Guards and Alert States.
+- `live_state_run_started`, `activation_policy_set`, `window_level_guards_installed`, `interaction_guards_installed`, `private_menu_guards_unavailable`, `latency_critical_activity_begun`, `fixture_isolation_begun`, `live_state_catalog_loaded`, `fixture_isolation_ended`, and `live_state_run_finished` with the exit status, the presented states, and a count of command outcomes.
+
+## Language Mode and Platforms
+
+The package uses Swift tools version 6.0 and the Swift 6 language mode, because it reads standard input on its own thread and replays input on the main actor, and the Swift 6 mode reports a data race between the two as a compile error. Language mode applies per module, so an app compiled in the Swift 5 mode can depend on the package. The package sources also compile in the Swift 5 mode, for an app that compiles them into its own module with `swiftc`. The minimum platform is macOS 14. The library's newest requirement is macOS 13, for `ContinuousClock`, `Duration`, and `Task.sleep(for:)`, and the fixture application's SwiftUI `onChange(of:initial:_:)` requires macOS 14.
+
+## Fixture Application
+
+`UyuniLiveStateFixtureApplication` presents twenty-three states with the package: `counter`, `scrolling-list`, `text-and-slider`, and `panel-over-window`; for menus, `popup-button` (an `NSPopUpButton` with key equivalents, a disabled item, and a separator, a pull-down `NSPopUpButton` with a submenu and a disabled item, a button that opens a context menu with a section header, an item image, a submenu with state marks, and a disabled item, a label whose context menu opens on a right click, and a pop-up button at the window's bottom edge) and `menu-picker` (a SwiftUI `Picker` in menu style, a SwiftUI `Menu` with the button menu style that holds a key shortcut, a disabled button, an inline `Picker`, and a `Menu` submenu, and a view with a SwiftUI `contextMenu`), each also as `popup-button-dark` and `menu-picker-dark` in the dark appearance; `popup-button-menu-open` (the pop-up button state with its menu open through `openInitialMenu`); `hosted-settings` (a full-size-content window whose content view is an `NSHostingView` with pop-up rows that open an `NSMenu` with `popUp(positioning:at:in:)` and a target held only for the call), `hosted-form` (a grouped SwiftUI `Form` with a `Menu`), and `grouped-form-menu` (a grouped SwiftUI `Form` with a `Menu` holding an inline `Picker`, which built for macOS 27 draws its menu in the frame view), each also in the dark appearance; `capsule-panel` (a 240 by 44 point borderless panel whose pop-up opens a menu taller and wider than the panel, with a `menuMargin` of 40 points above, 120 on each side, and 260 below), also in the dark appearance; the `menu-picker` state also has a switch `Toggle`; and, for the interaction guards, `draggable-item` (a SwiftUI `draggable` item and an AppKit view that starts a drag session in `mouseDown(with:)`), `save-panel-button`, `open-url-button`, `alert-button` (`NSAlert.runModal()`), `alert-over-window` (`LiveStatePresentation(alert:over:)`), and `alert-alone` (`LiveStatePresentation(alert:)`). The `popup-button`, `menu-picker`, and `draggable-item` states also have a button that counts presses. The scrolling list reads its rows from a fixture directory that the isolation hooks create and remove. `--failing-live-state NAME` gives that state a region outside the main display, so its `present` fails after its windows are ordered in.
+
+```bash
+swift build
+.build/debug/UyuniLiveStateFixtureApplication --list-live-states
+.build/debug/UyuniLiveStateFixtureApplication --present-live-state counter
+```
+
+## Adding the Package
+
+- A Swift package adds `.package(path: "<path to packages/uyuni_live_state_swift>")` and the product `UyuniLiveState`.
+- An Xcode project adds the folder as a local package and links the `UyuniLiveState` product to the app target.
+- An app built with `swiftc` adds the files in `Sources/UyuniLiveState` to its own module and leaves out `import UyuniLiveState`.
