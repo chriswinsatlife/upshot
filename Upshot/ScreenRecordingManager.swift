@@ -171,7 +171,7 @@ final class ScreenRecordingManager {
         RecordingPenPresenter.shared.prepare(source: source)
         RecordingPenPresenter.shared.onChange = { [writer] in writer.refreshPenFrame() }
 
-        Task {
+        Task { [self] in
             do {
                 let requestedOptions = ScreenRecordingCaptureOptions.fromPreferences()
                 let (options, inputWarnings) = await Self.resolveCaptureOptions(requestedOptions)

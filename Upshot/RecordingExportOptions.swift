@@ -17,7 +17,7 @@ enum RecordingExportPreferences {
                 UpshotStorage.defaults.set(true, forKey: hevcDefaultKey)
                 if decoded.codec == .h264 {
                     decoded.codec = .hevc
-                    lastSettings = decoded
+                    Self.lastSettings = decoded
                 }
             }
             return decoded

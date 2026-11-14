@@ -71,7 +71,7 @@ private final class ClickOutsideNSView: NSView {
     private func installMonitor() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self, let window = self.window else { return event }
+            guard let self, self.window != nil else { return event }
             let locationInWindow = event.locationInWindow
             let locationInView = self.convert(locationInWindow, from: nil)
             if !self.bounds.contains(locationInView) {

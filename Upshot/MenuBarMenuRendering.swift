@@ -35,7 +35,7 @@ struct MenuBarMenuSnapshotItem: Identifiable {
         isSeparator = item.isSeparatorItem
         isSectionHeader = item.isSectionHeader
         isEnabled = item.isEnabled
-        submenu = item.submenu.map(MenuBarMenuSnapshotItem.items(in:))
+        submenu = item.submenu.map { MenuBarMenuSnapshotItem.items(in: $0) }
     }
 
     static func items(in menu: NSMenu) -> [MenuBarMenuSnapshotItem] {

@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingOpenURLs: [URL] = []
     var onOpenFiles: (([URL]) -> Void)? {
         didSet {
-            guard let onOpenFiles, !pendingOpenURLs.isEmpty else { return }
+            guard onOpenFiles != nil, !pendingOpenURLs.isEmpty else { return }
             let urls = pendingOpenURLs
             pendingOpenURLs = []
             application(NSApp, open: urls)
