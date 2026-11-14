@@ -107,6 +107,15 @@ final class StateRenderTitledWindow: NSWindow {
     @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
     @objc func _hasActiveAppearanceForStandardWindowButton(_ button: Int) -> Bool { true }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        super.performKeyEquivalent(with: event) || StateRenderKeyRouting.performEditCommand(event, in: self)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if StateRenderKeyRouting.offersKeyEquivalentFirst(event), performKeyEquivalent(with: event) { return }
+        super.sendEvent(event)
+    }
+
     override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
         StateRenderer.lower(childWin, to: level)
         super.addChildWindow(childWin, ordered: place)
@@ -127,30 +136,11 @@ final class StateRenderAlertWindow: NSWindow {
     }
 }
 
-final class StateRenderAlertButtonTarget: NSObject {
-    let press: (NSButton) -> Void
-
-    init(press: @escaping (NSButton) -> Void) {
-        self.press = press
-    }
-
-    @objc func buttonPressed(_ sender: NSButton) {
-        press(sender)
-    }
-}
-
 @MainActor
 final class StateRenderStage {
     let appearance: String
     private(set) var windows: [NSWindow] = []
     private var alerts: [NSAlert] = []
-    private var alertButtonTargets: [StateRenderAlertButtonTarget] = []
-    private var dismissedWindows: [NSWindow] = []
-    var alertDismissed: ((_ window: NSWindow, _ button: String) -> Void)?
-
-    var presentsAlert: Bool {
-        windows.contains { $0 is StateRenderAlertWindow }
-    }
 
     init(appearance: String) throws {
         self.appearance = appearance
@@ -203,24 +193,15 @@ final class StateRenderStage {
         }
     }
 
-    func dismissAlert(_ window: NSWindow) {
-        guard window is StateRenderAlertWindow, let index = windows.firstIndex(where: { $0 === window }) else { return }
-        windows.remove(at: index)
-        window.orderOut(nil)
-        dismissedWindows.append(window)
-    }
-
     func tearDown() {
         alerts.removeAll()
-        alertButtonTargets.removeAll()
-        for window in windows.reversed() + dismissedWindows {
+        for window in windows.reversed() {
             window.orderOut(nil)
             window.contentViewController = nil
             window.contentView = nil
             window.close()
         }
         windows.removeAll()
-        dismissedWindows.removeAll()
     }
 
     func capture() async throws -> (image: CGImage, level: Int) {
@@ -469,16 +450,6 @@ extension StateRenderStage {
                                           y: (parent.maxY - titlebar - 24 - size.height).rounded()))
         } else {
             window.center()
-        }
-        let target = StateRenderAlertButtonTarget { [weak self, weak window] button in
-            guard let self, let window else { return }
-            self.dismissAlert(window)
-            self.alertDismissed?(window, button.title)
-        }
-        alertButtonTargets.append(target)
-        for button in alert.buttons {
-            button.target = target
-            button.action = #selector(StateRenderAlertButtonTarget.buttonPressed(_:))
         }
         present(window)
     }

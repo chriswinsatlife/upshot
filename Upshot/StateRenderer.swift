@@ -1,6 +1,7 @@
 import AppKit
 import ImageIO
 import SwiftUI
+import UyuniLiveState
 
 struct StateRenderFailure: LocalizedError {
     let message: String
@@ -36,6 +37,15 @@ struct StateRenderDefinition {
 final class StateRenderWindow: NSWindow {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        super.performKeyEquivalent(with: event) || StateRenderKeyRouting.performEditCommand(event, in: self)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if StateRenderKeyRouting.offersKeyEquivalentFirst(event), performKeyEquivalent(with: event) { return }
+        super.sendEvent(event)
+    }
 
     override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
         StateRenderer.lower(childWin, to: level)
@@ -186,7 +196,7 @@ enum StateRenderer {
     }
 
     static func run() -> Never {
-        if UpshotStorage.isPresentingLiveState || UpshotStorage.isListingLiveStates { StateRenderLivePresentation.run() }
+        if let request = LiveStateLaunchRequest(arguments: CommandLine.arguments) { StateRenderLivePresentation.run(request) }
         let arguments = Array(CommandLine.arguments.dropFirst(2))
         guard let path = arguments.first, !path.hasPrefix("--"),
               arguments.count == 1 || (arguments.count == 3 && arguments[1] == "--state") else {
@@ -301,12 +311,9 @@ enum StateRenderer {
             try stage.addPanel(panel, view: try await prepare(definition))
         case .display:
             try stage.addDisplay(view: try await prepare(definition))
-        case .alert(let contextName):
-            var context: NSWindow?
-            if let contextName { context = try await self.context(named: contextName, on: stage) }
-            scenario = definition.name
-            guard let makeAlert = definition.makeAlert else { throw StateRenderFailure(message: "\(definition.name) has no alert") }
-            stage.addAlert(makeAlert(), over: context)
+        case .alert:
+            let (context, alert) = try await buildAlert(definition, on: stage)
+            stage.addAlert(alert, over: context)
         case .popover(let contextName, let anchor):
             let context = try await context(named: contextName, on: stage)
             try stage.addPopover(try await prepare(definition), over: context, anchor: anchor)
@@ -318,6 +325,17 @@ enum StateRenderer {
             try stage.addDisplay(view: try backdrop())
             try stage.addPanel(panel, view: view)
         }
+    }
+
+    static func buildAlert(_ definition: StateRenderDefinition, on stage: StateRenderStage) async throws -> (context: NSWindow?, alert: NSAlert) {
+        guard case .alert(let contextName) = definition.placement else {
+            throw StateRenderFailure(message: "\(definition.name) is not an alert state")
+        }
+        var context: NSWindow?
+        if let contextName { context = try await self.context(named: contextName, on: stage) }
+        scenario = definition.name
+        guard let makeAlert = definition.makeAlert else { throw StateRenderFailure(message: "\(definition.name) has no alert") }
+        return (context, makeAlert())
     }
 
     static func settle(_ stage: StateRenderStage, milliseconds: Int) async throws {
