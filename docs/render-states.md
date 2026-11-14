@@ -32,26 +32,42 @@ Unknown names and invalid arguments return a nonzero exit status. Each image use
 
 ## Live State
 
-Live mode builds one state and keeps it open and running instead of capturing it once and exiting:
+Live mode builds a state and keeps it open and running instead of capturing it once and exiting. One process can present one state after another:
 
 ```bash
 ".local/build/Build/Products/Debug Dev/Upshot Dev.app/Contents/MacOS/Upshot Dev" --present-live-state settings-advanced-light
 ```
 
-The name is a frame name that `--render-states --state` accepts for exactly one image, so it carries an appearance suffix, and a state with several scroll positions also carries its `-scroll-N` suffix. Only states placed in one Settings, Library, Annotate, or Studio window are supported; any other placement fails. Live mode branches at the same point as render mode and uses the same fixture isolation, catalog definition, placement, fixtures, and window construction. It does not draw window shadows. The windows stay below the desktop window level and ignore mouse events, the app keeps activation policy `prohibited`, and a `userInitiated` and `latencyCritical` process activity is held for the whole run.
+The name is a frame name with an appearance suffix, such as `settings-advanced-light`. A state with several scroll positions opens at its top; adding its `-scroll-N` suffix opens it at that scroll position instead. Only states placed in one titled window are supported: Settings, Library, Annotate, Studio, Quick Look, and the style gallery. Alerts, popovers, panels, and display-sized states fail. Live mode branches at the same point as render mode and uses the same fixture isolation, catalog definition, placement, fixtures, and window construction. It does not draw window shadows. The windows stay below the desktop window level and ignore window-server mouse events, the app keeps activation policy `prohibited`, and a `userInitiated` and `latencyCritical` process activity is held for the whole run.
+
+The presentable frame names come from the same catalog:
+
+```bash
+".local/build/Build/Products/Debug Dev/Upshot Dev.app/Contents/MacOS/Upshot Dev" --list-live-states
+```
+
+It creates the fixtures, writes one `live_states` line, removes the fixtures, and exits with status 0. It builds no window. Each listed name carries an appearance suffix and no `-scroll-N` suffix, because the number of scroll positions is known only after a window lays out.
 
 Standard output carries one JSON object per line:
 
-- `{"event":"live_state_ready","state":NAME,"windowNumber":N,"windowWidth":W,"windowHeight":H,"backingScale":S}` once the titled window is ordered in below the desktop layer and has drawn its content. The width and height are the window frame size in points, title bar and toolbar included.
-- `{"event":"click_replayed","x":X,"y":Y}` after each click is sent.
-- `{"event":"live_state_failed","reason":SENTENCE}` before a nonzero exit.
+- `{"event":"live_states","states":[{"name":NAME,"baseState":STATE,"appearance":"light"|"dark","sourceFile":PATH,"sourceLine":N}],"unsupported":[{"name":NAME,"reason":SENTENCE}]}` from `--list-live-states`. Every catalog state appears twice, once per appearance, in one of the two lists.
+- `{"event":"live_state_ready","state":NAME,"windowNumber":N,"windowWidth":W,"windowHeight":H,"backingScale":S}` each time a titled window is ordered in below the desktop layer and has drawn its content. The width and height are the window frame size in points, title bar and toolbar included.
+- `{"event":"input_replayed","command":WORD}` after each input command is replayed, where `WORD` is `click`, `mouse_down`, `mouse_dragged`, `mouse_up`, `scroll`, `key`, or `type`.
+- `{"event":"live_state_failed","reason":SENTENCE}` when a state cannot be presented. At launch it comes before a nonzero exit. After a `present` command the process keeps running with the previous state presented.
 
-Standard input carries one command per line:
+Standard input carries one command per line. Coordinates are points from the top-left corner of the presented window's frame, title bar included:
 
-- `click X Y` replays a left mouse down and up inside the app at X and Y points from the top-left corner of the titled window's frame. The mouse up is posted to the app's event queue before the mouse down is sent, so a control that tracks the mouse after its mouse down receives the mouse up.
+- `present NAME` replaces the presented state with another one and writes `live_state_ready` again; the window number changes. A name that is unknown, unsupported, lacks an appearance suffix, or has a `-scroll-N` suffix on a state with one scroll position fails before the presented state is touched. A state that fails while it is built, including a `-scroll-N` number past the state's last scroll position, is removed, and the previous state is built again and reported with a new `live_state_ready` line. Commands that arrive during a `present` wait until it finishes. Each `present` starts from the state's fixture defaults, so changes made through input do not carry over.
+- `click X Y` replays a left mouse down and up. The mouse up is posted to the app's event queue before the mouse down is sent with `NSApp.sendEvent`, so a control that tracks the mouse after its mouse down receives the mouse up.
+- `mouse_down X Y`, `mouse_dragged X Y`, and `mouse_up X Y` replay one left mouse event each with `NSApp.sendEvent`. When a control is still handling a `mouse_down` in its own tracking loop as the next command arrives, that command's events are posted to the event queue, where the tracking loop reads them, and the `mouse_down` acknowledgement is written before theirs. `mouse_dragged` and `mouse_up` may lie outside the window frame.
+- `scroll X Y DELTA_X DELTA_Y` replays one continuous scroll wheel event with deltas in points. A positive `DELTA_Y` moves toward the bottom of the content and a positive `DELTA_X` toward its right edge, as in a DOM `WheelEvent`. The event is built from an `NSEvent.mouseEvent` for the window and converted through its `CGEvent` into a scroll wheel event, so `NSApp.sendEvent` delivers it to the view under the point.
+- `key NAME [MODIFIERS]` replays a key down and up. `NAME` is `return`, `escape`, `tab`, `delete`, `space`, `up`, `down`, `left`, `right`, or one character. `MODIFIERS` is a plus-separated list of `command`, `shift`, `option`, and `control`. Key codes follow the US layout, and other characters are sent with key code 0.
+- `type TEXT` replays the rest of the line, after one space, as one key down and up per character.
 - `quit` closes the windows, removes the fixture directory and render defaults domain, and exits with status 0. End of input is treated as `quit`.
 
-Diagnostics, ignored commands, and the result of comparing the protected paths before and after the run go to standard error. The display safety check runs after each click and every 0.25 seconds; a window above the desktop level or an active app ends the run with `live_state_failed`.
+Key events go to the titled window with `NSWindow.sendEvent`, after `NSWindow.performKeyEquivalent` when the command or control modifier is held. The window reports itself as key, so a click in a text field makes it the first responder and typing reaches its field editor while the window and app stay inactive. No input posts a system-wide event or needs Accessibility access.
+
+Diagnostics, ignored commands, and the result of comparing the protected paths before and after the run go to standard error. An ignored command writes no acknowledgement. The display safety check runs after each input command and every 0.25 seconds; a window above the desktop level or an active app ends the run with `live_state_failed`.
 
 ## Display Frames
 

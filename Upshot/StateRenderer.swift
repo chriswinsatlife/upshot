@@ -74,7 +74,7 @@ enum StateRenderer {
     static let frameworkDefaults: [String: Any] = ["AVDesktopPlaybackControlsControllerShowsDurationInsteadOfTimeRemainingDefaultsKey": true]
     private static var definitionsByName: [String: StateRenderDefinition] = [:]
 
-    static let usage = "Usage: Upshot --render-states DIRECTORY [--state NAME]\n       Upshot --present-live-state NAME\n"
+    static let usage = "Usage: Upshot --render-states DIRECTORY [--state NAME]\n       Upshot --present-live-state NAME\n       Upshot --list-live-states\n"
 
     struct Selection {
         let state: String
@@ -100,7 +100,7 @@ enum StateRenderer {
     }
 
     static func run() -> Never {
-        if UpshotStorage.isPresentingLiveState { StateRenderLivePresentation.run() }
+        if UpshotStorage.isPresentingLiveState || UpshotStorage.isListingLiveStates { StateRenderLivePresentation.run() }
         let arguments = Array(CommandLine.arguments.dropFirst(2))
         guard let path = arguments.first, !path.hasPrefix("--"),
               arguments.count == 1 || (arguments.count == 3 && arguments[1] == "--state") else {
