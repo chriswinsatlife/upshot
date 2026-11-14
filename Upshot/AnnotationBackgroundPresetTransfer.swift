@@ -244,7 +244,7 @@ struct PortableBackgroundSettings: Codable {
     }
 
     private static func sanitizedGradient(_ gradient: StoredGradient) -> AnnotationBackgroundGradient {
-        let colors = gradient.colors.prefix(8).map(sanitizedColor)
+        let colors = gradient.colors.prefix(8).map { sanitizedColor($0) }
         return AnnotationBackgroundGradient(
             id: String(gradient.id.prefix(100)),
             title: String(gradient.title.prefix(100)),

@@ -11,7 +11,7 @@ import SwiftUI
 
 /// The shape of the card shadow, ported from Framekit. Each style rescales the
 /// same base drop: how far it spreads, how far it falls, and how dark it lands.
-enum AnnotationShadowStyle: String, CaseIterable, Identifiable, Codable {
+nonisolated enum AnnotationShadowStyle: String, CaseIterable, Identifiable, Codable {
     case soft
     case long
     case glow
@@ -73,7 +73,7 @@ enum AnnotationShadowStyle: String, CaseIterable, Identifiable, Codable {
 }
 
 /// A resolved card shadow.
-struct AnnotationShadowLayer {
+nonisolated struct AnnotationShadowLayer {
     /// Downward drop, in the same units as `radius`.
     var yOffset: CGFloat
     /// SwiftUI blur radius. Core Graphics wants roughly twice this.

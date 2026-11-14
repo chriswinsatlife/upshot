@@ -6,7 +6,7 @@
 import AppKit
 import SwiftUI
 
-struct AnnotationSwatch: Identifiable, Equatable, Hashable {
+nonisolated struct AnnotationSwatch: Identifiable, Equatable, Hashable {
     let id: String
     let title: String
     let red: CGFloat

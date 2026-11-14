@@ -3,7 +3,7 @@ import AppKit
 import CoreGraphics
 import SwiftUI
 
-struct AnnotationBackgroundSettings: Equatable {
+nonisolated struct AnnotationBackgroundSettings: Equatable {
     var style: AnnotationBackgroundStyle = .none
     var padding: CGFloat = 0.08
     var cornerRadius: CGFloat = 0.018
@@ -48,7 +48,7 @@ struct AnnotationBackgroundSettings: Equatable {
     }
 }
 
-struct AnnotationScreenshotBorderSettings: Equatable {
+nonisolated struct AnnotationScreenshotBorderSettings: Equatable {
     var isEnabled = false
     var color: AnnotationSwatch = .white
     var thickness: CGFloat = 0.012
@@ -64,7 +64,7 @@ struct AnnotationScreenshotBorderSettings: Equatable {
     }
 }
 
-struct AnnotationCameraSettings: Equatable {
+nonisolated struct AnnotationCameraSettings: Equatable {
     var panX: CGFloat = 0
     var panY: CGFloat = 0
     var tiltXDegrees: CGFloat = 0
@@ -113,7 +113,7 @@ struct AnnotationCameraSettings: Equatable {
     }
 }
 
-enum AnnotationProgressiveBlurMode: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum AnnotationProgressiveBlurMode: String, CaseIterable, Identifiable, Sendable {
     case radial
     case directional
 
@@ -127,7 +127,7 @@ enum AnnotationProgressiveBlurMode: String, CaseIterable, Identifiable, Sendable
     }
 }
 
-enum AnnotationProgressiveBlurEdgeMode: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum AnnotationProgressiveBlurEdgeMode: String, CaseIterable, Identifiable, Sendable {
     case clipped
     case bleed
 
@@ -141,7 +141,7 @@ enum AnnotationProgressiveBlurEdgeMode: String, CaseIterable, Identifiable, Send
     }
 }
 
-struct AnnotationProgressiveBlurSettings: Equatable, Sendable {
+nonisolated struct AnnotationProgressiveBlurSettings: Equatable, Sendable {
     var isEnabled = false
     var edgeMode: AnnotationProgressiveBlurEdgeMode = .bleed
     var mode: AnnotationProgressiveBlurMode = .radial
@@ -156,14 +156,14 @@ struct AnnotationProgressiveBlurSettings: Equatable, Sendable {
     }
 }
 
-enum AnnotationBackgroundStyle: Equatable {
+nonisolated enum AnnotationBackgroundStyle: Equatable {
     case none
     case solid(AnnotationBackgroundColor)
     case gradient(AnnotationBackgroundGradient)
     case customWallpaper(AnnotationCustomWallpaper)
 }
 
-struct AnnotationBackgroundColor: Identifiable, Equatable, Hashable {
+nonisolated struct AnnotationBackgroundColor: Identifiable, Equatable, Hashable {
     let id: String
     let title: String
     let red: CGFloat
@@ -218,7 +218,7 @@ struct AnnotationBackgroundColor: Identifiable, Equatable, Hashable {
     ]
 }
 
-struct AnnotationBackgroundGradient: Identifiable, Equatable, Hashable {
+nonisolated struct AnnotationBackgroundGradient: Identifiable, Equatable, Hashable {
     let id: String
     let title: String
     let colors: [AnnotationBackgroundColor]
@@ -405,7 +405,7 @@ struct AnnotationBackgroundGradient: Identifiable, Equatable, Hashable {
     ]
 }
 
-struct AnnotationCustomWallpaper: Identifiable, Equatable, Hashable {
+nonisolated struct AnnotationCustomWallpaper: Identifiable, Equatable, Hashable {
     let url: URL
 
     var id: String {
@@ -417,7 +417,7 @@ struct AnnotationCustomWallpaper: Identifiable, Equatable, Hashable {
     }
 }
 
-struct AnnotationWatermarkSettings: Equatable {
+nonisolated struct AnnotationWatermarkSettings: Equatable {
     var isEnabled = false
     var text = ""
     var density: CGFloat = 4
@@ -436,7 +436,7 @@ struct AnnotationWatermarkSettings: Equatable {
     }
 }
 
-enum AnnotationWatermarkTypography {
+nonisolated enum AnnotationWatermarkTypography {
     private static let compactFontNames = [
         "SFCompact-Semibold",
         "SFCompactDisplay-Semibold",
@@ -467,7 +467,7 @@ enum AnnotationWatermarkTypography {
     }
 }
 
-struct AnnotationWatermarkColor: Equatable, Hashable {
+nonisolated struct AnnotationWatermarkColor: Equatable, Hashable {
     var red: CGFloat
     var green: CGFloat
     var blue: CGFloat
@@ -506,7 +506,7 @@ struct AnnotationWatermarkColor: Equatable, Hashable {
     }
 }
 
-enum AnnotationBackgroundAspectRatio: String, CaseIterable, Identifiable {
+nonisolated enum AnnotationBackgroundAspectRatio: String, CaseIterable, Identifiable {
     case auto
     case square
     case fourThree
@@ -536,7 +536,7 @@ enum AnnotationBackgroundAspectRatio: String, CaseIterable, Identifiable {
     }
 }
 
-enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
+nonisolated enum AnnotationBackgroundAlignment: String, CaseIterable, Identifiable {
     case topLeading
     case top
     case topTrailing

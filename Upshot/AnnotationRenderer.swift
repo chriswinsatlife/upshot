@@ -6,7 +6,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum AnnotationRenderer {
-    nonisolated(unsafe) private static let ciContext = CIContext(options: [.cacheIntermediates: false])
+    nonisolated private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
     static func renderInBackground(
         sourceURL: URL,

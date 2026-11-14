@@ -228,14 +228,14 @@ struct StoredProgressiveBlurSettings: Codable, Equatable {
     }
 }
 
-enum StoredBackgroundStyle: Codable, Equatable {
+nonisolated enum StoredBackgroundStyle: Codable, Equatable {
     case none
     case solid(StoredColor)
     case gradient(StoredGradient)
     case customWallpaper(path: String)
 }
 
-struct StoredColor: Codable, Equatable {
+nonisolated struct StoredColor: Codable, Equatable {
     var id: String
     var title: String
     var red: Double
@@ -264,7 +264,7 @@ struct StoredColor: Codable, Equatable {
     }
 }
 
-struct StoredGradient: Codable, Equatable {
+nonisolated struct StoredGradient: Codable, Equatable {
     var id: String
     var title: String
     var colors: [StoredColor]

@@ -13,10 +13,7 @@ enum AnnotationMockupEffectsError: Error {
 }
 
 nonisolated enum AnnotationMockupEffectsRenderer {
-    /// `CIContext` is immutable after creation and documented for reuse across
-    /// render calls. Access is serialized for previews by the worker below;
-    /// exports run on the editor's actor.
-    nonisolated(unsafe) private static let context = CIContext(options: [.cacheIntermediates: false])
+    private static let context = CIContext(options: [.cacheIntermediates: false])
 
     nonisolated static func progressiveBlur(
         _ image: CGImage,

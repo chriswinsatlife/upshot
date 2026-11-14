@@ -8,7 +8,7 @@ enum UpshotPreferences {
     static let autoCopyKey = "autoCopyScreenshotsToClipboard"
     static let autoCompressKey = "autoCompressScreenshots"
     static let exportFormatKey = "exportFormat"
-    static let compressionQualityKey = "compressionQuality"
+    nonisolated static let compressionQualityKey = "compressionQuality"
     static let exportDirectoryPathKey = "exportDirectoryPath"
     static let fullscreenHotkeyKey = "captureHotkey.fullscreen"
     static let windowHotkeyKey = "captureHotkey.window"
@@ -42,7 +42,7 @@ enum UpshotPreferences {
     static let recordingAreaAspectKey = "recordingAreaAspect"
     static let recordingAreaLastSelectionKey = "recordingAreaLastSelection"
 
-    private static let defaultCompressionQuality = 0.8
+    nonisolated private static let defaultCompressionQuality = 0.8
 
     static var autoSave: Bool {
         UpshotStorage.defaults.bool(forKey: autoSaveKey)
@@ -72,7 +72,7 @@ enum UpshotPreferences {
         return autoCompress ? .jpeg : .png
     }
 
-    static var compressionQuality: Double {
+    nonisolated static var compressionQuality: Double {
         let value = UpshotStorage.defaults.object(forKey: compressionQualityKey) as? Double ?? defaultCompressionQuality
         return min(max(value, 0.1), 1)
     }
