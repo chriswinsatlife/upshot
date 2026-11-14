@@ -36,6 +36,11 @@ struct StateRenderDefinition {
 final class StateRenderWindow: NSWindow {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
+        StateRenderer.lower(childWin, to: level)
+        super.addChildWindow(childWin, ordered: place)
+    }
 }
 
 struct StateRenderWindowSafety: Equatable {
@@ -390,6 +395,11 @@ enum StateRenderer {
                                             wallpaper: StateRenderWallpaper.url(appearance: appearance).path, filename: name + ".png"))
         }
         return entries
+    }
+
+    static func lower(_ child: NSWindow, to level: NSWindow.Level) {
+        if child.level.rawValue >= desktopLevel { child.level = level }
+        child.ignoresMouseEvents = true
     }
 
     @discardableResult

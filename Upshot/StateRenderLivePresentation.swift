@@ -13,6 +13,23 @@ enum StateRenderLivePresentation {
         let name: String
         let stage: StateRenderStage
         let window: NSWindow
+        let region: CGRect?
+        let regionOrigin: CGPoint
+
+        var inputWindows: [NSWindow] {
+            region == nil ? [window] : Array(stage.windows.dropFirst().reversed())
+        }
+
+        var size: CGSize { region?.size ?? window.frame.size }
+
+        func screenPoint(x: Double, y: Double) -> CGPoint {
+            let frame = region ?? window.frame
+            return CGPoint(x: frame.minX + x, y: frame.maxY - y)
+        }
+
+        func window(at point: CGPoint) -> NSWindow? {
+            inputWindows.first { $0.frame.contains(point) }
+        }
     }
 
     private struct SharedState {
@@ -53,6 +70,8 @@ enum StateRenderLivePresentation {
     private static var isDispatchingMouseDown = false
     private static var pendingMouseDownAcknowledgement = false
     private static var isMouseDown = false
+    private static var mouseTarget: NSWindow?
+    private static var keyTarget: NSWindow?
     private static var eventNumber = 0
     private static var displaySafety: StateRenderDisplaySafety?
     private static var displaySafetyChecks = 0
@@ -98,42 +117,19 @@ enum StateRenderLivePresentation {
 
     private static func list() async throws {
         let catalog = try await loadCatalog()
-        var states: [[String: Any]] = []
-        var unsupported: [[String: Any]] = []
-        for definition in catalog {
-            for appearance in ["light", "dark"] {
-                let name = definition.name + "-" + appearance
-                if let reason = unsupportedReason(definition) {
-                    unsupported.append(["name": name, "reason": reason])
-                } else {
-                    states.append(["name": name, "baseState": definition.name, "appearance": appearance,
-                                   "sourceFile": definition.sourceFile, "sourceLine": definition.line])
-                }
+        let states: [[String: Any]] = catalog.flatMap { definition in
+            ["light", "dark"].map { appearance in
+                ["name": definition.name + "-" + appearance, "baseState": definition.name, "appearance": appearance,
+                 "sourceFile": definition.sourceFile, "sourceLine": definition.line]
             }
         }
-        AppLog.event("rendering", "live_states", fields: ["states": String(describing: states.count), "unsupported": String(describing: unsupported.count)])
-        emit(["event": "live_states", "states": states, "unsupported": unsupported])
+        AppLog.event("rendering", "live_states", fields: ["states": String(describing: states.count), "unsupported": "0"])
+        emit(["event": "live_states", "states": states, "unsupported": [[String: Any]]()])
     }
 
-    static func unsupportedReason(_ definition: StateRenderDefinition) -> String? {
-        switch definition.placement {
-        case .window:
-            return nil
-        case .panel:
-            return "The state \(definition.name) is a borderless panel with no titled window."
-        case .display:
-            return "The state \(definition.name) covers the display with no titled window."
-        case .alert(nil):
-            return "The state \(definition.name) is an alert window with no titled window."
-        case .alert(let context?):
-            return "The state \(definition.name) is an alert window over the \(context) window, so it needs two windows."
-        case .popover(let context, _):
-            return "The state \(definition.name) is a popover panel over the \(context) window, so it needs two windows."
-        case .panelOverContext(let context, _):
-            return "The state \(definition.name) is a panel around the \(context) window, so it needs two windows."
-        case .panelOverDisplay:
-            return "The state \(definition.name) is a panel over a display-sized backdrop with no titled window."
-        }
+    private static func isRegion(_ definition: StateRenderDefinition) -> Bool {
+        if case .window = definition.placement { return false }
+        return true
     }
 
     private static func start(_ name: String) async throws {
@@ -155,7 +151,6 @@ enum StateRenderLivePresentation {
         guard let definition = definitions[selection.state] else {
             throw StateRenderFailure(message: "The frame name \(name) names no state in the catalog.")
         }
-        if let reason = unsupportedReason(definition) { throw StateRenderFailure(message: reason) }
         if selection.scrollFrame != nil, !definition.hasScrollFrames {
             throw StateRenderFailure(message: "The state \(definition.name) has one scroll frame, so the frame name must not include a -scroll- number.")
         }
@@ -174,10 +169,22 @@ enum StateRenderLivePresentation {
             try await StateRenderer.build(definition, on: stage)
             try StateRenderer.verifyWindows()
             try await StateRenderer.settle(stage, milliseconds: definition.name.hasPrefix("quick-look-") ? 1800 : 450)
-            let titled = stage.windows.filter { $0 is StateRenderTitledWindow }
-            guard titled.count == 1, let window = titled.first else {
-                throw StateRenderFailure(message: "The state \(definition.name) produced \(titled.count) titled windows instead of one.")
+            let region = isRegion(definition) ? try StateRenderDisplay.frame : nil
+            let window: NSWindow
+            if region == nil {
+                let titled = stage.windows.filter { $0 is StateRenderTitledWindow }
+                guard titled.count == 1, let only = titled.first else {
+                    throw StateRenderFailure(message: "The state \(definition.name) produced \(titled.count) titled windows instead of one.")
+                }
+                window = only
+            } else {
+                guard stage.windows.count > 1, let front = stage.windows.last else {
+                    throw StateRenderFailure(message: "The state \(definition.name) produced no window above the wallpaper window.")
+                }
+                window = front
             }
+            let screen = try StateRenderDisplay.screen
+            let regionOrigin = region.map { CGPoint(x: $0.minX - screen.frame.minX, y: screen.frame.maxY - $0.maxY) } ?? .zero
             let scrollView = stage.primaryScrollView()
             let offsets = StateRenderer.scrollOffsets(scrollView, mode: definition.scroll)
             let offset: CGFloat?
@@ -194,10 +201,13 @@ enum StateRenderLivePresentation {
                 try await StateRenderer.settle(stage, milliseconds: 160)
             }
             try StateRenderer.verifyWindows()
-            try await requireOrderedInBelowDesktop(window)
+            for stageWindow in region == nil ? [window] : stage.windows {
+                try await requireOrderedInBelowDesktop(stageWindow)
+            }
             AppLog.event("rendering", "live_state_built", fields: ["state": request.name, "windowNumber": String(describing: window.windowNumber),
+                                                                   "windows": String(describing: stage.windows.count),
                                                                    "milliseconds": String(describing: Int(Date().timeIntervalSince(started) * 1000))])
-            return Presented(name: request.name, stage: stage, window: window)
+            return Presented(name: request.name, stage: stage, window: window, region: region, regionOrigin: regionOrigin)
         } catch {
             stage.tearDown()
             throw error
@@ -207,9 +217,17 @@ enum StateRenderLivePresentation {
     private static func announce(_ state: Presented) {
         let window = state.window
         AppLog.event("rendering", "live_state_ready", fields: ["state": state.name, "windowNumber": String(describing: window.windowNumber)])
-        emit(["event": "live_state_ready", "state": state.name, "windowNumber": window.windowNumber,
-              "windowWidth": Double(window.frame.width), "windowHeight": Double(window.frame.height),
-              "backingScale": Double(window.backingScaleFactor)])
+        var fields: [String: Any] = ["event": "live_state_ready", "state": state.name, "windowNumber": window.windowNumber,
+                                     "windowWidth": Double(state.size.width), "windowHeight": Double(state.size.height),
+                                     "backingScale": Double(window.backingScaleFactor)]
+        if state.region != nil {
+            fields["regionWindowNumbers"] = state.stage.windows.map(\.windowNumber)
+            fields["regionX"] = Double(state.regionOrigin.x)
+            fields["regionY"] = Double(state.regionOrigin.y)
+        }
+        emit(fields)
+        keyTarget = nil
+        mouseTarget = nil
     }
 
     private static func replace(with name: String) async {
@@ -221,7 +239,7 @@ enum StateRenderLivePresentation {
             return
         }
         guard let previous = presented else { return }
-        releaseMouse(in: previous.window)
+        releaseMouse()
         let shared = SharedState()
         let next: Presented
         do {
@@ -327,8 +345,18 @@ enum StateRenderLivePresentation {
     }
 
     private static func acknowledge(_ command: String) {
+        keepStageOrder()
         emit(["event": "input_replayed", "command": command])
         checkSafety()
+    }
+
+    private static func keepStageOrder() {
+        guard let state = presented, state.region != nil else { return }
+        let expected = state.stage.windows.map(\.windowNumber)
+        let found = state.stage.windowServerOrder
+        guard found != expected else { return }
+        state.stage.restoreOrder()
+        diagnose(["event": "stage_order_restored", "found": found, "expected": expected])
     }
 
     private static func acknowledgePendingMouseDown() {
@@ -337,26 +365,39 @@ enum StateRenderLivePresentation {
         acknowledge("mouse_down")
     }
 
-    private static func inside(_ window: NSWindow, x: Double, y: Double) -> Bool {
-        x >= 0 && y >= 0 && x <= window.frame.width && y <= window.frame.height
+    private static func inside(_ state: Presented, x: Double, y: Double) -> Bool {
+        x >= 0 && y >= 0 && x <= state.size.width && y <= state.size.height
+    }
+
+    private static func target(_ command: String, x: Double, y: Double) -> (state: Presented, window: NSWindow)? {
+        guard let state = presented else { return nil }
+        guard inside(state, x: x, y: y) else {
+            diagnose("Ignored \(command) at \(x), \(y) outside the \(state.size.width) by \(state.size.height) point \(state.region == nil ? "window frame" : "region")")
+            return nil
+        }
+        guard let window = state.window(at: state.screenPoint(x: x, y: y)) else {
+            diagnose("Ignored \(command) at \(x), \(y) because only the wallpaper window is under that point")
+            return nil
+        }
+        return (state, window)
     }
 
     private static func mouseEvent(_ type: NSEvent.EventType, x: Double, y: Double, in window: NSWindow) -> NSEvent? {
+        guard let state = presented else { return nil }
+        let point = state.screenPoint(x: x, y: y)
         eventNumber += 1
-        return NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: window.frame.height - y), modifierFlags: [],
+        return NSEvent.mouseEvent(with: type, location: NSPoint(x: point.x - window.frame.minX, y: point.y - window.frame.minY), modifierFlags: [],
                                   timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
                                   eventNumber: eventNumber, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
     }
 
     private static func click(x: Double, y: Double) {
-        guard let window = presented?.window else { return }
-        guard inside(window, x: x, y: y) else {
-            return diagnose("Ignored click at \(x), \(y) outside the \(window.frame.width) by \(window.frame.height) point window frame")
-        }
+        guard let (_, window) = target("click", x: x, y: y) else { return }
         guard let down = mouseEvent(.leftMouseDown, x: x, y: y, in: window), let up = mouseEvent(.leftMouseUp, x: x, y: y, in: window) else {
             return fail("NSEvent could not create the mouse events for a click at \(x), \(y).")
         }
         acknowledgePendingMouseDown()
+        keyTarget = window
         if isDispatchingMouseDown {
             NSApp.postEvent(down, atStart: false)
             NSApp.postEvent(up, atStart: false)
@@ -365,14 +406,21 @@ enum StateRenderLivePresentation {
             NSApp.sendEvent(down)
         }
         isMouseDown = false
+        mouseTarget = nil
         acknowledge("click")
     }
 
     private static func mouse(_ command: String, x: Double, y: Double) {
-        guard let window = presented?.window else { return }
         let type: NSEvent.EventType = command == "mouse_down" ? .leftMouseDown : command == "mouse_up" ? .leftMouseUp : .leftMouseDragged
-        if type == .leftMouseDown, !inside(window, x: x, y: y) {
-            return diagnose("Ignored mouse_down at \(x), \(y) outside the \(window.frame.width) by \(window.frame.height) point window frame")
+        let window: NSWindow
+        if type == .leftMouseDown {
+            guard let (_, under) = target(command, x: x, y: y) else { return }
+            window = under
+            mouseTarget = under
+            keyTarget = under
+        } else {
+            guard let tracking = mouseTarget ?? presented?.window else { return }
+            window = tracking
         }
         guard let event = mouseEvent(type, x: x, y: y, in: window) else {
             return fail("NSEvent could not create the \(command) event at \(x), \(y).")
@@ -392,7 +440,10 @@ enum StateRenderLivePresentation {
             isDispatchingMouseDown = false
             acknowledgePendingMouseDown()
         default:
-            if type == .leftMouseUp { isMouseDown = false }
+            if type == .leftMouseUp {
+                isMouseDown = false
+                mouseTarget = nil
+            }
             if isDispatchingMouseDown {
                 diagnose("Posted \(command) to the event queue because the previous mouse_down is still being dispatched")
                 NSApp.postEvent(event, atStart: false)
@@ -403,17 +454,15 @@ enum StateRenderLivePresentation {
         }
     }
 
-    private static func releaseMouse(in window: NSWindow) {
-        guard isMouseDown, let up = mouseEvent(.leftMouseUp, x: 0, y: 0, in: window) else { return }
+    private static func releaseMouse() {
+        guard isMouseDown, let window = mouseTarget ?? presented?.window, let up = mouseEvent(.leftMouseUp, x: 0, y: 0, in: window) else { return }
         isMouseDown = false
+        mouseTarget = nil
         if isDispatchingMouseDown { NSApp.postEvent(up, atStart: false) } else { NSApp.sendEvent(up) }
     }
 
     private static func scroll(x: Double, y: Double, deltaX: Double, deltaY: Double) {
-        guard let window = presented?.window else { return }
-        guard inside(window, x: x, y: y) else {
-            return diagnose("Ignored scroll at \(x), \(y) outside the \(window.frame.width) by \(window.frame.height) point window frame")
-        }
+        guard let (_, window) = target("scroll", x: x, y: y) else { return }
         guard let pointer = mouseEvent(.mouseMoved, x: x, y: y, in: window), let source = pointer.cgEvent else {
             return fail("NSEvent could not create the pointer event for a scroll at \(x), \(y).")
         }
@@ -498,7 +547,7 @@ enum StateRenderLivePresentation {
     }
 
     private static func send(_ stroke: KeyStroke) -> Bool {
-        guard let window = presented?.window else { return false }
+        guard let window = keyTarget ?? presented?.window else { return false }
         func event(_ type: NSEvent.EventType) -> NSEvent? {
             NSEvent.keyEvent(with: type, location: .zero, modifierFlags: stroke.modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
                              windowNumber: window.windowNumber, context: nil, characters: stroke.characters,
@@ -518,6 +567,7 @@ enum StateRenderLivePresentation {
 
     private static func checkSafety() {
         guard !isFinishing else { return }
+        keepStageOrder()
         do {
             let safety = try StateRenderer.verifyWindows()
             displaySafetyChecks += 1
@@ -533,7 +583,7 @@ enum StateRenderLivePresentation {
 
     private static func quit() {
         guard !isFinishing else { return }
-        if let window = presented?.window { releaseMouse(in: window) }
+        releaseMouse()
         finish()
     }
 

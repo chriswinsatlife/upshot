@@ -108,8 +108,7 @@ final class StateRenderTitledWindow: NSWindow {
     @objc func _hasActiveAppearanceForStandardWindowButton(_ button: Int) -> Bool { true }
 
     override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
-        if childWin.level.rawValue >= StateRenderer.desktopLevel { childWin.level = level }
-        childWin.ignoresMouseEvents = true
+        StateRenderer.lower(childWin, to: level)
         super.addChildWindow(childWin, ordered: place)
     }
 }
@@ -121,6 +120,11 @@ final class StateRenderAlertWindow: NSWindow {
     @objc func _hasKeyAppearance() -> Bool { true }
     @objc func _hasActiveAppearance() -> Bool { true }
     @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
+
+    override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
+        StateRenderer.lower(childWin, to: level)
+        super.addChildWindow(childWin, ordered: place)
+    }
 }
 
 @MainActor
@@ -165,6 +169,18 @@ final class StateRenderStage {
         let index = windows.firstIndex { $0 === target } ?? windows.count
         window.order(.above, relativeTo: windows[index - 1].windowNumber)
         windows.insert(window, at: index)
+    }
+
+    var windowServerOrder: [Int] {
+        let numbers = Set(windows.map(\.windowNumber))
+        let listed = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        return listed.compactMap { $0[kCGWindowNumber as String] as? Int }.filter(numbers.contains).reversed()
+    }
+
+    func restoreOrder() {
+        for (lower, upper) in zip(windows, windows.dropFirst()) {
+            upper.order(.above, relativeTo: lower.windowNumber)
+        }
     }
 
     func tearDown() {
