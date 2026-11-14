@@ -5,36 +5,34 @@ approval_status: not_approved
 
 # Release
 
-Releases use the Go tool in `cmd/upshot-release`, run from the repository root. It finds the repository from `UPSHOT_REPO`, then the current directory.
+`scripts/release.sh` builds a Developer ID release, and `scripts/release.sh --publish` puts it on the download page at https://artifacts.chrisyork.co/public/upshot/. The page, the disk image, the update archive, and the Sparkle feed `appcast.xml` are files of the `public/upshot` artifact.
 
 ## Prerequisites
 
-- `create-dmg`, an authenticated `gh`, `git`, `plutil`, and Xcode's `xcodebuild`, `xcrun`, and `ditto`.
-- A notarytool keychain profile named `upshot-notary`, created once with `xcrun notarytool store-credentials "upshot-notary" --key <AuthKey.p8> --key-id <key id> --issuer <issuer id>`.
-- The Sparkle EdDSA private key in the login keychain under the Sparkle account `upshot`. The matching public key is `SUPublicEDKey` in `Upshot/Info.plist`.
+- Xcode with `xcodebuild`, `xcrun`, `notarytool`, and `stapler`, plus `jq` and `curl`.
+- The `Developer ID Application: Christopher York (HD93SAW6ZT)` certificate in the login keychain.
+- A notarytool keychain profile, `development` by default. `UPSHOT_NOTARY_PROFILE` names another one.
+- The Sparkle EdDSA private key in the login keychain under the Sparkle account `upshot`. Its public key is `SUPublicEDKey` in `Upshot/Info.plist`.
+- The artifact launcher of the publish-html-artifact skill at `~/.agents/skills/cyhq/publish-html-artifact/bin/artifact`. `UPSHOT_ARTIFACT_CLI` names another path.
 
-## Full Release
+## Build and Stage
 
-The build number (`CURRENT_PROJECT_VERSION`) must increase every release, or Sparkle does not offer the update. Check the current values with `rg 'MARKETING_VERSION|CURRENT_PROJECT_VERSION' Upshot.xcodeproj/project.pbxproj`. Commit and push code changes to `main` first, then run:
+`scripts/release.sh` runs these steps and stops at the first failure:
 
-```bash
-go run ./cmd/upshot-release -build -yes -set-version <x.y.z> -set-build <n> -notes "First note
-Second note"
-```
+- Reads the published feed. A 404 starts a new feed.
+- Archives the Release configuration with the build number set to the current Unix time and `UPSHOT_SPARKLE_UPDATES_ENABLED=YES`.
+- Exports with Developer ID signing and checks the build number, the Sparkle switch, the feed address, and the signature.
+- Notarizes and staples the app, then builds, signs, notarizes, and staples `Upshot-<version>.dmg`.
+- Zips the app as the update archive, runs Sparkle's `generate_appcast` with the `upshot` key account, and checks the archive's signature against the app's `SUPublicEDKey` with `scripts/verify-sparkle-signature.swift`.
+- Stages `build/release/artifact/` with the appcast, the update archives it lists, the versioned DMG, `Upshot.dmg`, and the page written by `scripts/write-release-download-page.sh`.
+- Runs an upload dry run.
 
-Notarization takes several minutes.
+Update archives of published builds stay in `~/.local/share/upshot-release/updates/`, so the feed lists the last three builds and Sparkle can make delta updates.
 
-## Flags
+## Publish
 
-- `-build`: archive, export with Developer ID, notarize, and staple into `~/Downloads/Upshot.app` before packaging. Without it, the tool packages an app already exported to `~/Downloads/Upshot.app`.
-- `-set-version` and `-set-build`: set and commit `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` before archiving.
-- `-scheme`: the scheme to archive, `Upshot` by default.
-- `-notes` or `-notes-file`: release notes, one per line.
-- `-notary-profile`: the notarytool keychain profile, `upshot-notary` by default.
-- `-yes` or `-y`: answer yes to every confirmation.
+`scripts/release.sh --publish` uploads the staged directory, downloads every file from the review copy and compares its bytes, publishes that version, and repeats the comparison at the permanent address. `scripts/release.sh --release` builds, stages, and publishes in one run.
 
-## Steps
+## Updates
 
-After the optional build phase, the tool validates the app's version, build, and Sparkle keys; creates `~/Downloads/Upshot.dmg`; signs it with Sparkle's `sign_update` using the `upshot` key account; pushes local commits; creates the GitHub release `vX.Y.Z` on `chriswinsatlife/upshot` with the DMG; prepends the release to `appcast.xml` and pushes it; and updates the cask in `chriswinsatlife/homebrew-tap`. Re-running the same release replaces the DMG and the appcast entry instead of duplicating them.
-
-The update feed is `https://raw.githubusercontent.com/chriswinsatlife/upshot/main/appcast.xml`.
+Only builds made by `scripts/release.sh` set `UpshotSparkleUpdatesEnabled` to `YES` in `Info.plist`. `UpdaterManager` starts Sparkle only in those builds, so a build made in Xcode or with `xcodebuild` never offers to replace itself with a published release. The marketing version is `MARKETING_VERSION` in `Upshot.xcodeproj/project.pbxproj`. Sparkle compares the build numbers, which always increase because they are Unix times.

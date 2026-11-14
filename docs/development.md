@@ -7,7 +7,7 @@ approval_status: not_approved
 
 ## Build
 
-Upshot builds with `xcodebuild` and the Xcode 26.4 toolchain. The deployment target is macOS 26.4, the bundle identifier is `co.chrisyork.upshot`, and there is no test target.
+Upshot builds with `xcodebuild` and the Xcode 26.4 toolchain. The deployment target is macOS 26.0, the bundle identifier is `co.chrisyork.upshot`, and there is no test target.
 
 ```bash
 xcodebuild build -project Upshot.xcodeproj -scheme Upshot -configuration Release -destination "platform=macOS"

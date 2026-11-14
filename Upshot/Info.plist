@@ -48,7 +48,9 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/chriswinsatlife/upshot/main/appcast.xml</string>
+	<string>https://artifacts.chrisyork.co/public/upshot/appcast.xml</string>
+	<key>UpshotSparkleUpdatesEnabled</key>
+	<string>$(UPSHOT_SPARKLE_UPDATES_ENABLED)</string>
 	<key>SUPublicEDKey</key>
 	<string>RaO/lTrfeovOFuVIRMmG6yiZso9cEUM/DcOfwn6wnmY=</string>
 	<key>UTExportedTypeDeclarations</key>

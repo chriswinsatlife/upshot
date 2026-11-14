@@ -20,8 +20,10 @@ final class UpdaterManager: NSObject, ObservableObject {
         set { controller?.updater.automaticallyChecksForUpdates = newValue }
     }
 
+    static let isEnabled = (Bundle.main.object(forInfoDictionaryKey: "UpshotSparkleUpdatesEnabled") as? String) == "YES"
+
     private override init() {
-        controller = UpshotStorage.isRenderingStates ? nil : SPUStandardUpdaterController(
+        controller = UpshotStorage.isRenderingStates || !Self.isEnabled ? nil : SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: availability,
             userDriverDelegate: nil
@@ -34,36 +36,28 @@ final class UpdaterManager: NSObject, ObservableObject {
     }
 
     func start() {
-        guard let controller else { return }
-        #if DEBUG
-        return
-        #else
+        guard let controller else {
+            AppLog.event("application", "sparkle_updater_disabled", fields: ["reason": UpshotStorage.isRenderingStates ? "rendering_states" : "source_build"])
+            return
+        }
         controller.startUpdater()
+        AppLog.event("application", "sparkle_updater_started", fields: ["feed": Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? "none"])
         checkForUpdateInformation()
-        #endif
     }
 
     func checkForUpdateInformation() {
         guard let controller else { return }
-        #if DEBUG
-        return
-        #else
         if let lastInformationCheck, Date().timeIntervalSince(lastInformationCheck) < 3600 { return }
         guard !controller.updater.sessionInProgress else { return }
         lastInformationCheck = Date()
         controller.updater.checkForUpdateInformation()
-        #endif
     }
 
     func checkForUpdates() {
         guard let controller else { return }
-        #if DEBUG
-        return
-        #else
         NSApp.setActivationPolicy(AppActivationPolicy.windowPolicy)
         NSApp.activate(ignoringOtherApps: true)
         controller.checkForUpdates(nil)
-        #endif
     }
 }
 

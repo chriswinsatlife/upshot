@@ -3,7 +3,7 @@
 A beautiful screenshot + screen recording + Loom alternative - all native, self hostable and free.
 
 <p>
-  <a href="https://github.com/chriswinsatlife/upshot/releases/latest/download/Upshot.dmg">
+  <a href="https://artifacts.chrisyork.co/public/upshot/Upshot.dmg">
     <img src="download-button.png" alt="Download the latest version of Upshot" width="220">
   </a>
 </p>
@@ -25,9 +25,7 @@ https://github.com/user-attachments/assets/c8d5636a-b03d-4b97-9ef1-e775df75117a
 
 
 <p>
-  <a href="https://github.com/chriswinsatlife/upshot/releases/latest">Latest release</a>
-  ·
-  <a href="https://github.com/chriswinsatlife/upshot/releases">All releases</a>
+  <a href="https://artifacts.chrisyork.co/public/upshot/">Download page</a>
 </p>
 
 
@@ -50,30 +48,13 @@ https://github.com/user-attachments/assets/c8d5636a-b03d-4b97-9ef1-e775df75117a
 
 ### Download
 
-1. Download the latest `Upshot.dmg` using the button above or from the [releases page](https://github.com/chriswinsatlife/upshot/releases/latest).
-2. Open the DMG and drag **Upshot** into your Applications folder.
+1. Download https://artifacts.chrisyork.co/public/upshot/Upshot.dmg and open it.
+2. Drag **Upshot** into your Applications folder.
 3. Launch Upshot. It lives in the menu bar at the top-right of the screen.
 
-The download button always points to the newest release.
+The download page at https://artifacts.chrisyork.co/public/upshot/ lists the current disk image, update archive, and update feed. A downloaded copy is signed with Developer ID, notarized by Apple, and updates itself through Sparkle from https://artifacts.chrisyork.co/public/upshot/appcast.xml. A copy built from source never offers Sparkle updates.
 
-**Requirements:** macOS 26.4 or newer.
-
-
-### Homebrew
-
-Install from the Homebrew tap:
-
-```bash
-brew install --cask chriswinsatlife/tap/upshot
-```
-
-Update later with:
-
-```bash
-brew upgrade --cask upshot
-```
-
-Upshot can also update itself through Sparkle.
+**Requirements:** macOS 26 or newer.
 
 ## Quick Start
 
@@ -438,13 +419,7 @@ The standalone [motion-blur benchmark](docs/export-performance.md#standalone-che
 
 ## Releasing
 
-Upshot includes a Go release helper. To run the complete archive, notarize, package, and publish flow:
-
-```bash
-go run ./cmd/upshot-release -build
-```
-
-It creates a DMG, signs the update for Sparkle, creates the GitHub release, updates and pushes `appcast.xml`, and updates the Homebrew cask. Without `-build`, the helper expects an already exported `Upshot.app` in `~/Downloads`.
+`scripts/release.sh` archives, notarizes, and stages a release, and `scripts/release.sh --publish` publishes it to the download page. [docs/release.md](docs/release.md) describes each step.
 
 ## License
 
