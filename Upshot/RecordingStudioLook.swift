@@ -5,9 +5,11 @@ import SwiftUI
 struct RecordingStudioStyleStrip: View {
     @Bindable var model: RecordingStudioModel
     @Bindable var presetStore: RecordingStudioStylePresetStore
+    var presentsNameEditorOnly = false
 
     @State private var poster: CGImage?
     @State private var isNameEditorPresented = false
+    @State private var renderedNameEditorWindow: NSWindow?
     @State private var draftName = ""
     @State private var presetPendingDeletion: RecordingStudioStylePreset?
     @FocusState private var isNameFieldFocused: Bool
@@ -16,6 +18,14 @@ struct RecordingStudioStyleStrip: View {
     private static let tileAspect: CGFloat = 1.5
 
     var body: some View {
+        if presentsNameEditorOnly {
+            renderedNameEditor
+        } else {
+            strip
+        }
+    }
+
+    private var strip: some View {
         VStack(alignment: .leading, spacing: Space.ml) {
             InterfaceSectionHeader("Styles")
                 .frame(minHeight: InterfaceMetrics.rowMinimumHeight)
@@ -297,5 +307,15 @@ struct StudioStylePreview: View {
 }
 
 extension RecordingStudioStyleStrip {
-    var renderNameEditor: some View { nameEditor }
+    private var renderedNameEditor: some View {
+        nameEditor
+            .onWindowChange { renderedNameEditorWindow = $0 }
+            .onAppear {
+                precondition(UpshotStorage.isRenderingStates)
+                isNameEditorPresented = true
+            }
+            .onChange(of: isNameEditorPresented) { _, isPresented in
+                if !isPresented { renderedNameEditorWindow?.orderOut(nil) }
+            }
+    }
 }

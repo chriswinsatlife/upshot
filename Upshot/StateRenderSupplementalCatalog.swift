@@ -48,10 +48,10 @@ enum StateRenderSupplementalCatalog {
         for variant in ["annotation", "studio"] {
             add("\(variant)-new-style", variant == "annotation" ? "AnnotationStyleStrip" : "RecordingStudioLook", "private var nameEditor", 340, 330) {
                 if variant == "annotation" {
-                    return AnyView(AnnotationStyleStrip(model: fixtures.annotationModel(tool: .select), presetStore: .shared, onEditorAction: {}).renderNameEditor)
+                    return AnyView(AnnotationStyleStrip(model: fixtures.annotationModel(tool: .select), presetStore: .shared, onEditorAction: {}, presentsNameEditorOnly: true))
                 }
                 let model = try await fixtures.studioModel()
-                return AnyView(RecordingStudioStyleStrip(model: model, presetStore: .shared).renderNameEditor.onDisappear { model.teardown() })
+                return AnyView(RecordingStudioStyleStrip(model: model, presetStore: .shared, presentsNameEditorOnly: true).onDisappear { model.teardown() })
             }
         }
         for variant in ["camera", "zoom", "cursor", "keystrokes", "audio", "clip"] {

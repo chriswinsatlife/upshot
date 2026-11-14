@@ -6,9 +6,11 @@ struct AnnotationStyleStrip: View {
     @Bindable var model: AnnotationEditorModel
     @Bindable var presetStore: AnnotationBackgroundPresetStore
     let onEditorAction: () -> Void
+    var presentsNameEditorOnly = false
 
     @State private var thumbnail: CGImage?
     @State private var isNameEditorPresented = false
+    @State private var renderedNameEditorWindow: NSWindow?
     @State private var draftName = ""
     @State private var presetPendingDeletion: AnnotationBackgroundPreset?
     @State private var transferAlert: AppAlert?
@@ -19,6 +21,14 @@ struct AnnotationStyleStrip: View {
     private static let nameEditorWidth: CGFloat = 280
 
     var body: some View {
+        if presentsNameEditorOnly {
+            renderedNameEditor
+        } else {
+            strip
+        }
+    }
+
+    private var strip: some View {
         Section {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: Space.m) {
@@ -417,5 +427,15 @@ struct AnnotationStylePreview: View {
 }
 
 extension AnnotationStyleStrip {
-    var renderNameEditor: some View { nameEditor }
+    private var renderedNameEditor: some View {
+        nameEditor
+            .onWindowChange { renderedNameEditorWindow = $0 }
+            .onAppear {
+                precondition(UpshotStorage.isRenderingStates)
+                isNameEditorPresented = true
+            }
+            .onChange(of: isNameEditorPresented) { _, isPresented in
+                if !isPresented { renderedNameEditorWindow?.orderOut(nil) }
+            }
+    }
 }
