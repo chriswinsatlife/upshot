@@ -1,6 +1,20 @@
 ---
-review_status: unreviewed
+review_status: partially_reviewed
 approval_status: not_approved
+human_review:
+  approved_as_well_designed:
+    - Sequel
+  rejected_as_poorly_designed:
+    - Bloom
+    - Supercharge
+    - Moom 4
+    - Bezel
+    - Mimestream
+    - Bartender 5
+    - Shareshot
+    - Reeder
+    - Mercury Weather
+  not_yet_reviewed: every other app in this document
 accessed: 2026-11-14
 sources_directory: .local/research/award_winning_mac_apps/sources/
 ---
@@ -47,16 +61,6 @@ MacStories Selects 2026 has not been published. The 2025 article appeared in Dec
 - [Broadcasts](https://apps.apple.com/us/app/broadcasts/id1469995354): 2023 Best Watch App. Mac App Store.
 - [Flighty](https://apps.apple.com/us/app/flighty-live-flight-tracker/id1358823008): 2023 Best Watch App runner-up. Mac App Store.
 - [Wispr Flow](https://wisprflow.ai/): 2025 Best New App runner-up. MacStories links the iPhone listing. The developer website offers a macOS download.
-
-## Relevance to Upshot Surfaces
-
-- Selection overlay and on-screen drawing: Moom 4 grid drawing.
-- Floating toolbar and flyouts over other apps: Moom 4 command palette, Raycast, Alfred.
-- Pinned screenshots: Bloom Portal.
-- Menu bar menu: Supercharge, Bartender 5, Mercury Weather menu bar graph.
-- Annotation editor and screenshot backgrounds: Shareshot, Bezel.
-- Settings window and keyboard shortcut fields: Supercharge, Mimestream, Raycast, Alfred.
-- Library window with sidebar: Bloom, Reeder, Mimestream, Sequel.
 
 ## Apple App Store Awards
 
