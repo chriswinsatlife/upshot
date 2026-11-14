@@ -1,5 +1,3 @@
-// Run: python3 scripts/check-studio-camera-motion.py
-// Compiles the production geometry and motion types without launching Upshot.
 import Foundation
 import CoreGraphics
 
@@ -62,16 +60,12 @@ struct MotionChecks {
                             let region = CGRect(x: draw.minX + crop.minX * draw.width,
                                                 y: draw.minY + crop.minY * draw.height,
                                                 width: crop.width * draw.width, height: crop.height * draw.height)
-                            // A subpixel difference is allowed during the rectangle
-                            // morph; a settled source edge must align precisely.
                             let tolerance: CGFloat = time == 5 ? 0.02 : 0.5
                             if relative.x < 0.1 { near(region.minX, frame.screenRect.minX, "Left-edge action retains source edge at \(time)", tolerance: tolerance) }
                             if relative.x > 0.9 { near(region.maxX, frame.screenRect.maxX, "Right-edge action retains source edge at \(time)", tolerance: tolerance) }
                             if relative.y < 0.1 { near(region.minY, frame.screenRect.minY, "Top-edge action retains source edge at \(time)", tolerance: tolerance) }
                             if relative.y > 0.9 { near(region.maxY, frame.screenRect.maxY, "Bottom-edge action retains source edge at \(time)", tolerance: tolerance) }
                             if relative.x < 0.1, relative.y < 0.1 {
-                                // A menu opens below the top-left menu-bar click.
-                                // Keeping only the hotspot visible would miss its cut-off text.
                                 let menu = CGRect(x: crop.minX, y: crop.minY, width: crop.width * 0.18, height: crop.height * 0.5)
                                 let menuDraw = CGRect(x: draw.minX + menu.minX * draw.width,
                                                       y: draw.minY + menu.minY * draw.height,
@@ -133,7 +127,6 @@ struct MotionChecks {
                                       "No exposed source edges vertically")
                                 near(draw.width / draw.height, resting.contentFillSize.width / resting.contentFillSize.height,
                                      "Uniform source scale throughout morph", tolerance: 0.00001)
-                                // Preview's cursor formula equals the exported source-to-canvas transform.
                                 let point = CGPoint(x: 0.85, y: 0.7)
                                 near(current.screenRect.midX + geometry.contentFillSize.width * viewport.magnification * (point.x - viewport.anchor.x),
                                      draw.minX + point.x * draw.width, "Cursor X shares draw transform", tolerance: 0.000001)
