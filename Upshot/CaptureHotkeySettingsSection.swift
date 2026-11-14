@@ -144,17 +144,3 @@ struct CaptureHotkeySettingsLifecycle: ViewModifier {
             }
     }
 }
-
-struct CaptureHotkeySettingsSection: View {
-    let actions: [CaptureHotkeyAction]
-    @State private var model = CaptureHotkeySettingsModel()
-
-    var body: some View {
-        InterfaceSection("Keyboard Shortcuts") {
-            ForEach(actions) { action in
-                CaptureHotkeyShortcutRow(action: action, model: model)
-            }
-        }
-        .modifier(CaptureHotkeySettingsLifecycle(model: model))
-    }
-}

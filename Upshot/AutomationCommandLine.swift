@@ -62,7 +62,7 @@ nonisolated enum AutomationCommandLine {
     Usage: upshot <command> <action> [options]
            upshot actions [--json]
 
-    Capture:   capture fullscreen|window|area|text|area-copy|area-save|area-upload|self-timer|previous-area|all-in-one|smart-element
+    Capture:   capture fullscreen|window|area|text|area-copy|area-save|area-upload|self-timer|previous-area|all-in-one|smart-element|scrolling
     Recording: recording picker|start|stop|toggle|pause|resume|restart|discard|toggle-pen|clear-pen
     Editor:    editor <action> [--path FILE] [--value VALUE]
     Selection: selection toggle-crosshair|toggle-magnifier
