@@ -30,6 +30,29 @@ An appearance suffix selects one PNG:
 
 Unknown names and invalid arguments return a nonzero exit status. Each image uses the state name and an appearance suffix, such as `annotation-tool-arrow-light.png`. A state whose window content scrolls past the window produces one image per scroll position, named with a `-scroll-N` suffix, such as `settings-screenshots-expanded-scroll-2-light.png`. A frame name with or without the appearance suffix selects that single image.
 
+## Live State
+
+Live mode builds one state and keeps it open and running instead of capturing it once and exiting:
+
+```bash
+".local/build/Build/Products/Debug Dev/Upshot Dev.app/Contents/MacOS/Upshot Dev" --present-live-state settings-advanced-light
+```
+
+The name is a frame name that `--render-states --state` accepts for exactly one image, so it carries an appearance suffix, and a state with several scroll positions also carries its `-scroll-N` suffix. Only states placed in one Settings, Library, Annotate, or Studio window are supported; any other placement fails. Live mode branches at the same point as render mode and uses the same fixture isolation, catalog definition, placement, fixtures, and window construction. It does not draw window shadows. The windows stay below the desktop window level and ignore mouse events, the app keeps activation policy `prohibited`, and a `userInitiated` and `latencyCritical` process activity is held for the whole run.
+
+Standard output carries one JSON object per line:
+
+- `{"event":"live_state_ready","state":NAME,"windowNumber":N,"windowWidth":W,"windowHeight":H,"backingScale":S}` once the titled window is ordered in below the desktop layer and has drawn its content. The width and height are the window frame size in points, title bar and toolbar included.
+- `{"event":"click_replayed","x":X,"y":Y}` after each click is sent.
+- `{"event":"live_state_failed","reason":SENTENCE}` before a nonzero exit.
+
+Standard input carries one command per line:
+
+- `click X Y` replays a left mouse down and up inside the app at X and Y points from the top-left corner of the titled window's frame. The mouse up is posted to the app's event queue before the mouse down is sent, so a control that tracks the mouse after its mouse down receives the mouse up.
+- `quit` closes the windows, removes the fixture directory and render defaults domain, and exits with status 0. End of input is treated as `quit`.
+
+Diagnostics, ignored commands, and the result of comparing the protected paths before and after the run go to standard error. The display safety check runs after each click and every 0.25 seconds; a window above the desktop level or an active app ends the run with `live_state_failed`.
+
 ## Display Frames
 
 Every image is one display-sized frame of 1728 by 1117 points at two pixels per point (3456 by 2234 pixels). The main display must be at least that size at 2x; the renderer fails otherwise. The `selector-all-in-one-narrow` state uses an 800 by 600 point frame (1600 by 1200 pixels), because the All-In-One toolbar stacks its size fields only on a display narrower than `AllInOneCaptureToolbar.singleRowMinimumWidth` (820 points).

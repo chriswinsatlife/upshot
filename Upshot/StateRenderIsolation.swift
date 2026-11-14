@@ -30,6 +30,12 @@ struct StateRenderIsolation {
         try Self.write(before, to: url)
     }
 
+    func changedPaths() throws -> [String] {
+        let old = Dictionary(uniqueKeysWithValues: before.map { ($0.path, $0) })
+        let new = Dictionary(uniqueKeysWithValues: try Self.snapshot(roots).map { ($0.path, $0) })
+        return Set(old.keys).union(new.keys).filter { old[$0] != new[$0] }.sorted()
+    }
+
     func verify(to output: URL) throws {
         let after = try Self.snapshot(roots)
         try Self.write(after, to: output.appendingPathComponent("isolation-after.json"))

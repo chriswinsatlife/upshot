@@ -74,7 +74,9 @@ enum StateRenderer {
     static let frameworkDefaults: [String: Any] = ["AVDesktopPlaybackControlsControllerShowsDurationInsteadOfTimeRemainingDefaultsKey": true]
     private static var definitionsByName: [String: StateRenderDefinition] = [:]
 
-    private struct Selection {
+    static let usage = "Usage: Upshot --render-states DIRECTORY [--state NAME]\n       Upshot --present-live-state NAME\n"
+
+    struct Selection {
         let state: String
         let appearance: String?
         let scrollFrame: Int?
@@ -98,10 +100,11 @@ enum StateRenderer {
     }
 
     static func run() -> Never {
+        if UpshotStorage.isPresentingLiveState { StateRenderLivePresentation.run() }
         let arguments = Array(CommandLine.arguments.dropFirst(2))
         guard let path = arguments.first, !path.hasPrefix("--"),
               arguments.count == 1 || (arguments.count == 3 && arguments[1] == "--state") else {
-            FileHandle.standardError.write(Data("Usage: Upshot --render-states DIRECTORY [--state NAME]\n".utf8))
+            FileHandle.standardError.write(Data(usage.utf8))
             exit(2)
         }
         let output = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true).standardizedFileURL
@@ -131,17 +134,7 @@ enum StateRenderer {
             UpshotStorage.defaults.removePersistentDomain(forName: UpshotStorage.fixtureIdentifier)
             if let root = UpshotStorage.fixtureRoot { try? FileManager.default.removeItem(at: root) }
         }
-        _ = try StateRenderDisplay.frame
-        UserDefaults.standard.setVolatileDomain(StateRenderer.frameworkDefaults, forName: UserDefaults.argumentDomain)
-        let fixtures = try await StateRenderFixtures.make()
-        fixtureVideoURL = fixtures.project.screenURL
-        try StateRenderDesktop.install(fixtureImage: fixtures.image)
-        let definitions = StateRenderCatalog.states(fixtures: fixtures)
-        let duplicateNames = Dictionary(grouping: definitions, by: \.name).filter { $0.value.count > 1 }.keys.sorted()
-        guard duplicateNames.isEmpty else {
-            throw StateRenderFailure(message: "Duplicate state names: \(duplicateNames.joined(separator: ", "))")
-        }
-        definitionsByName = Dictionary(uniqueKeysWithValues: definitions.map { ($0.name, $0) })
+        let definitions = try await loadDefinitions()
         let selection = requested.map(Selection.init)
         let selected = definitions.filter { selection == nil || selection?.state == $0.name }
         guard !selected.isEmpty else { throw StateRenderFailure(message: "Unknown state: \(requested ?? "")") }
@@ -180,6 +173,21 @@ enum StateRenderer {
         print("Rendered \(entries.count) PNGs to \(output.path)")
     }
 
+    static func loadDefinitions() async throws -> [StateRenderDefinition] {
+        _ = try StateRenderDisplay.frame
+        UserDefaults.standard.setVolatileDomain(StateRenderer.frameworkDefaults, forName: UserDefaults.argumentDomain)
+        let fixtures = try await StateRenderFixtures.make()
+        fixtureVideoURL = fixtures.project.screenURL
+        try StateRenderDesktop.install(fixtureImage: fixtures.image)
+        let definitions = StateRenderCatalog.states(fixtures: fixtures)
+        let duplicateNames = Dictionary(grouping: definitions, by: \.name).filter { $0.value.count > 1 }.keys.sorted()
+        guard duplicateNames.isEmpty else {
+            throw StateRenderFailure(message: "Duplicate state names: \(duplicateNames.joined(separator: ", "))")
+        }
+        definitionsByName = Dictionary(uniqueKeysWithValues: definitions.map { ($0.name, $0) })
+        return definitions
+    }
+
     private static func prepare(_ definition: StateRenderDefinition) async throws -> AnyView {
         scenario = definition.name
         StateRenderFixtures.resetPreferences()
@@ -198,7 +206,7 @@ enum StateRenderer {
         return window
     }
 
-    private static func build(_ definition: StateRenderDefinition, on stage: StateRenderStage) async throws {
+    static func build(_ definition: StateRenderDefinition, on stage: StateRenderStage) async throws {
         switch definition.placement {
         case .window(let kind):
             let window = stage.addWindow(kind, view: try await prepare(definition))
@@ -226,7 +234,7 @@ enum StateRenderer {
         }
     }
 
-    private static func settle(_ stage: StateRenderStage, milliseconds: Int) async throws {
+    static func settle(_ stage: StateRenderStage, milliseconds: Int) async throws {
         for window in stage.windows { window.contentView?.layoutSubtreeIfNeeded() }
         try await Task.sleep(for: .milliseconds(milliseconds))
         for window in stage.windows {
@@ -236,7 +244,7 @@ enum StateRenderer {
         }
     }
 
-    private static func scrollOffsets(_ scroll: NSScrollView?, mode: StateRenderScroll) -> [CGFloat?] {
+    static func scrollOffsets(_ scroll: NSScrollView?, mode: StateRenderScroll) -> [CGFloat?] {
         guard let scroll else { return [nil] }
         let range = StateRenderStage.scrollRange(scroll)
         let visible = scroll.contentView.bounds.height - scroll.contentInsets.top - scroll.contentInsets.bottom
@@ -252,7 +260,7 @@ enum StateRenderer {
         }
     }
 
-    private static func apply(offset: CGFloat, to scroll: NSScrollView) {
+    static func apply(offset: CGFloat, to scroll: NSScrollView) {
         guard let document = scroll.documentView else { return }
         let range = StateRenderStage.scrollRange(scroll)
         let y = document.isFlipped ? offset : range.upperBound - (offset - range.lowerBound)
@@ -303,7 +311,7 @@ enum StateRenderer {
         return entries
     }
 
-    private static func verifyWindows() throws {
+    static func verifyWindows() throws {
         guard NSApp.activationPolicy() == .prohibited, !NSApp.isActive,
               NSApp.windows.allSatisfy({ $0.level.rawValue < desktopLevel || !$0.isVisible }) else {
             let windows = NSApp.windows.filter(\.isVisible).map {
