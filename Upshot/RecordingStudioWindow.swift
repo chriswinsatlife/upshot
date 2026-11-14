@@ -993,8 +993,7 @@ private struct StudioKeystrokeCaptionView: View {
         let metrics = KeystrokeCaptionMetrics(cardHeight: cardSize.height)
         let (modifiers, key) = KeystrokeCaptionMetrics.text(for: caption)
 
-        (Text(modifiers).foregroundStyle(.white.opacity(KeystrokeCaptionMetrics.modifierAlpha))
-            + Text(key).foregroundStyle(.white))
+        Text("\(Text(modifiers).foregroundStyle(.white.opacity(KeystrokeCaptionMetrics.modifierAlpha)))\(Text(key).foregroundStyle(.white))")
             .font(.system(size: metrics.fontSize, weight: .semibold, design: .rounded))
             .lineLimit(1)
             .padding(.horizontal, metrics.paddingHorizontal)
@@ -1114,7 +1113,7 @@ private struct StudioSubtitleBarView: View {
             }
             let piece = Text(verbatim: index > 0 ? " \(word)" : word)
                 .foregroundStyle(color)
-            combined = combined + piece
+            combined = Text("\(combined)\(piece)")
         }
         return combined
     }
