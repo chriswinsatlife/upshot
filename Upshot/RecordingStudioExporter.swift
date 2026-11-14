@@ -190,8 +190,9 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         guard clipTimeline.duration >= RecordingClipSegment.minimumDuration else {
             throw VideoTrimExportError.invalidRange
         }
-        let screenAsset = try RecordingCompositionBuilder.makeAsset(
+        let screenAsset = try await RecordingCompositionBuilder.makeAsset(
             from: sourceAsset,
+            tracks: sourceAsset.load(.tracks),
             timeline: clipTimeline,
             sourceDuration: sourceDuration
         )
@@ -339,18 +340,19 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             audioInput = input
         }
 
-        var separatedAudio: [RecordingAudioTrackExport] = []
+        let separatedAudio: [RecordingAudioTrackExport]
         if separatesRecording && !configuration.exportSettings.removeAudio {
-            for (index, track) in audioTracks.enumerated() {
+            separatedAudio = try audioTracks.enumerated().map { index, track in
                 let title = configuration.recordedAudioTrackNames.indices.contains(index)
                     ? configuration.recordedAudioTrackNames[index] : "Audio \(index + 1)"
-                let stream = try RecordingAudioTrackExport(
+                return try RecordingAudioTrackExport(
                     asset: screenAsset, track: track, timeRange: exportTimeRange,
                     volume: configuration.audioVolume, mono: configuration.deliveryOptions.monoAudio,
                     title: title, writer: writer
                 )
-                separatedAudio.append(stream)
             }
+        } else {
+            separatedAudio = []
         }
         defer { for stream in separatedAudio { stream.reader.cancelReading() } }
         for stream in separatedAudio {
@@ -814,17 +816,27 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private var morphCameraRenderer: StudioMorphCameraRenderer?
     private var morphCameraRendererFailed = false
     var cutoutMattes: StudioCameraMatteTrack?
-    private lazy var fallbackMattes = StudioCameraMatteGenerator()
+    private var fallbackMattesStorage: StudioCameraMatteGenerator??
+    private var fallbackMattes: StudioCameraMatteGenerator? {
+        if let storage = fallbackMattesStorage { return storage }
+        let generator = StudioCameraMatteGenerator()
+        fallbackMattesStorage = .some(generator)
+        return generator
+    }
     private(set) var cutoutWaitSeconds = 0.0
-    private lazy var morphShadowContext: CGContext? = {
+    private var morphShadowContextStorage: CGContext??
+    private var morphShadowContext: CGContext? {
+        if let storage = morphShadowContextStorage { return storage }
         let width = max(1, Int((canvasSize.width / Self.morphShadowScale).rounded(.up)))
         let height = max(1, Int((canvasSize.height / Self.morphShadowScale).rounded(.up)))
-        return CGContext(
+        let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         )
-    }()
+        morphShadowContextStorage = .some(context)
+        return context
+    }
     private static let morphShadowScale: CGFloat = 4
     private var overlayOpacity: CGFloat = 1
     private let viewportTimeline: ViewportTimeline
@@ -847,7 +859,13 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let mediaDirectory: URL?
     private let overlayImages = RecordingOverlayImageStore()
     private var artworkImageCache: [String: CGImage] = [:]
-    private lazy var pointerMaterialRenderer = PointerMaterialRenderer()
+    private var pointerMaterialRendererStorage: PointerMaterialRenderer?
+    private var pointerMaterialRenderer: PointerMaterialRenderer {
+        if let storage = pointerMaterialRendererStorage { return storage }
+        let renderer = PointerMaterialRenderer()
+        pointerMaterialRendererStorage = renderer
+        return renderer
+    }
     private let pointerScale: CGFloat
     private let colorSpace: CGColorSpace
     private let plainBackdrop: CGImage?

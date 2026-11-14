@@ -247,13 +247,20 @@ final class RecordingStudioModel {
     private func updatePlaybackVolume() {
         guard let item = screenPlayer.currentItem else { return }
         let clipTrackIDs = Set(playbackClipTrackIDs.values)
-        let recordingTracks = item.asset.tracks(withMediaType: .audio).filter { !clipTrackIDs.contains($0.trackID) }
+        let recordingTracks = recordedAudioTracks(in: item.asset).filter { !clipTrackIDs.contains($0.trackID) }
         item.audioMix = RecordingAudioClipMixer.mix(
             recordingTracks: recordingTracks,
             recordingVolume: Double(audioVolume),
             clips: audioClips,
             trackIDs: playbackClipTrackIDs
         )
+    }
+
+    private func recordedAudioTracks(in asset: AVAsset) -> [AVAssetTrack] {
+        if let composition = asset as? AVComposition {
+            return composition.tracks(withMediaType: .audio)
+        }
+        return screenTracks.filter { $0.mediaType == .audio }
     }
 
     var audioExportFormat: RecordingAudioFormat = .m4a {
@@ -268,6 +275,7 @@ final class RecordingStudioModel {
     private var audioExportTask: Task<Void, Never>?
     private var replacementAudioTask: Task<Void, Never>?
     private var screenVideoTrack: AVAssetTrack?
+    private var screenTracks: [AVAssetTrack] = []
     private var shareTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
     private var projectSaveTask: Task<Void, Never>?
@@ -339,6 +347,7 @@ final class RecordingStudioModel {
             guard !isTornDown, !Task.isCancelled else { return }
             sourceDuration = durationTime.seconds
             duration = sourceDuration
+            screenTracks = tracks
             if let videoTrack = tracks.first(where: { $0.mediaType == .video }) {
                 screenVideoTrack = videoTrack
                 let naturalSize = try await videoTrack.load(.naturalSize)
@@ -536,6 +545,7 @@ final class RecordingStudioModel {
         screenAsset?.cancelLoading()
         screenAsset = nil
         screenVideoTrack = nil
+        screenTracks = []
         replacementAudio = nil
         editUndoManager.removeAllActions()
         zoomEditSnapshot = nil
@@ -889,6 +899,7 @@ final class RecordingStudioModel {
         } else {
             playbackAsset = try RecordingCompositionBuilder.makeAsset(
                 from: screenAsset,
+                tracks: screenTracks,
                 timeline: clipTimeline,
                 sourceDuration: sourceDuration
             )
@@ -941,7 +952,7 @@ final class RecordingStudioModel {
         let rate = Float(speed(atEditorTime: currentTime))
         let cameraTime = CMTime(seconds: max(0, sourceTime - cameraOffset), preferredTimescale: 600)
         cameraPlayer.seek(to: cameraTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.isPlaying else { return }
                 self.cameraPlayer.rate = rate
             }
@@ -1742,10 +1753,13 @@ final class RecordingStudioModel {
             composition = existing
         } else {
             composition = AVMutableComposition()
-            try composition.insertTimeRange(
+            var destinations: [CMPersistentTrackID: AVMutableCompositionTrack] = [:]
+            try RecordingCompositionBuilder.insert(
                 CMTimeRange(start: .zero, duration: CMTime(seconds: sourceDuration, preferredTimescale: 600)),
-                of: asset,
-                at: .zero
+                of: screenTracks,
+                into: composition,
+                at: .zero,
+                destinations: &destinations
             )
         }
         playbackClipTrackIDs = RecordingAudioClipMixer.insert(sources, into: composition, videoDuration: duration)
@@ -2949,7 +2963,7 @@ final class RecordingStudioModel {
         exportTask = Task { [weak self] in
             do {
                 let exporter = RecordingStudioExporter()
-                let temporaryURL = try await exporter.export(configuration) { progress in
+                let temporaryURL = try await exporter.export(configuration) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         DockExportProgressCoordinator.shared.update(dockProgressID, progress: progress)
                         if self?.exportState.isExporting == true {
@@ -3024,7 +3038,7 @@ final class RecordingStudioModel {
 
         audioExportTask = Task { [weak self] in
             do {
-                let temporaryURL = try await RecordingAudioExporter().export(configuration) { progress in
+                let temporaryURL = try await RecordingAudioExporter().export(configuration) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         DockExportProgressCoordinator.shared.update(dockProgressID, progress: progress)
                         if self?.audioExportState.isExporting == true {
@@ -3176,7 +3190,7 @@ final class RecordingStudioModel {
                     let dockProgressID = DockExportProgressCoordinator.shared.start()
                     let temporaryURL: URL
                     do {
-                        temporaryURL = try await RecordingStudioExporter().export(configuration) { progress in
+                        temporaryURL = try await RecordingStudioExporter().export(configuration) { [weak self] progress in
                             Task { @MainActor [weak self] in
                                 DockExportProgressCoordinator.shared.update(dockProgressID, progress: progress)
                                 if case .rendering = self?.shareState {

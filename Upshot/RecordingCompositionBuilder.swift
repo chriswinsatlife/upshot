@@ -10,6 +10,7 @@ import AVFoundation
 nonisolated enum RecordingCompositionBuilder {
     static func makeAsset(
         from sourceAsset: AVAsset,
+        tracks sourceTracks: [AVAssetTrack],
         timeline: RecordingClipTimeline,
         sourceDuration: TimeInterval
     ) throws -> AVAsset {
@@ -19,13 +20,14 @@ nonisolated enum RecordingCompositionBuilder {
         }
 
         let composition = AVMutableComposition()
+        var destinations: [CMPersistentTrackID: AVMutableCompositionTrack] = [:]
         var insertionTime = CMTime.zero
         for clip in normalized.segments {
             let range = CMTimeRange(
                 start: CMTime(seconds: clip.sourceStart, preferredTimescale: 600),
                 duration: CMTime(seconds: clip.duration, preferredTimescale: 600)
             )
-            try composition.insertTimeRange(range, of: sourceAsset, at: insertionTime)
+            try insert(range, of: sourceTracks, into: composition, at: insertionTime, destinations: &destinations)
 
             // Retiming here scales every track inserted above together
             // (video and audio alike), so a sped-up clip never drifts out
@@ -40,6 +42,31 @@ nonisolated enum RecordingCompositionBuilder {
             }
         }
         return composition
+    }
+
+    static func insert(
+        _ range: CMTimeRange,
+        of sourceTracks: [AVAssetTrack],
+        into composition: AVMutableComposition,
+        at time: CMTime,
+        destinations: inout [CMPersistentTrackID: AVMutableCompositionTrack]
+    ) throws {
+        for source in sourceTracks {
+            let destination: AVMutableCompositionTrack
+            if let existing = destinations[source.trackID] {
+                destination = existing
+            } else {
+                guard let created = composition.addMutableTrack(
+                    withMediaType: source.mediaType,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                destinations[source.trackID] = created
+                destination = created
+            }
+            try destination.insertTimeRange(range, of: source, at: time)
+        }
     }
 
     /// Playback asset whose soundtrack comes from an imported file instead

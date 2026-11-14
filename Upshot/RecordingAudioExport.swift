@@ -89,8 +89,9 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         let audioAsset: AVAsset = if let replacementURL = configuration.replacementURL {
             AVURLAsset(url: replacementURL)
         } else {
-            try RecordingCompositionBuilder.makeAsset(
+            try await RecordingCompositionBuilder.makeAsset(
                 from: sourceAsset,
+                tracks: sourceAsset.load(.tracks),
                 timeline: timeline,
                 sourceDuration: sourceDuration
             )
