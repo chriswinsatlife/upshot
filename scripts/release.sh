@@ -187,6 +187,7 @@ xcodebuild \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     CURRENT_PROJECT_VERSION="$BUILD" \
+    UPSHOT_BUNDLE_IDENTIFIER=co.chrisyork.upshot \
     UPSHOT_SPARKLE_UPDATES_ENABLED=YES \
     archive
 
@@ -216,6 +217,7 @@ xcodebuild -exportArchive \
 plist() { /usr/libexec/PlistBuddy -c "$1" "$APP/Contents/Info.plist"; }
 VERSION="$(plist 'Print :CFBundleShortVersionString')"
 [[ "$(plist 'Print :CFBundleVersion')" == "$BUILD" ]] || fail "The exported app is not build $BUILD."
+[[ "$(plist 'Print :CFBundleIdentifier')" == co.chrisyork.upshot ]] || fail 'The exported app is not co.chrisyork.upshot.'
 [[ "$(plist 'Print :UpshotSparkleUpdatesEnabled')" == YES ]] || fail 'The exported app has Sparkle updates turned off.'
 [[ "$(plist 'Print :SUFeedURL')" == "$FEED_URL" ]] || fail "The exported app does not read $FEED_URL."
 APP_SIGNATURE="$(codesign -d --verbose=2 "$APP" 2>&1)"

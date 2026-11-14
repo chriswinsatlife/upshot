@@ -7,7 +7,7 @@ approval_status: not_approved
 
 ## Build
 
-Upshot builds with `xcodebuild` and the Xcode 26.4 toolchain. The deployment target is macOS 26.0, the bundle identifier is `co.chrisyork.upshot`, and there is no test target.
+Upshot builds with `xcodebuild` and the Xcode 26.4 toolchain. The deployment target is macOS 26.0, and there is no test target. Only `scripts/release.sh` builds the bundle identifier `co.chrisyork.upshot`, by passing `UPSHOT_BUNDLE_IDENTIFIER=co.chrisyork.upshot`. Every other build uses `co.chrisyork.upshot.dev`, so a locally built copy never replaces the Screen Recording, Microphone, Camera, or Accessibility grants of the installed app.
 
 ```bash
 xcodebuild build -project Upshot.xcodeproj -scheme Upshot -configuration Release -destination "platform=macOS"
