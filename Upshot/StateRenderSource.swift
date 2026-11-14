@@ -43,11 +43,11 @@ enum StateRenderSource {
         "Upshot/AreaCaptureSelection.swift": [
             ("struct AreaCaptureSelectionResult {", 5),
             ("enum Kind {", 6),
-            ("final class AreaCaptureSelection {", 48),
-            ("struct WindowTarget {", 51),
-            ("private final class AreaCaptureSelectionPanel: NSPanel {", 751),
-            ("final class AreaCaptureSelectionView: NSView {", 756),
-            ("private final class AreaCaptureInstructionHostingView: NSHostingView<AreaCaptureInstructionHint> {", 840),
+            ("final class AreaCaptureSelection {", 46),
+            ("struct WindowTarget {", 49),
+            ("private final class AreaCaptureSelectionPanel: NSPanel {", 769),
+            ("final class AreaCaptureSelectionView: NSView {", 774),
+            ("private final class AreaCaptureInstructionHostingView: NSHostingView<AreaCaptureInstructionHint> {", 858),
         ],
         "Upshot/AreaSelectionSettingsSection.swift": [
             ("struct AreaSelectionSettingsSection: View {", 3),
@@ -418,8 +418,8 @@ enum StateRenderSource {
             ("enum UpshotMain {", 7),
             ("struct UpshotApp: App {", 21),
             ("final class AppDelegate: NSObject, NSApplicationDelegate {", 119),
-            ("guard AppAlerts.quitDuringRecording(unsavedCaptureCount: unsavedCount).runModal() == .finishAndQuit else {", 194),
-            ("let alert = AppAlerts.quitWithUnsavedCaptures(captureCount: unsavedCount, unsavedProjectCount: unsavedProjectCount)", 211),
+            ("guard AppAlerts.quitDuringRecording(unsavedCaptureCount: unsavedCount).runModal() == .finishAndQuit else {", 183),
+            ("let alert = AppAlerts.quitWithUnsavedCaptures(captureCount: unsavedCount, unsavedProjectCount: unsavedProjectCount)", 200),
         ],
     ]
 
