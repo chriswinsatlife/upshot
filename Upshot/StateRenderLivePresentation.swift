@@ -15,6 +15,26 @@ enum StateRenderLivePresentation {
         let window: NSWindow
     }
 
+    private struct SharedState {
+        let appearance = NSApp.appearance
+        let displaySize = StateRenderDisplay.size
+        let desktopImage = StateRenderDesktop.image
+        let scenario = StateRenderer.scenario
+        let preferences = UpshotStorage.defaults.persistentDomain(forName: UpshotStorage.defaultsSuiteName)
+        let settingsTab = SettingsNavigation.shared.selectedTab
+        let settingsSearchText = SettingsNavigation.shared.searchText
+        let settingsDetail = SettingsNavigation.shared.renderDetail
+
+        func restore() {
+            NSApp.appearance = appearance
+            StateRenderDisplay.size = displaySize
+            StateRenderDesktop.image = desktopImage
+            StateRenderer.scenario = scenario
+            UpshotStorage.defaults.setPersistentDomain(preferences ?? [:], forName: UpshotStorage.defaultsSuiteName)
+            SettingsNavigation.shared.prepareRenderState(selectedTab: settingsTab, searchText: settingsSearchText, detail: settingsDetail)
+        }
+    }
+
     private struct KeyStroke {
         let keyCode: UInt16
         let characters: String
@@ -118,7 +138,9 @@ enum StateRenderLivePresentation {
 
     private static func start(_ name: String) async throws {
         _ = try await loadCatalog()
-        try await present(resolve(name))
+        let first = try await build(resolve(name))
+        presented = first
+        announce(first)
         safetyTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
             MainActor.assumeIsolated { checkSafety() }
         }
@@ -140,7 +162,7 @@ enum StateRenderLivePresentation {
         return Request(name: name, definition: definition, appearance: appearance, scrollFrame: selection.scrollFrame)
     }
 
-    private static func present(_ request: Request) async throws {
+    private static func build(_ request: Request) async throws -> Presented {
         let started = Date()
         let definition = request.definition
         NSApp.appearance = NSAppearance(named: request.appearance == "dark" ? .darkAqua : .aqua)
@@ -173,16 +195,21 @@ enum StateRenderLivePresentation {
             }
             try StateRenderer.verifyWindows()
             try await requireOrderedInBelowDesktop(window)
-            presented = Presented(name: request.name, stage: stage, window: window)
-            AppLog.event("rendering", "live_state_ready", fields: ["state": request.name, "windowNumber": String(describing: window.windowNumber),
+            AppLog.event("rendering", "live_state_built", fields: ["state": request.name, "windowNumber": String(describing: window.windowNumber),
                                                                    "milliseconds": String(describing: Int(Date().timeIntervalSince(started) * 1000))])
-            emit(["event": "live_state_ready", "state": request.name, "windowNumber": window.windowNumber,
-                  "windowWidth": Double(window.frame.width), "windowHeight": Double(window.frame.height),
-                  "backingScale": Double(window.backingScaleFactor)])
+            return Presented(name: request.name, stage: stage, window: window)
         } catch {
             stage.tearDown()
             throw error
         }
+    }
+
+    private static func announce(_ state: Presented) {
+        let window = state.window
+        AppLog.event("rendering", "live_state_ready", fields: ["state": state.name, "windowNumber": String(describing: window.windowNumber)])
+        emit(["event": "live_state_ready", "state": state.name, "windowNumber": window.windowNumber,
+              "windowWidth": Double(window.frame.width), "windowHeight": Double(window.frame.height),
+              "backingScale": Double(window.backingScaleFactor)])
     }
 
     private static func replace(with name: String) async {
@@ -195,18 +222,18 @@ enum StateRenderLivePresentation {
         }
         guard let previous = presented else { return }
         releaseMouse(in: previous.window)
-        previous.stage.tearDown()
-        presented = nil
+        let shared = SharedState()
+        let next: Presented
         do {
-            try await present(request)
+            next = try await build(request)
         } catch {
+            shared.restore()
             reject(error.localizedDescription)
-            do {
-                try await present(resolve(previous.name))
-            } catch {
-                fail("The previous state \(previous.name) could not be presented again after a failed present: \(error.localizedDescription)")
-            }
+            return
         }
+        previous.stage.tearDown()
+        presented = next
+        announce(next)
     }
 
     private static func reject(_ reason: String) {
