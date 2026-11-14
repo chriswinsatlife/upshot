@@ -19,7 +19,7 @@ struct AllInOneCaptureToolbar: View {
                     modes
                 }
             } else {
-                HStack(alignment: .center, spacing: Space.l) {
+                HStack(alignment: .bottom, spacing: Space.l) {
                     modes
                     sizeFields
                 }
@@ -29,6 +29,30 @@ struct AllInOneCaptureToolbar: View {
     }
 
     private var modes: some View {
+        VStack(alignment: .trailing, spacing: Space.m) {
+            if selector.mode == .recording {
+                recordingOutputs
+                    .transition(.opacity)
+            }
+            modePanel
+        }
+    }
+
+    private var recordingOutputs: some View {
+        InterfaceFlyoutMenu {
+            ForEach(RecordingOutputMode.allCases, id: \.self) { output in
+                if output == .studio { InterfaceFlyoutDivider() }
+                InterfaceFlyoutRow(output.title, systemImage: output.systemImage, keyHint: output.keyHint) {
+                    selector.chooseRecordingOutput(output)
+                }
+            }
+        }
+        .disabled(!selector.canRecordSelection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Recording Type")
+    }
+
+    private var modePanel: some View {
         InterfacePanel {
             HStack(spacing: Space.xxs) {
                 InterfaceToolbarButton("Cancel", systemImage: "xmark", labelPlacement: .hidden, action: selector.cancel)

@@ -56,10 +56,9 @@ final class CaptureCoordinator {
                 return nil
             }
             switch selection.kind {
-            case .recording:
+            case .recording(let output):
                 lastAllInOneDispatchedWithoutScreenshot = true
-                AppLog.event("capture", "all_in_one_recording_controls_requested")
-                RecordingBarPresenter.shared.showPicker()
+                await recordAllInOneArea(selection.rect, output: output)
                 return nil
             case .scrolling:
                 return await captureScrollingAwaiting(selection: selection)
@@ -242,6 +241,23 @@ final class CaptureCoordinator {
             ) else { return }
             ScreenRecordingManager.shared.startRecording(source: ScreenRecordingSource(kind: .window(window)))
         }
+    }
+
+    private func recordAllInOneArea(_ rect: CGRect, output: RecordingOutputMode) async {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.screens.first { $0.frame.intersects(rect) }
+        await RecordingSourceCatalog.shared.refresh()
+        guard let screen, let displayID = ActiveDisplayResolver.displayID(for: screen),
+              let display = RecordingSourceCatalog.shared.displays.first(where: { $0.displayID == displayID }) else {
+            AppLog.event("recording", "all_in_one_recording_start_failed", fields: ["mode": output.rawValue, "reason": "display_unavailable"])
+            CaptureTextFeedbackPresenter.shared.showFailure(title: "Recording failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+            return
+        }
+        let area = RecordingAreaGeometry.snapped(rect.intersection(screen.frame), scale: screen.backingScaleFactor, ratio: nil, in: screen.frame)
+        UpshotPreferences.recordingAreaLastSelection = (displayID, area)
+        RecordingOutputModeCoordinator.shared.setPendingMode(output)
+        AppLog.event("recording", "all_in_one_recording_requested", fields: ["mode": output.rawValue, "display": String(displayID), "x": String(describing: area.minX), "y": String(describing: area.minY), "width": String(describing: area.width), "height": String(describing: area.height)])
+        recordArea(display, rect: area)
     }
 
     func recordArea(_ display: SCDisplay, rect: CGRect) {

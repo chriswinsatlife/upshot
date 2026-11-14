@@ -9,7 +9,7 @@ struct AreaCaptureSelectionResult {
         case window(CGWindowID)
         case fullscreen(CGDirectDisplayID)
         case scrolling
-        case recording
+        case recording(RecordingOutputMode)
     }
 
     let kind: Kind
@@ -104,7 +104,7 @@ final class AreaCaptureSelection {
         case .previousArea: return highlightedRect == nil ? "No previous screenshot area · A: area · Esc: cancel" : "Click or press Return to capture the previous area"
         case .element: return highlightedRect == nil ? "No accessible element here · E: area · Esc: cancel" : "Click an element · E: area · Esc: cancel"
         case .scrolling: return "Drag the scrolling capture area · Esc: cancel"
-        case .recording: return "Click or press Return to open recording controls"
+        case .recording: return highlightedRect == nil ? "Drag the area to record · Esc: cancel" : "Choose a recording type or press Return · Esc: cancel"
         case .timer, .text: return "Drag an area · Esc: cancel"
         }
     }
@@ -116,11 +116,27 @@ final class AreaCaptureSelection {
     }
 
     var showsSelectionSize: Bool {
-        isAllInOne && (mode == .area || mode == .scrolling)
+        isAllInOne && mode.drawsArea
     }
 
     var canEditSelectionSize: Bool {
-        isAllInOne && start == nil && (mode == .area || mode == .scrolling)
+        isAllInOne && start == nil && mode.drawsArea
+    }
+
+    var canRecordSelection: Bool {
+        isAllInOne && mode == .recording && start == nil && highlightedRect.map(RecordingAreaGeometry.isLargeEnough) == true
+    }
+
+    func chooseRecordingOutput(_ output: RecordingOutputMode, eventTime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        guard isAllInOne, mode == .recording, !completingSelection else { return }
+        guard canRecordSelection, let rect = highlightedRect else {
+            status = "Drag a larger area to record"
+            AppLog.event("recording", "all_in_one_recording_output_rejected", fields: ["mode": output.rawValue, "reason": "no_area_selection"])
+            redraw()
+            return
+        }
+        AppLog.event("recording", "all_in_one_recording_output_chosen", fields: ["mode": output.rawValue, "width": String(describing: rect.width), "height": String(describing: rect.height)])
+        complete(kind: .recording(output), rect: rect, eventTime: eventTime)
     }
 
     var selectionPixelSize: CGSize? {
@@ -433,10 +449,10 @@ final class AreaCaptureSelection {
         status = nil
         start = nil
         highlightedRect = selected == .previousArea ? AreaSelectionMemory.previousScreenshotRect : nil
-        if selected == .area || selected == .scrolling { highlightedRect = AreaSelectionMemory.lastSelectionRect }
+        if selected.drawsArea { highlightedRect = AreaSelectionMemory.lastSelectionRect }
         move(to: NSEvent.mouseLocation)
         NSLog("Area selection mode changed: mode=%@", mode.rawValue)
-        if selected == .recording || selected == .previousArea { commitSelection() }
+        if selected == .previousArea { commitSelection() }
     }
 
     func move(to point: CGPoint) {
@@ -444,7 +460,7 @@ final class AreaCaptureSelection {
         pointer = point
         if let start {
             let rect: CGRect
-            if let aspect, mode == .area || mode == .scrolling {
+            if let aspect, mode.drawsArea {
                 rect = RecordingAreaGeometry.drawn(from: start, to: point, ratio: aspect.ratio, fromCenter: false, in: selectionBounds)
             } else {
                 rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
@@ -501,9 +517,10 @@ final class AreaCaptureSelection {
 
     func mouseDown(at point: CGPoint) {
         move(to: point)
-        guard mode == .area || mode == .scrolling else { return }
+        guard mode.drawsArea else { return }
         start = point
         highlightedRect = nil
+        if mode == .recording { status = nil }
         redraw()
     }
 
@@ -514,7 +531,9 @@ final class AreaCaptureSelection {
 
     private func commitSelection(eventTime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         if mode == .recording {
-            complete(kind: .recording, rect: AreaSelectionMemory.lastSelectionRect ?? .zero, eventTime: eventTime)
+            start = nil
+            if let rect = highlightedRect, !RecordingAreaGeometry.isLargeEnough(rect) { highlightedRect = nil }
+            redraw()
             return
         }
         guard let rect = highlightedRect, rect.width >= 1, rect.height >= 1 else {
@@ -576,6 +595,8 @@ final class AreaCaptureSelection {
         switch event.keyCode {
         case 53: cancel()
         case 49: chooseMode(mode == .window ? .area : .window)
+        case 36, 76 where isAllInOne && mode == .recording:
+            chooseRecordingOutput(.forReturnKey(modifierFlags: event.modifierFlags), eventTime: event.timestamp)
         case 36, 76: commitSelection(eventTime: event.timestamp)
         default: break
         }

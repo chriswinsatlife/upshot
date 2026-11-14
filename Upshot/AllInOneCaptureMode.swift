@@ -17,6 +17,8 @@ enum AllInOneCaptureMode: String, CaseIterable, Identifiable {
 
     var isCaptureAction: Bool { self == .timer || self == .text }
 
+    var drawsArea: Bool { self == .area || self == .scrolling || self == .recording }
+
     var title: String {
         switch self {
         case .area: "Area"

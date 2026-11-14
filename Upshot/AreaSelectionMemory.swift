@@ -20,10 +20,8 @@ enum AreaSelectionMemory {
 
     static func rememberSelection(mode: AllInOneCaptureMode, rect: CGRect) {
         UpshotPreferences.allInOneLastMode = mode
-        if mode != .recording {
-            UpshotPreferences.allInOneLastSelectionRect = rect
-            UpshotPreferences.allInOneLastSelectionDisplays = displayLayout(intersecting: rect)
-        }
+        UpshotPreferences.allInOneLastSelectionRect = rect
+        UpshotPreferences.allInOneLastSelectionDisplays = displayLayout(intersecting: rect)
         AppLog.event("capture", "all_in_one_selection_remembered", fields: ["height": String(describing: rect.height), "mode": String(describing: mode.rawValue), "width": String(describing: rect.width), "x": String(describing: rect.minX), "y": String(describing: rect.minY)])
     }
 
