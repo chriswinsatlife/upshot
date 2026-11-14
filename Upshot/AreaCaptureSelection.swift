@@ -593,7 +593,7 @@ final class AreaCaptureSelection {
         switch event.keyCode {
         case 53: cancel()
         case 49: chooseMode(mode == .window ? .area : .window)
-        case 36, 76 where isAllInOne && mode == .recording:
+        case 36 where isAllInOne && mode == .recording, 76 where isAllInOne && mode == .recording:
             chooseRecordingOutput(.forReturnKey(modifierFlags: event.modifierFlags), eventTime: event.timestamp)
         case 36, 76: commitSelection(eventTime: event.timestamp)
         default: break
