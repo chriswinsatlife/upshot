@@ -106,6 +106,12 @@ final class StateRenderTitledWindow: NSWindow {
     @objc func _hasActiveAppearance() -> Bool { true }
     @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
     @objc func _hasActiveAppearanceForStandardWindowButton(_ button: Int) -> Bool { true }
+
+    override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
+        if childWin.level.rawValue >= StateRenderer.desktopLevel { childWin.level = level }
+        childWin.ignoresMouseEvents = true
+        super.addChildWindow(childWin, ordered: place)
+    }
 }
 
 final class StateRenderAlertWindow: NSWindow {
