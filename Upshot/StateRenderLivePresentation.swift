@@ -34,6 +34,8 @@ enum StateRenderLivePresentation {
     private static var pendingMouseDownAcknowledgement = false
     private static var isMouseDown = false
     private static var eventNumber = 0
+    private static var displaySafety: StateRenderDisplaySafety?
+    private static var displaySafetyChecks = 0
 
     static func run() -> Never {
         let arguments = Array(CommandLine.arguments.dropFirst())
@@ -490,7 +492,13 @@ enum StateRenderLivePresentation {
     private static func checkSafety() {
         guard !isFinishing else { return }
         do {
-            try StateRenderer.verifyWindows()
+            let safety = try StateRenderer.verifyWindows()
+            displaySafetyChecks += 1
+            guard safety != displaySafety else { return }
+            displaySafety = safety
+            diagnose(["event": "display_safety", "checks": displaySafetyChecks, "policy": safety.activationPolicy,
+                      "cachedPolicy": safety.cachedActivationPolicy, "policyRereads": safety.policyRereads, "active": safety.isActive,
+                      "windows": safety.windows.map(\.fields)])
         } catch {
             fail(error.localizedDescription)
         }
@@ -518,6 +526,7 @@ enum StateRenderLivePresentation {
     private static func tearDown() {
         isFinishing = true
         safetyTimer?.invalidate()
+        diagnose(["event": "display_safety_checks", "checks": displaySafetyChecks])
         presented?.stage.tearDown()
         presented = nil
         for window in NSApp.windows { window.orderOut(nil) }
@@ -537,6 +546,11 @@ enum StateRenderLivePresentation {
 
     private static func diagnose(_ message: String) {
         FileHandle.standardError.write(Data((message + "\n").utf8))
+    }
+
+    private static func diagnose(_ fields: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys, .withoutEscapingSlashes]) else { return }
+        FileHandle.standardError.write(data + Data("\n".utf8))
     }
 
     private static func emit(_ fields: [String: Any]) {

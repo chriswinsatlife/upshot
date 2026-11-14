@@ -38,6 +38,87 @@ final class StateRenderWindow: NSWindow {
     override var canBecomeMain: Bool { false }
 }
 
+struct StateRenderWindowSafety: Equatable {
+    let className: String
+    let windowNumber: Int
+    let level: Int
+    let isVisible: Bool
+    let serverLayer: Int?
+    let isOnscreen: Bool
+
+    init(_ window: NSWindow) {
+        className = String(describing: type(of: window))
+        windowNumber = window.windowNumber
+        level = window.level.rawValue
+        isVisible = window.isVisible
+        let info = windowNumber > 0
+            ? (CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(windowNumber)) as? [[String: Any]])?.first
+            : nil
+        serverLayer = info?[kCGWindowLayer as String] as? Int
+        isOnscreen = info?[kCGWindowIsOnscreen as String] as? Bool ?? false
+    }
+
+    var failures: [String] {
+        var failures: [String] = []
+        if isVisible, level >= StateRenderer.desktopLevel {
+            failures.append("window \(windowNumber) \(className) is visible at level \(level), not below the desktop level \(StateRenderer.desktopLevel)")
+        }
+        if isOnscreen, let serverLayer, serverLayer >= StateRenderer.desktopLevel {
+            failures.append("window \(windowNumber) \(className) is on screen at window-server layer \(serverLayer), not below the desktop layer \(StateRenderer.desktopLevel)")
+        }
+        return failures
+    }
+
+    var description: String {
+        "\(className) number=\(windowNumber) level=\(level) visible=\(isVisible) serverLayer=\(serverLayer.map(String.init) ?? "none") onscreen=\(isOnscreen)"
+    }
+
+    var fields: [String: Any] {
+        ["class": className, "windowNumber": windowNumber, "level": level, "visible": isVisible,
+         "serverLayer": serverLayer ?? NSNull(), "onscreen": isOnscreen]
+    }
+}
+
+struct StateRenderDisplaySafety: Equatable {
+    static let prohibitedPolicy = NSApplication.ActivationPolicy.prohibited.rawValue
+    static let policyRereadLimit = 25
+    static let policyRereadMicroseconds: useconds_t = 1000
+
+    let cachedActivationPolicy: Int
+    let activationPolicy: Int
+    let policyRereads: Int
+    let isActive: Bool
+    let windows: [StateRenderWindowSafety]
+
+    init() {
+        cachedActivationPolicy = NSApp.activationPolicy().rawValue
+        var policy = cachedActivationPolicy
+        var rereads = 0
+        while policy != Self.prohibitedPolicy, rereads < Self.policyRereadLimit {
+            usleep(Self.policyRereadMicroseconds)
+            rereads += 1
+            policy = NSRunningApplication(processIdentifier: ProcessInfo.processInfo.processIdentifier)?.activationPolicy.rawValue ?? policy
+        }
+        activationPolicy = policy
+        policyRereads = rereads
+        isActive = NSApp.isActive
+        windows = NSApp.windows.map(StateRenderWindowSafety.init)
+    }
+
+    var failures: [String] {
+        var failures: [String] = []
+        if activationPolicy != Self.prohibitedPolicy {
+            failures.append("activation policy is \(activationPolicy) after \(policyRereads) rereads and was \(cachedActivationPolicy) in NSApp, not prohibited \(Self.prohibitedPolicy)")
+        }
+        if isActive { failures.append("the app is active") }
+        return failures + windows.flatMap(\.failures)
+    }
+
+    var description: String {
+        "policy=\(activationPolicy) cachedPolicy=\(cachedActivationPolicy) policyRereads=\(policyRereads) active=\(isActive) windows=\(windows.map(\.description).joined(separator: "; "))"
+    }
+}
+
 struct StateRenderEntry: Codable {
     let name: String
     let state: String
@@ -311,14 +392,14 @@ enum StateRenderer {
         return entries
     }
 
-    static func verifyWindows() throws {
-        guard NSApp.activationPolicy() == .prohibited, !NSApp.isActive,
-              NSApp.windows.allSatisfy({ $0.level.rawValue < desktopLevel || !$0.isVisible }) else {
-            let windows = NSApp.windows.filter(\.isVisible).map {
-                "\(type(of: $0)) number=\($0.windowNumber) level=\($0.level.rawValue) title=\($0.title)"
-            }.joined(separator: "; ")
-            throw StateRenderFailure(message: "State renderer display safety invariant failed state=\(scenario) policy=\(NSApp.activationPolicy().rawValue) active=\(NSApp.isActive) windows=\(windows)")
+    @discardableResult
+    static func verifyWindows() throws -> StateRenderDisplaySafety {
+        let safety = StateRenderDisplaySafety()
+        let failures = safety.failures
+        guard failures.isEmpty else {
+            throw StateRenderFailure(message: "State renderer display safety invariant failed state=\(scenario) failed=\(failures.joined(separator: "; ")) \(safety.description)")
         }
+        return safety
     }
 
     private static func contactSheet(entries: [StateRenderEntry], output: URL) throws {
