@@ -602,7 +602,7 @@ enum StateRenderLivePresentation {
         }
         source.type = .scrollWheel
         source.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-        for (axis, delta) in [(1, -deltaY), (2, -deltaX)] {
+        for (axis, delta) in [(1, deltaY), (2, deltaX)] {
             let whole = Int64(delta.rounded())
             source.setIntegerValueField(axis == 1 ? .scrollWheelEventDeltaAxis1 : .scrollWheelEventDeltaAxis2, value: whole)
             source.setIntegerValueField(axis == 1 ? .scrollWheelEventPointDeltaAxis1 : .scrollWheelEventPointDeltaAxis2, value: whole)
