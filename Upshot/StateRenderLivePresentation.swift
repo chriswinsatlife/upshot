@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 import SwiftUI
 
 enum StateRenderLivePresentation {
@@ -75,6 +76,7 @@ enum StateRenderLivePresentation {
     private static var eventNumber = 0
     private static var displaySafety: StateRenderDisplaySafety?
     private static var displaySafetyChecks = 0
+    static let regionMargin: CGFloat = 40
     static let orderInWaitMilliseconds = 10_000
     private static let orderInPollMilliseconds = 50
 
@@ -171,7 +173,7 @@ enum StateRenderLivePresentation {
             try await StateRenderer.build(definition, on: stage)
             try StateRenderer.verifyWindows()
             try await StateRenderer.settle(stage, milliseconds: definition.name.hasPrefix("quick-look-") ? 1800 : 450)
-            let region = isRegion(definition) ? try StateRenderDisplay.frame : nil
+            let region = isRegion(definition) ? try await regionFrame(of: stage) : nil
             let window: NSWindow
             if region == nil {
                 let titled = stage.windows.filter { $0 is StateRenderTitledWindow }
@@ -214,6 +216,64 @@ enum StateRenderLivePresentation {
             stage.tearDown()
             throw error
         }
+    }
+
+    private static func regionFrame(of stage: StateRenderStage) async throws -> CGRect {
+        let display = try StateRenderDisplay.frame
+        var content = CGRect.null
+        for window in stage.windows.dropFirst() {
+            content = content.union(await drawnFrame(of: window, display: display))
+        }
+        guard !content.isNull else { return display }
+        return content.insetBy(dx: -regionMargin, dy: -regionMargin).integral.intersection(display)
+    }
+
+    private static func drawnFrame(of window: NSWindow, display: CGRect) async -> CGRect {
+        let frame = window.frame
+        guard window is StateRenderWindow, !window.isOpaque, frame.size != display.size, CGPreflightScreenCaptureAccess() else { return frame }
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let shareable = content.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else { return frame }
+            let configuration = SCStreamConfiguration()
+            configuration.width = Int(frame.width * StateRenderDisplay.scale)
+            configuration.height = Int(frame.height * StateRenderDisplay.scale)
+            configuration.showsCursor = false
+            configuration.ignoreShadowsSingleWindow = true
+            let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: shareable), configuration: configuration)
+            guard let drawn = drawnPixelBounds(of: image) else { return frame }
+            let scale = CGFloat(image.width) / frame.width
+            let measured = CGRect(x: frame.minX + drawn.minX / scale, y: frame.maxY - drawn.maxY / scale,
+                                  width: drawn.width / scale, height: drawn.height / scale).integral.intersection(frame)
+            if measured != frame {
+                diagnose(["event": "region_window_drawn_frame", "windowNumber": window.windowNumber,
+                          "frame": [frame.minX, frame.minY, frame.width, frame.height],
+                          "drawn": [measured.minX, measured.minY, measured.width, measured.height]])
+            }
+            return measured
+        } catch {
+            diagnose(["event": "region_window_drawn_frame_unmeasured", "windowNumber": window.windowNumber, "error": error.localizedDescription])
+            return frame
+        }
+    }
+
+    private static func drawnPixelBounds(of image: CGImage) -> CGRect? {
+        let width = image.width
+        let height = image.height
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue),
+              let alpha = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for row in 0..<height {
+            for column in 0..<width where alpha[row * width + column] > 8 {
+                minX = min(minX, column)
+                maxX = max(maxX, column)
+                minY = min(minY, row)
+                maxY = max(maxY, row)
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
     private static func announce(_ state: Presented) {
