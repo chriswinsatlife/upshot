@@ -148,7 +148,7 @@ final class RecordingBarPresenter {
         let size = CGSize(width: BarMetrics.panelWidth, height: BarMetrics.panelHeight)
         let origin = CGPoint(
             x: visibleFrame.midX - size.width / 2,
-            y: visibleFrame.minY + 48 - BarMetrics.bottomSlack
+            y: visibleFrame.minY + Space.xl + BarMetrics.visibilityToastReserve - BarMetrics.bottomSlack
         )
         return CGRect(origin: origin, size: size)
     }

@@ -43,7 +43,7 @@ struct StudioTimelineDock: View {
                 lanes
             }
         }
-        .background(Palette.panel)
+        .padding(.bottom, Space.m).background(Palette.panel)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color(nsColor: .separatorColor).opacity(0.45))
