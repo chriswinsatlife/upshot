@@ -657,11 +657,25 @@ enum StateRenderLivePresentation {
             return false
         }
         acknowledgePendingMouseDown()
-        if stroke.modifiers.isDisjoint(with: [.command, .control]) || !window.performKeyEquivalent(with: down) {
-            window.sendEvent(down)
+        if !window.performKeyEquivalent(with: down) {
+            if let action = standardEditAction(stroke), let responder = window.firstResponder, responder.tryToPerform(action, with: nil) {
+                diagnose(["event": "edit_command_performed", "action": NSStringFromSelector(action), "windowNumber": window.windowNumber])
+            } else {
+                window.sendEvent(down)
+            }
         }
         window.sendEvent(up)
         return true
+    }
+
+    private static let standardEditActions: [String: Selector] = [
+        "a": #selector(NSText.selectAll(_:)), "c": #selector(NSText.copy(_:)),
+        "v": #selector(NSText.paste(_:)), "x": #selector(NSText.cut(_:))
+    ]
+
+    private static func standardEditAction(_ stroke: KeyStroke) -> Selector? {
+        guard stroke.modifiers.intersection([.command, .shift, .option, .control]) == .command else { return nil }
+        return standardEditActions[stroke.charactersIgnoringModifiers.lowercased()]
     }
 
     private static func checkSafety() {
