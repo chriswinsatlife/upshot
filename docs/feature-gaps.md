@@ -10,6 +10,8 @@ sources:
 
 Each item is a feature that Upshot lacks, or implements only in part, and that at least one of CleanShot X, Snapzy, or Better Shot has. The apps that have the feature follow the colon. Listing a gap does not mean the feature is wanted.
 
+As of 2026-11-14, every gap below is deferred. None is scheduled, and none will be built until it is requested.
+
 ## Screenshot Capture
 
 - Color picker: Snapzy and Better Shot. Upshot has no command that reads a pixel color from the screen. The annotation editor's custom color tile opens the system color panel through `AnnotationColorPanelBridge` in `Upshot/AnnotationInspectorStyleMenus.swift`.
