@@ -107,7 +107,7 @@ struct StateRenderDisplaySafety: Equatable {
         activationPolicy = policy
         policyRereads = rereads
         isActive = NSApp.isActive
-        windows = NSApp.windows.map(StateRenderWindowSafety.init)
+        windows = NSApp.windows.map { StateRenderWindowSafety($0) }
     }
 
     var failures: [String] {
@@ -154,8 +154,8 @@ enum StateRenderer {
     static var isRequested: Bool { UpshotStorage.isRenderingStates }
     static var scenario = ""
     static var fixtureVideoURL: URL?
-    static let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow))
-    static var renderLevel: NSWindow.Level { NSWindow.Level(rawValue: desktopLevel - 1) }
+    nonisolated static let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow))
+    nonisolated static var renderLevel: NSWindow.Level { NSWindow.Level(rawValue: desktopLevel - 1) }
     static let captureMethod = "screenCaptureKitDisplayFrame"
     static let frameworkDefaults: [String: Any] = ["AVDesktopPlaybackControlsControllerShowsDurationInsteadOfTimeRemainingDefaultsKey": true]
     private static var definitionsByName: [String: StateRenderDefinition] = [:]
