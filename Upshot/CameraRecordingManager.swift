@@ -65,13 +65,13 @@ final class CameraRecordingManager {
             }
             await stopPreview()
         }
-        guard let device = RecordingDeviceCatalog.camera(withID: deviceID) else { return false }
+        guard RecordingDeviceCatalog.camera(withID: deviceID) != nil else { return false }
 
         let authorized = await AVCaptureDevice.requestAccess(for: .video)
         guard authorized else { return false }
 
         do {
-            try await engine.startSession(device: device)
+            try await engine.startSession(deviceID: deviceID)
         } catch {
             AppLog.event("recording", "camera_preview_start_failed", fields: ["error": AppLog.error(error)])
             return false
@@ -222,10 +222,13 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
     private var output: AVCaptureVideoDataOutput?
     private var activeDevice: AVCaptureDevice?
 
-    func startSession(device: AVCaptureDevice) async throws {
+    func startSession(deviceID: String) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async { [self] in
                 do {
+                    guard let device = RecordingDeviceCatalog.camera(withID: deviceID) else {
+                        throw CocoaError(.fileNoSuchFile)
+                    }
                     try configureSession(device: device)
                     activeDevice = device
                     session.startRunning()
