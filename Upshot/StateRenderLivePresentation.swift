@@ -75,6 +75,8 @@ enum StateRenderLivePresentation {
     private static var eventNumber = 0
     private static var displaySafety: StateRenderDisplaySafety?
     private static var displaySafetyChecks = 0
+    static let orderInWaitMilliseconds = 10_000
+    private static let orderInPollMilliseconds = 50
 
     static func run() -> Never {
         let arguments = Array(CommandLine.arguments.dropFirst())
@@ -260,18 +262,24 @@ enum StateRenderLivePresentation {
     }
 
     private static func requireOrderedInBelowDesktop(_ window: NSWindow) async throws {
-        for _ in 0..<20 {
+        let started = Date()
+        let attempts = orderInWaitMilliseconds / orderInPollMilliseconds
+        for attempt in 0..<attempts {
             if let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]])?.first,
                info[kCGWindowIsOnscreen as String] as? Bool == true,
                let layer = info[kCGWindowLayer as String] as? Int {
                 guard layer < StateRenderer.desktopLevel else {
                     throw StateRenderFailure(message: "Window \(window.windowNumber) is at window-server layer \(layer), not below the desktop layer \(StateRenderer.desktopLevel).")
                 }
+                if attempt > 0 {
+                    diagnose(["event": "window_ordered_in_after_wait", "windowNumber": window.windowNumber,
+                              "milliseconds": Int(Date().timeIntervalSince(started) * 1000)])
+                }
                 return
             }
-            try await Task.sleep(for: .milliseconds(50))
+            try await Task.sleep(for: .milliseconds(orderInPollMilliseconds))
         }
-        throw StateRenderFailure(message: "Window \(window.windowNumber) was not ordered in at the window server.")
+        throw StateRenderFailure(message: "Window \(window.windowNumber) was not on screen at the window server within \(orderInWaitMilliseconds) milliseconds.")
     }
 
     nonisolated private static func readCommands() {

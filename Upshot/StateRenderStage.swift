@@ -152,6 +152,7 @@ final class StateRenderStage {
         window.animationBehavior = .none
         window.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
         window.sharingType = .readOnly
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         (window as? NSPanel)?.hidesOnDeactivate = false
     }
 
