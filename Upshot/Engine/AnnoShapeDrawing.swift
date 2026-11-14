@@ -4,7 +4,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
 
-enum AnnoShapeDrawing {
+nonisolated enum AnnoShapeDrawing {
     struct Target {
         var transform: CGAffineTransform
         var pageSize: CGSize
@@ -16,7 +16,7 @@ enum AnnoShapeDrawing {
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
 
-    nonisolated(unsafe) private static let ciContext = CIContext(options: [.cacheIntermediates: false])
+    nonisolated private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
     nonisolated static func clearCaches() { ciContext.clearCaches() }
 

@@ -6,7 +6,7 @@ import Foundation
 /// Subclasses supply `computeVertices()`; everything else (nearest point, hit testing,
 /// intersections, bounds, length, area) falls out of the vertex polyline. Subclasses override
 /// the pieces they can do analytically.
-class Geometry2d {
+nonisolated class Geometry2d {
     var isFilled: Bool
     var isClosed: Bool
 
@@ -130,7 +130,7 @@ class Geometry2d {
 
 /// Wraps a geometry in a transform, mapping points in and out of its local space. Only used
 /// for uniform scales (shape page transforms).
-final class TransformedGeometry2d: Geometry2d {
+nonisolated final class TransformedGeometry2d: Geometry2d {
     private let geometry: Geometry2d
     private let matrix: Mat
     private let inverseMatrix: Mat

@@ -3,7 +3,7 @@ import Foundation
 /// Resolves a bent arrow. The user's three handles (start, middle, end) define a circle; the drawn
 /// body is the piece of that circle left after clipping to the bound shapes and offsetting for
 /// arrowheads.
-enum CurvedArrow {
+nonisolated enum CurvedArrow {
     static func info(_ document: AnnoDocument, _ shape: AnnoShape, _ bindings: ArrowBindings) -> ArrowInfo {
         guard let props = shape.arrowProps else {
             return StraightArrow.degenerate(bindings, Vec(0, 0), .none, .none)
@@ -317,7 +317,7 @@ enum CurvedArrow {
 }
 
 /// The entry point that picks a solver, mirroring `getArrowInfo`.
-enum ArrowEngine {
+nonisolated enum ArrowEngine {
     static func getArrowInfo(_ document: AnnoDocument, _ shape: AnnoShape) -> ArrowInfo? {
         guard let props = shape.arrowProps else { return nil }
         let bindings = document.arrowBindings(shape.id)

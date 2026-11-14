@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// A 2d affine transform, `[a c e; b d f]`.
-struct Mat: Equatable {
+nonisolated struct Mat: Equatable {
     var a: Double, b: Double, c: Double, d: Double, e: Double, f: Double
 
     init(_ a: Double = 1, _ b: Double = 0, _ c: Double = 0, _ d: Double = 1, _ e: Double = 0, _ f: Double = 0) {

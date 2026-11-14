@@ -3,7 +3,7 @@ import Foundation
 /// The concrete geometries shapes are built from.
 
 /// A single line segment.
-final class Edge2d: Geometry2d {
+nonisolated final class Edge2d: Geometry2d {
     let start: Vec
     let end: Vec
     private let dx: Double
@@ -36,7 +36,7 @@ final class Edge2d: Geometry2d {
 }
 
 /// An open run of line segments.
-class Polyline2d: Geometry2d {
+nonisolated class Polyline2d: Geometry2d {
     let points: [Vec]
 
     init(points: [Vec], isClosed: Bool = false, isFilled: Bool = false) {
@@ -82,14 +82,14 @@ class Polyline2d: Geometry2d {
 }
 
 /// A closed run of line segments.
-class Polygon2d: Polyline2d {
+nonisolated class Polygon2d: Polyline2d {
     init(points: [Vec], isFilled: Bool) {
         super.init(points: points, isClosed: true, isFilled: isFilled)
     }
 }
 
 /// An axis-aligned rectangle in the shape's own space.
-final class Rectangle2d: Polygon2d {
+nonisolated final class Rectangle2d: Polygon2d {
     let x: Double, y: Double, w: Double, h: Double
 
     init(x: Double = 0, y: Double = 0, width: Double, height: Double, isFilled: Bool) {
@@ -110,7 +110,7 @@ final class Rectangle2d: Polygon2d {
 
 /// An ellipse, approximated by a polygon whose resolution follows its perimeter, so hit tests
 /// and arrow intersections agree with what's drawn.
-final class Ellipse2d: Geometry2d {
+nonisolated final class Ellipse2d: Geometry2d {
     let w: Double
     let h: Double
 
@@ -188,7 +188,7 @@ final class Ellipse2d: Geometry2d {
 }
 
 /// A circle, used for the dot case of the draw shape.
-final class Circle2d: Geometry2d {
+nonisolated final class Circle2d: Geometry2d {
     let circleCenter: Vec
     let radius: Double
     private let x: Double
@@ -238,7 +238,7 @@ final class Circle2d: Geometry2d {
 }
 
 /// A circular arc, used as the body geometry of a bent arrow.
-final class Arc2d: Geometry2d {
+nonisolated final class Arc2d: Geometry2d {
     let arcCenter: Vec
     let radius: Double
     let start: Vec
@@ -283,7 +283,7 @@ final class Arc2d: Geometry2d {
 
 /// Several geometries treated as one, for shapes made of multiple parts (an arrow's body plus
 /// its arrowheads).
-final class Group2d: Geometry2d {
+nonisolated final class Group2d: Geometry2d {
     let children: [Geometry2d]
 
     init(children: [Geometry2d]) {

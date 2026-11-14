@@ -2,21 +2,21 @@ import Foundation
 
 /// The resolved description of an arrow.
 
-struct ArrowBindings {
+nonisolated struct ArrowBindings {
     var start: ArrowBinding?
     var end: ArrowBinding?
 }
 
 /// One end of an arrow: where its handle sits (the terminal the user drags) and where the drawn
 /// body actually starts (pushed off the bound shape's edge).
-struct ArrowPoint {
+nonisolated struct ArrowPoint {
     var handle: Vec
     var point: Vec
     var arrowhead: Arrowhead
 }
 
 /// A circular arc described the way SVG's arc command wants it.
-struct ArcInfo {
+nonisolated struct ArcInfo {
     var center: Vec
     var radius: Double
     /// The signed size of the arc in radians.
@@ -27,12 +27,12 @@ struct ArcInfo {
     var sweepFlag: Int
 }
 
-enum ArrowBody {
+nonisolated enum ArrowBody {
     case straight(start: Vec, end: Vec)
     case arc(ArcInfo)
 }
 
-struct ArrowInfo {
+nonisolated struct ArrowInfo {
     var bindings: ArrowBindings
     var start: ArrowPoint
     var end: ArrowPoint
@@ -49,7 +49,7 @@ struct ArrowInfo {
     }
 }
 
-enum ArrowConstants {
+nonisolated enum ArrowConstants {
     static let minArrowLength: Double = 10
     static let boundArrowOffset: Double = 10
     static let wayTooBigArrowBendFactor: Double = 10

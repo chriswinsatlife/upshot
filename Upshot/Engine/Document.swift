@@ -1,6 +1,6 @@
 import Foundation
 
-final class AnnoDocument {
+nonisolated final class AnnoDocument {
     private(set) var shapes: [AnnoShape] = []
     private(set) var bindings: [ArrowBinding] = []
 
@@ -172,7 +172,7 @@ final class AnnoDocument {
     }
 }
 
-enum AnnoShapeGeometry {
+nonisolated enum AnnoShapeGeometry {
     static func build(_ shape: AnnoShape, in document: AnnoDocument) -> Geometry2d {
         switch shape.kind {
         case let .draw(props):

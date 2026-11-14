@@ -1,7 +1,7 @@
 import Foundation
 
 /// One point of a freehand stroke after streamlining.
-struct StrokePoint {
+nonisolated struct StrokePoint {
     var point: Vec
     var input: Vec
     var pressure: Double
@@ -15,7 +15,7 @@ struct StrokePoint {
 ///
 /// Storage lives as instance state on a class that callers own, giving a "fill once, consume
 /// once" shape without any global/module-level state.
-final class StrokePipeline {
+nonisolated final class StrokePipeline {
     private static let minPressure = 0.025
     /// The rate of change for simulated pressure.
     private static let rateOfPressureChange = 0.275
@@ -324,7 +324,7 @@ final class StrokePipeline {
 ///
 /// `isCap` marks points to treat as the first/last point when placing the outline, decided by
 /// an identity check against the first and last point objects.
-struct TrackSource {
+nonisolated struct TrackSource {
     var x: [Double] = []
     var y: [Double] = []
     var z: [Double] = []

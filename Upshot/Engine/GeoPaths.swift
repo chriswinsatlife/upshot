@@ -5,7 +5,7 @@ import Foundation
 /// Upshot only draws rectangles and ellipses, so the polygon/star/cloud family is left behind;
 /// what matters is that the path is built once here and used for stroking, filling and flattening
 /// to hit-test vertices, so those three can never disagree about where an edge is.
-enum GeoPaths {
+nonisolated enum GeoPaths {
     static func path(for props: GeoProps) -> PathBuilder {
         let w = Swift.max(1, props.w)
         let h = Swift.max(1, props.h)

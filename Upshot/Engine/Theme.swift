@@ -53,6 +53,6 @@ extension NSColor {
 
 /// How much the spotlight tool dims everything outside its holes. Lived in the old highlight
 /// overlay view, which the engine's spotlight pass replaced.
-enum AnnotationHighlightMetrics {
+nonisolated enum AnnotationHighlightMetrics {
     static let overlayOpacity: CGFloat = 0.55
 }

@@ -10,7 +10,7 @@ nonisolated enum AnnotationTextStyle: String, CaseIterable, Codable, Identifiabl
     var title: String { rawValue.capitalized }
 }
 
-enum AnnotationTextDecoration {
+nonisolated enum AnnotationTextDecoration {
     static func padding(_ props: TextProps) -> Double {
         props.style == nil || props.style == .plain ? 0 : props.fontSize * 0.3
     }

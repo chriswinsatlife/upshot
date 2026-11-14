@@ -6,7 +6,7 @@ import Foundation
 /// The outline is conceptually written with SVG's `t` smooth-quadratic shorthand; this sink
 /// reproduces that shorthand's reflected control points so the curve is identical. Export
 /// converts the finished path to SVG, rather than this building a string on every frame.
-final class InkPathSink {
+nonisolated final class InkPathSink {
     let path = CGMutablePath()
 
     private var current = Vec()
@@ -137,7 +137,7 @@ final class InkPathSink {
 
 /// Render a freehand stroke as a filled outline with round caps, in a single pass from raw input
 /// points. This is the path used when drawing with ink.
-enum SvgInk {
+nonisolated enum SvgInk {
     static func render(_ rawInputPoints: [Vec], _ options: StrokeOptions) -> InkPathSink {
         let sink = InkPathSink()
         let pipeline = StrokePipeline()

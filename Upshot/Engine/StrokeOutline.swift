@@ -2,7 +2,7 @@ import Foundation
 
 /// Phase 3 of the freehand pipeline: turn stroke points into the left and right outline tracks,
 /// then close them off with caps.
-enum StrokeOutline {
+nonisolated enum StrokeOutline {
     /// Browser strokes seem to be off if PI is regular; a tiny offset fixes it.
     static let fixedPI = PI + 0.0001
 

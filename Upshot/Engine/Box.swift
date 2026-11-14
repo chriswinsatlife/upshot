@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// An axis-aligned bounding box.
-struct Box: Equatable {
+nonisolated struct Box: Equatable {
     var x: Double
     var y: Double
     var w: Double

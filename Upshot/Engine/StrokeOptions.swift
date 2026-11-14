@@ -1,6 +1,6 @@
 import Foundation
 
-struct StrokeOptions {
+nonisolated struct StrokeOptions {
     struct End {
         var cap: Bool = true
         var taper: Double? = nil
@@ -18,12 +18,12 @@ struct StrokeOptions {
     var last: Bool = false
 }
 
-func resolveTaper(_ taper: Double?, _ size: Double, _ totalLength: Double) -> Double {
+nonisolated func resolveTaper(_ taper: Double?, _ size: Double, _ totalLength: Double) -> Double {
     guard let taper, taper != 0 else { return 0 }
     return taper.isInfinite ? Swift.max(size, totalLength) : taper
 }
 
-enum FreehandSettings {
+nonisolated enum FreehandSettings {
     static let penEasing: (Double) -> Double = { t in t * 0.65 + sin((t * PI) / 2) * 0.35 }
 
     static func simulatePressure(_ strokeWidth: Double) -> StrokeOptions {

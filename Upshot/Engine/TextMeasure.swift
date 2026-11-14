@@ -3,7 +3,7 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
+nonisolated enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
     case pro
     case compact
     case rounded
@@ -19,7 +19,7 @@ enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum TextMeasure {
+nonisolated enum TextMeasure {
     private static let lock = NSLock()
     private static let fontLock = NSLock()
     private static var fonts: [FontKey: NSFont] = [:]

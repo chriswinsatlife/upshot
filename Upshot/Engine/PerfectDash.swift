@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Ported from `getPerfectDashProps` in
 /// `packages/editor/src/lib/editor/shapes/shared/getPerfectDashProps.ts`.
-func perfectDashProps(
+nonisolated func perfectDashProps(
     totalLength: Double,
     strokeWidth: Double,
     style: DashStyle,
@@ -83,7 +83,7 @@ func perfectDashProps(
 }
 
 /// How a dashed run treats its ends.
-enum DashTerminal {
+nonisolated enum DashTerminal {
     /// Extend by half a dash, so the run starts and ends mid-dash.
     case outset
     /// Pull in by a dash.

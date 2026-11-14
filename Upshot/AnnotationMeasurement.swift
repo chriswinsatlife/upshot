@@ -2,7 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-enum AnnotationMeasurement {
+nonisolated enum AnnotationMeasurement {
     static func distance(_ properties: ArrowProps) -> Double {
         Vec.dist(properties.start, properties.end)
     }

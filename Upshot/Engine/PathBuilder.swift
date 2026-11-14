@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Ported from `packages/old-apps/src/lib/shapes/shared/PathBuilder.tsx`, keeping the parts that
 /// matter for geo shapes and arrows (move / line / cubic / arc, solid and draw rendering).
-final class PathBuilder {
+nonisolated final class PathBuilder {
     struct CommandOpts {
         /// How far from the original point a draw-style pass may wander.
         var offset: Double?

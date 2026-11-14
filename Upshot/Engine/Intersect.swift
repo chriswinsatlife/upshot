@@ -1,6 +1,6 @@
 import Foundation
 
-func intersectLineSegmentLineSegment(_ a1: Vec, _ a2: Vec, _ b1: Vec, _ b2: Vec, precision: Double = 1e-10) -> Vec? {
+nonisolated func intersectLineSegmentLineSegment(_ a1: Vec, _ a2: Vec, _ b1: Vec, _ b2: Vec, precision: Double = 1e-10) -> Vec? {
     let abx = a1.x - b1.x
     let aby = a1.y - b1.y
     let bvx = b2.x - b1.x
@@ -22,7 +22,7 @@ func intersectLineSegmentLineSegment(_ a1: Vec, _ a2: Vec, _ b1: Vec, _ b2: Vec,
     return nil
 }
 
-func intersectLineSegmentCircle(_ a1: Vec, _ a2: Vec, _ c: Vec, _ r: Double) -> [Vec]? {
+nonisolated func intersectLineSegmentCircle(_ a1: Vec, _ a2: Vec, _ c: Vec, _ r: Double) -> [Vec]? {
     let dx = a2.x - a1.x
     let dy = a2.y - a1.y
     let ocx = a1.x - c.x
@@ -47,7 +47,7 @@ func intersectLineSegmentCircle(_ a1: Vec, _ a2: Vec, _ c: Vec, _ r: Double) -> 
     return result.isEmpty ? nil : result
 }
 
-func intersectLineSegmentPolyline(_ a1: Vec, _ a2: Vec, _ points: [Vec]) -> [Vec]? {
+nonisolated func intersectLineSegmentPolyline(_ a1: Vec, _ a2: Vec, _ points: [Vec]) -> [Vec]? {
     guard points.count > 1 else { return nil }
     var result: [Vec] = []
     for i in 0..<(points.count - 1) {
@@ -58,7 +58,7 @@ func intersectLineSegmentPolyline(_ a1: Vec, _ a2: Vec, _ points: [Vec]) -> [Vec
     return result.isEmpty ? nil : result
 }
 
-func intersectLineSegmentPolygon(_ a1: Vec, _ a2: Vec, _ points: [Vec]) -> [Vec]? {
+nonisolated func intersectLineSegmentPolygon(_ a1: Vec, _ a2: Vec, _ points: [Vec]) -> [Vec]? {
     guard !points.isEmpty else { return nil }
     var result: [Vec] = []
     for i in 0..<points.count {
@@ -69,7 +69,7 @@ func intersectLineSegmentPolygon(_ a1: Vec, _ a2: Vec, _ points: [Vec]) -> [Vec]
     return result.isEmpty ? nil : result
 }
 
-func intersectCircleCircle(_ c1: Vec, _ r1: Double, _ c2: Vec, _ r2: Double) -> [Vec] {
+nonisolated func intersectCircleCircle(_ c1: Vec, _ r1: Double, _ c2: Vec, _ r2: Double) -> [Vec] {
     var dx = c2.x - c1.x
     var dy = c2.y - c1.y
     let d = (dx * dx + dy * dy).squareRoot()
@@ -83,7 +83,7 @@ func intersectCircleCircle(_ c1: Vec, _ r1: Double, _ c2: Vec, _ r2: Double) -> 
     ]
 }
 
-func intersectCirclePolygon(_ c: Vec, _ r: Double, _ points: [Vec]) -> [Vec]? {
+nonisolated func intersectCirclePolygon(_ c: Vec, _ r: Double, _ points: [Vec]) -> [Vec]? {
     guard !points.isEmpty else { return nil }
     var result: [Vec] = []
     for i in 0..<points.count {
@@ -94,7 +94,7 @@ func intersectCirclePolygon(_ c: Vec, _ r: Double, _ points: [Vec]) -> [Vec]? {
     return result.isEmpty ? nil : result
 }
 
-func intersectCirclePolyline(_ c: Vec, _ r: Double, _ points: [Vec]) -> [Vec]? {
+nonisolated func intersectCirclePolyline(_ c: Vec, _ r: Double, _ points: [Vec]) -> [Vec]? {
     guard points.count > 1 else { return nil }
     var result: [Vec] = []
     for i in 1..<points.count {
@@ -105,15 +105,15 @@ func intersectCirclePolyline(_ c: Vec, _ r: Double, _ points: [Vec]) -> [Vec]? {
     return result.isEmpty ? nil : result
 }
 
-private func ccw(_ a: Vec, _ b: Vec, _ c: Vec) -> Bool {
+nonisolated private func ccw(_ a: Vec, _ b: Vec, _ c: Vec) -> Bool {
     (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x)
 }
 
-func linesIntersect(_ a: Vec, _ b: Vec, _ c: Vec, _ d: Vec) -> Bool {
+nonisolated func linesIntersect(_ a: Vec, _ b: Vec, _ c: Vec, _ d: Vec) -> Bool {
     ccw(a, c, d) != ccw(b, c, d) && ccw(a, b, c) != ccw(a, b, d)
 }
 
-func polygonsIntersect(_ a: [Vec], _ b: [Vec]) -> Bool {
+nonisolated func polygonsIntersect(_ a: [Vec], _ b: [Vec]) -> Bool {
     guard !a.isEmpty, !b.isEmpty else { return false }
     for i in 0..<a.count {
         let a0 = a[i], a1 = a[(i + 1) % a.count]
@@ -124,7 +124,7 @@ func polygonsIntersect(_ a: [Vec], _ b: [Vec]) -> Bool {
     return false
 }
 
-func polygonIntersectsPolyline(_ polygon: [Vec], _ polyline: [Vec]) -> Bool {
+nonisolated func polygonIntersectsPolyline(_ polygon: [Vec], _ polyline: [Vec]) -> Bool {
     guard !polygon.isEmpty, polyline.count > 1 else { return false }
     for i in 0..<polygon.count {
         let a = polygon[i], b = polygon[(i + 1) % polygon.count]

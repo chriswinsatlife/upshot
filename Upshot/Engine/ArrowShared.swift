@@ -1,7 +1,7 @@
 import Foundation
 
 /// Bound-shape lookup and terminal resolution, shared by the straight and curved arrow solvers.
-enum ArrowShared {
+nonisolated enum ArrowShared {
     /// What a terminal is bound to, and everything the solvers need to intersect against it.
     final class BoundShapeInfo {
         let shape: AnnoShape

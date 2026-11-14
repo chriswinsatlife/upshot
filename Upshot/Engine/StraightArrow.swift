@@ -2,7 +2,7 @@ import Foundation
 
 /// Resolves a straight arrow: where its body starts and ends once it has been clipped to any bound
 /// shapes and pushed off them to make room for arrowheads.
-enum StraightArrow {
+nonisolated enum StraightArrow {
     static func info(_ document: AnnoDocument, _ shape: AnnoShape, _ bindings: ArrowBindings) -> ArrowInfo {
         guard let props = shape.arrowProps else {
             return degenerate(bindings, Vec(0, 0), .none, .none)

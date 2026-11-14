@@ -2,7 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-struct RenderElement {
+nonisolated struct RenderElement {
     enum Content {
         case path(CGPath)
         case redaction(RedactionProps)
@@ -37,7 +37,7 @@ struct RenderElement {
     }
 }
 
-enum AnnoShapeRenderer {
+nonisolated enum AnnoShapeRenderer {
     static func elements(for shape: AnnoShape, in document: AnnoDocument) -> [RenderElement] {
         switch shape.kind {
         case let .geo(props):

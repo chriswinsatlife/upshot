@@ -1,18 +1,18 @@
 import Foundation
 
-let PI = Double.pi
-let HALF_PI = Double.pi / 2
-let PI2 = Double.pi * 2
+nonisolated let PI = Double.pi
+nonisolated let HALF_PI = Double.pi / 2
+nonisolated let PI2 = Double.pi * 2
 
-func clamp(_ n: Double, _ min: Double, _ max: Double) -> Double {
+nonisolated func clamp(_ n: Double, _ min: Double, _ max: Double) -> Double {
     Swift.max(min, Swift.min(n, max))
 }
 
-func clamp(_ n: Double, _ min: Double) -> Double {
+nonisolated func clamp(_ n: Double, _ min: Double) -> Double {
     Swift.max(min, n)
 }
 
-func modulate(_ value: Double, _ rangeA: (Double, Double), _ rangeB: (Double, Double), _ shouldClamp: Bool = false) -> Double {
+nonisolated func modulate(_ value: Double, _ rangeA: (Double, Double), _ rangeB: (Double, Double), _ shouldClamp: Bool = false) -> Double {
     let (fromLow, fromHigh) = rangeA
     let (v0, v1) = rangeB
     let result = v0 + ((value - fromLow) / (fromHigh - fromLow)) * (v1 - v0)
@@ -20,43 +20,43 @@ func modulate(_ value: Double, _ rangeA: (Double, Double), _ rangeB: (Double, Do
     return v0 < v1 ? Swift.max(Swift.min(result, v1), v0) : Swift.max(Swift.min(result, v0), v1)
 }
 
-func approximately(_ a: Double, _ b: Double, _ precision: Double = 0.000001) -> Bool {
+nonisolated func approximately(_ a: Double, _ b: Double, _ precision: Double = 0.000001) -> Bool {
     abs(a - b) <= precision
 }
 
-func isSafeFloat(_ n: Double) -> Bool {
+nonisolated func isSafeFloat(_ n: Double) -> Bool {
     n.isFinite && abs(n) < 9007199254740991
 }
 
-func perimeterOfEllipse(_ rx: Double, _ ry: Double) -> Double {
+nonisolated func perimeterOfEllipse(_ rx: Double, _ ry: Double) -> Double {
     let h = pow(rx - ry, 2) / pow(rx + ry, 2)
     return PI * (rx + ry) * (1 + (3 * h) / (10 + (4 - 3 * h).squareRoot()))
 }
 
 /// A number between 0 and 2π.
-func canonicalizeRotation(_ a: Double) -> Double {
+nonisolated func canonicalizeRotation(_ a: Double) -> Double {
     var a = a.truncatingRemainder(dividingBy: PI2)
     if a < 0 { a += PI2 } else if a == 0 { a = 0 }
     return a
 }
 
-func clockwiseAngleDist(_ a0: Double, _ a1: Double) -> Double {
+nonisolated func clockwiseAngleDist(_ a0: Double, _ a1: Double) -> Double {
     let a0 = canonicalizeRotation(a0)
     var a1 = canonicalizeRotation(a1)
     if a0 > a1 { a1 += PI2 }
     return a1 - a0
 }
 
-func counterClockwiseAngleDist(_ a0: Double, _ a1: Double) -> Double {
+nonisolated func counterClockwiseAngleDist(_ a0: Double, _ a1: Double) -> Double {
     PI2 - clockwiseAngleDist(a0, a1)
 }
 
-func shortAngleDist(_ a0: Double, _ a1: Double) -> Double {
+nonisolated func shortAngleDist(_ a0: Double, _ a1: Double) -> Double {
     let da = (a1 - a0).truncatingRemainder(dividingBy: PI2)
     return (2 * da).truncatingRemainder(dividingBy: PI2) - da
 }
 
-func snapAngle(_ r: Double, _ segments: Int) -> Double {
+nonisolated func snapAngle(_ r: Double, _ segments: Int) -> Double {
     let seg = PI2 / Double(segments)
     var ang = (floor((canonicalizeRotation(r) + seg / 2) / seg) * seg).truncatingRemainder(dividingBy: PI2)
     if ang < PI { ang += PI2 }
@@ -64,12 +64,12 @@ func snapAngle(_ r: Double, _ segments: Int) -> Double {
     return ang
 }
 
-func getPointOnCircle(_ center: Vec, _ r: Double, _ a: Double) -> Vec {
+nonisolated func getPointOnCircle(_ center: Vec, _ r: Double, _ a: Double) -> Vec {
     Vec.add(center, Vec.fromAngle(a, r))
 }
 
 /// Winding-number point-in-polygon test.
-func pointInPolygon(_ point: Vec, _ points: [Vec]) -> Bool {
+nonisolated func pointInPolygon(_ point: Vec, _ points: [Vec]) -> Bool {
     var windingNumber = 0
     let n = points.count
     guard n > 0 else { return false }
@@ -88,7 +88,7 @@ func pointInPolygon(_ point: Vec, _ points: [Vec]) -> Bool {
 }
 
 /// The center of the circle passing through three points, or nil if they're collinear.
-func centerOfCircleFromThreePoints(_ a: Vec, _ b: Vec, _ c: Vec) -> Vec? {
+nonisolated func centerOfCircleFromThreePoints(_ a: Vec, _ b: Vec, _ c: Vec) -> Vec? {
     let u: Double = -2 * (a.x * (b.y - c.y) - a.y * (b.x - c.x) + b.x * c.y - c.x * b.y)
     let sa: Double = a.x * a.x + a.y * a.y
     let sb: Double = b.x * b.x + b.y * b.y
@@ -100,7 +100,7 @@ func centerOfCircleFromThreePoints(_ a: Vec, _ b: Vec, _ c: Vec) -> Vec? {
 }
 
 /// The measure of an arc, negative when counter-clockwise.
-func getArcMeasure(_ a: Double, _ b: Double, _ sweepFlag: Int, _ largeArcFlag: Int) -> Double {
+nonisolated func getArcMeasure(_ a: Double, _ b: Double, _ sweepFlag: Int, _ largeArcFlag: Int) -> Double {
     let diff = (b - a).truncatingRemainder(dividingBy: PI2)
     let m = (2 * diff).truncatingRemainder(dividingBy: PI2) - diff
     if largeArcFlag == 0 { return m }
@@ -108,7 +108,7 @@ func getArcMeasure(_ a: Double, _ b: Double, _ sweepFlag: Int, _ largeArcFlag: I
 }
 
 /// Where along an arc a given angle falls, with 0 the start and 1 the end.
-func getPointInArcT(_ mAB: Double, _ a: Double, _ b: Double, _ p: Double) -> Double {
+nonisolated func getPointInArcT(_ mAB: Double, _ a: Double, _ b: Double, _ p: Double) -> Double {
     if abs(mAB) > PI {
         let mAP = shortAngleDist(a, p)
         let mPB = shortAngleDist(p, b)
@@ -126,13 +126,13 @@ func getPointInArcT(_ mAB: Double, _ a: Double, _ b: Double, _ p: Double) -> Dou
 }
 
 /// Number of vertices to approximate an arc of the given length with.
-func getVerticesCountForArcLength(_ length: Double, spacing: Double = 20) -> Int {
+nonisolated func getVerticesCountForArcLength(_ length: Double, spacing: Double = 20) -> Int {
     Swift.max(8, Int(ceil(length / spacing)))
 }
 
 /// A seeded xorshift PRNG driven by the seed string's UTF-16 code units, using 32-bit integer
 /// semantics throughout. Returns values in roughly [-1, 1].
-func makeRng(_ seed: String) -> () -> Double {
+nonisolated func makeRng(_ seed: String) -> () -> Double {
     var x: Int32 = 0
     var y: Int32 = 0
     var z: Int32 = 0
@@ -161,7 +161,7 @@ func makeRng(_ seed: String) -> () -> Double {
     return next
 }
 
-enum Easings {
+nonisolated enum Easings {
     static let linear: (Double) -> Double = { $0 }
     static let easeOutQuad: (Double) -> Double = { $0 * (2 - $0) }
     static let easeOutCubic: (Double) -> Double = { t in

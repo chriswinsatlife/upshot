@@ -1,7 +1,7 @@
 import Foundation
 
 /// The seven arrowhead shapes, built from the arrow's tip and a point back along its body.
-enum Arrowheads {
+nonisolated enum Arrowheads {
     struct Points {
         /// The tip.
         var point: Vec
@@ -120,7 +120,7 @@ enum Arrowheads {
 }
 
 /// The arrow's body as a path, mirroring `ArrowPath.tsx`.
-enum ArrowPath {
+nonisolated enum ArrowPath {
     static func body(_ info: ArrowInfo) -> PathBuilder {
         let path = PathBuilder()
         switch info.body {

@@ -1,13 +1,13 @@
 import AppKit
 import Foundation
 
-struct AnnoShapeID: Hashable, Codable {
+nonisolated struct AnnoShapeID: Hashable, Codable {
     let raw: String
     init(_ raw: String = UUID().uuidString) { self.raw = raw }
 }
 
 
-enum DashStyle: String, CaseIterable, Codable {
+nonisolated enum DashStyle: String, CaseIterable, Codable {
     case draw
     case solid
     case dashed
@@ -16,14 +16,14 @@ enum DashStyle: String, CaseIterable, Codable {
     var label: String { rawValue.capitalized }
 }
 
-enum AnnoFillStyle: String, CaseIterable, Codable {
+nonisolated enum AnnoFillStyle: String, CaseIterable, Codable {
     case none
     case solid
 
     var label: String { self == .none ? "Outline" : "Solid" }
 }
 
-enum GeoKind: String, CaseIterable, Codable {
+nonisolated enum GeoKind: String, CaseIterable, Codable {
     case rectangle
     case ellipse
 
@@ -31,7 +31,7 @@ enum GeoKind: String, CaseIterable, Codable {
 }
 
 
-struct GeoProps: Codable, Equatable {
+nonisolated struct GeoProps: Codable, Equatable {
     var isHighlighter: Bool?
     var geo: GeoKind = .rectangle
     var w: Double = 100
@@ -43,7 +43,7 @@ struct GeoProps: Codable, Equatable {
     var cornerRadius: Double = 0
 }
 
-struct DrawProps: Codable, Equatable {
+nonisolated struct DrawProps: Codable, Equatable {
     var points: [Vec] = []
     var smoothing: Double?
     var isComplete = false
@@ -53,7 +53,7 @@ struct DrawProps: Codable, Equatable {
     var strokeWidth: Double = 8
 }
 
-enum Arrowhead: String, CaseIterable, Codable {
+nonisolated enum Arrowhead: String, CaseIterable, Codable {
     case none
     case arrow
     case triangle
@@ -64,7 +64,7 @@ enum Arrowhead: String, CaseIterable, Codable {
     case bar
 }
 
-struct ArrowProps: Codable, Equatable {
+nonisolated struct ArrowProps: Codable, Equatable {
     var isMeasurement: Bool?
     var start = Vec(0, 0)
     var end = Vec(100, 0)
@@ -76,7 +76,7 @@ struct ArrowProps: Codable, Equatable {
     var dash: DashStyle = .solid
 }
 
-enum TextAlign: String, CaseIterable, Codable {
+nonisolated enum TextAlign: String, CaseIterable, Codable {
     case start
     case middle
     case end
@@ -98,7 +98,7 @@ enum TextAlign: String, CaseIterable, Codable {
     }
 }
 
-struct TextProps: Codable, Equatable, Hashable {
+nonisolated struct TextProps: Codable, Equatable, Hashable {
     var style: AnnotationTextStyle?
     var text: String = ""
     var swatch: AnnotationSwatch = .red
@@ -112,7 +112,7 @@ struct TextProps: Codable, Equatable, Hashable {
     var autoSize = true
 }
 
-enum RedactionKind: String, CaseIterable, Codable {
+nonisolated enum RedactionKind: String, CaseIterable, Codable {
     case blur
     case pixelate
     case box
@@ -136,26 +136,26 @@ enum RedactionKind: String, CaseIterable, Codable {
     }
 }
 
-struct RedactionProps: Codable, Equatable {
+nonisolated struct RedactionProps: Codable, Equatable {
     var kind: RedactionKind = .blur
     var w: Double = 100
     var h: Double = 100
     var density: Double = 0.55
 }
 
-struct HighlightProps: Codable, Equatable {
+nonisolated struct HighlightProps: Codable, Equatable {
     var w: Double = 100
     var h: Double = 100
 }
 
-struct NumberedProps: Codable, Equatable {
+nonisolated struct NumberedProps: Codable, Equatable {
     var value: Int = 1
     var diameter: Double = 64
     var swatch: AnnotationSwatch = .red
 }
 
 
-enum AnnoShapeKind: Codable, Equatable {
+nonisolated enum AnnoShapeKind: Codable, Equatable {
     case geo(GeoProps)
     case draw(DrawProps)
     case arrow(ArrowProps)
@@ -165,7 +165,7 @@ enum AnnoShapeKind: Codable, Equatable {
     case numbered(NumberedProps)
 }
 
-struct AnnoShape: Codable, Equatable, Identifiable {
+nonisolated struct AnnoShape: Codable, Equatable, Identifiable {
     var id: AnnoShapeID
     var x: Double
     var y: Double
@@ -298,12 +298,12 @@ struct AnnoShape: Codable, Equatable, Identifiable {
 }
 
 
-enum ArrowTerminal: String, Codable {
+nonisolated enum ArrowTerminal: String, Codable {
     case start
     case end
 }
 
-struct ArrowBinding: Codable, Equatable {
+nonisolated struct ArrowBinding: Codable, Equatable {
     var arrowId: AnnoShapeID
     var toId: AnnoShapeID
     var terminal: ArrowTerminal
@@ -313,7 +313,7 @@ struct ArrowBinding: Codable, Equatable {
 }
 
 
-extension AnnotationSwatch: Codable {
+nonisolated extension AnnotationSwatch: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, title, red, green, blue, alpha
     }
