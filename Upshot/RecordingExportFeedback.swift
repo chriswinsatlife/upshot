@@ -53,7 +53,7 @@ final class DockExportProgressCoordinator {
 /// Delivers the "export finished" notification and reveals the file in
 /// Finder when the user clicks it.
 enum RecordingExportNotifier {
-    private static let fileURLKey = "fileURL"
+    nonisolated private static let fileURLKey = "fileURL"
 
     static func notifySuccess(fileURL: URL) {
         let center = UNUserNotificationCenter.current()

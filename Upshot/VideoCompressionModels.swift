@@ -88,7 +88,7 @@ enum VideoCompressionResolution: String, CaseIterable, Identifiable, Codable, Se
 
 /// Delivery container for exported recordings. The encoded video and audio
 /// are identical either way - only the wrapper differs.
-enum VideoExportContainer: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum VideoExportContainer: String, CaseIterable, Identifiable, Codable, Sendable {
     /// What capture already writes, so a plain recording exports as a
     /// copy-on-write clone with no rewrite at all.
     case mov = "MOV"

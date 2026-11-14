@@ -289,7 +289,7 @@ nonisolated struct RecordingKeystrokeEvent: Codable, Sendable, Equatable {
 }
 
 nonisolated struct PointerTravelSample: Codable, Sendable, Equatable {
-    enum PointerTravelKind: String, Codable, Sendable {
+    nonisolated enum PointerTravelKind: String, Codable, Sendable {
         case move
         case drag
     }
@@ -303,7 +303,7 @@ nonisolated struct PointerTravelSample: Codable, Sendable, Equatable {
 }
 
 nonisolated struct PointerPressEvent: Codable, Sendable, Equatable {
-    enum PressPhase: String, Codable, Sendable {
+    nonisolated enum PressPhase: String, Codable, Sendable {
         case down
         case up
     }
@@ -341,7 +341,7 @@ nonisolated struct PointerArtwork: Codable, Sendable, Equatable {
     }
 }
 
-extension PointerCaptureFile {
+nonisolated extension PointerCaptureFile {
     private enum CodingKeys: String, CodingKey {
         case formatVersion
         case travel
@@ -378,7 +378,7 @@ extension PointerCaptureFile {
     }
 }
 
-extension PointerTravelSample {
+nonisolated extension PointerTravelSample {
     private enum CodingKeys: String, CodingKey {
         case time
         case x

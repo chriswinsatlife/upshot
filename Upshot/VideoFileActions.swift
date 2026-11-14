@@ -57,7 +57,7 @@ enum VideoPreviewImageLoader {
     }
 }
 
-extension VideoExportContainer {
+nonisolated extension VideoExportContainer {
     var contentType: UTType {
         switch self {
         case .mov: .quickTimeMovie

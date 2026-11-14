@@ -334,12 +334,12 @@ nonisolated private struct StudioLayoutSpring {
 }
 
 private extension DampedSpring {
-    mutating func motionStep(toward target: Double, dt: Double, profile: SpringConstant = ViewportTimeline.motionProfile) {
+    nonisolated mutating func motionStep(toward target: Double, dt: Double, profile: SpringConstant = ViewportTimeline.motionProfile) {
         step(toward: target, using: profile, dt: dt)
         if isSettled(on: target) { snap(to: target) }
     }
 
-    func isSettled(on target: Double) -> Bool {
+    nonisolated func isSettled(on target: Double) -> Bool {
         abs(position - target) < 0.0001 && abs(velocity) < 0.0001
     }
 }

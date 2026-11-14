@@ -193,7 +193,7 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
     }
 }
 
-extension RecordingCameraLayout {
+nonisolated extension RecordingCameraLayout {
     /// The layout grid, in reading order. A portrait camera is a bubble's
     /// shape rather than a layout of its own.
     static let presets: [RecordingCameraLayout] = [

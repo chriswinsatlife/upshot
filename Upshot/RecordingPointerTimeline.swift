@@ -433,7 +433,7 @@ nonisolated struct PointerTimeline: Sendable {
 
 // MARK: - Pointer artwork metrics
 
-extension PointerArtwork {
+nonisolated extension PointerArtwork {
     var normalizedAnchor: CGPoint {
         let width = max(referenceSize.width, 1)
         let height = max(referenceSize.height, 1)

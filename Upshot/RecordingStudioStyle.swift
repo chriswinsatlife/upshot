@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-struct RecordingCameraBubbleSettings: Equatable {
+nonisolated struct RecordingCameraBubbleSettings: Equatable {
     var isVisible = true
 
     var roundness: CGFloat = 0.25
@@ -18,7 +18,7 @@ struct RecordingCameraBubbleSettings: Equatable {
     static let zoomShrinkAmountRange: ClosedRange<CGFloat> = 0.05...0.4
 }
 
-struct RecordingEditDocument: Codable, Equatable {
+nonisolated struct RecordingEditDocument: Codable, Equatable {
     var formatVersion = 5
     var style: StoredRecordingStudioStyle
     var zoomEnabled: Bool
@@ -306,12 +306,12 @@ struct RecordingEditDocument: Codable, Equatable {
 }
 
 private extension Array {
-    var only: Element? {
+    nonisolated var only: Element? {
         count == 1 ? first : nil
     }
 }
 
-struct StoredRecordingStudioStyle: Codable, Equatable {
+nonisolated struct StoredRecordingStudioStyle: Codable, Equatable {
     var background: StoredBackgroundStyle
     var padding: Double
     var cornerRadius: Double
@@ -415,7 +415,7 @@ struct StoredRecordingStudioStyle: Codable, Equatable {
     }
 }
 
-struct RecordingStudioStyle: Equatable {
+nonisolated struct RecordingStudioStyle: Equatable {
     static let defaultCursorScale: CGFloat = 1.7
 
     static var defaultBackground: AnnotationBackgroundStyle {
