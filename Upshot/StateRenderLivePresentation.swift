@@ -28,8 +28,14 @@ enum StateRenderLivePresentation {
             return CGPoint(x: frame.minX + x, y: frame.maxY - y)
         }
 
+        var frontWindow: NSWindow? { inputWindows.first }
+
         func window(at point: CGPoint) -> NSWindow? {
             inputWindows.first { $0.frame.contains(point) }
+        }
+
+        func contains(_ candidate: NSWindow) -> Bool {
+            inputWindows.contains { $0 === candidate }
         }
     }
 
@@ -71,6 +77,7 @@ enum StateRenderLivePresentation {
     private static var isDispatchingMouseDown = false
     private static var pendingMouseDownAcknowledgement = false
     private static var isMouseDown = false
+    private static var isMouseDownBlocked = false
     private static var mouseTarget: NSWindow?
     private static var keyTarget: NSWindow?
     private static var eventNumber = 0
@@ -167,6 +174,9 @@ enum StateRenderLivePresentation {
         NSApp.appearance = NSAppearance(named: request.appearance == "dark" ? .darkAqua : .aqua)
         StateRenderDisplay.size = definition.displaySize
         let stage = try StateRenderStage(appearance: request.appearance)
+        stage.alertDismissed = { window, button in
+            diagnose(["event": "alert_dismissed", "state": request.name, "windowNumber": window.windowNumber, "button": button])
+        }
         do {
             try StateRenderDesktop.prepare(appearance: request.appearance)
             try StateRenderer.verifyWindows()
@@ -290,6 +300,7 @@ enum StateRenderLivePresentation {
         emit(fields)
         keyTarget = nil
         mouseTarget = nil
+        isMouseDownBlocked = false
     }
 
     private static func replace(with name: String) async {
@@ -450,6 +461,14 @@ enum StateRenderLivePresentation {
         return (state, window)
     }
 
+    private static func blockedByAlert(_ command: String, x: Double, y: Double, window: NSWindow) -> Bool {
+        guard let state = presented, state.stage.presentsAlert, !(window is StateRenderAlertWindow) else { return false }
+        diagnose(["event": "input_blocked_by_alert", "command": command, "x": x, "y": y, "windowNumber": window.windowNumber])
+        acknowledgePendingMouseDown()
+        acknowledge(command)
+        return true
+    }
+
     private static func mouseEvent(_ type: NSEvent.EventType, x: Double, y: Double, in window: NSWindow) -> NSEvent? {
         guard let state = presented else { return nil }
         let point = state.screenPoint(x: x, y: y)
@@ -461,6 +480,8 @@ enum StateRenderLivePresentation {
 
     private static func click(x: Double, y: Double) {
         guard let (_, window) = target("click", x: x, y: y) else { return }
+        isMouseDownBlocked = false
+        if blockedByAlert("click", x: x, y: y, window: window) { return }
         guard let down = mouseEvent(.leftMouseDown, x: x, y: y, in: window), let up = mouseEvent(.leftMouseUp, x: x, y: y, in: window) else {
             return fail("NSEvent could not create the mouse events for a click at \(x), \(y).")
         }
@@ -483,10 +504,19 @@ enum StateRenderLivePresentation {
         let window: NSWindow
         if type == .leftMouseDown {
             guard let (_, under) = target(command, x: x, y: y) else { return }
+            isMouseDownBlocked = blockedByAlert(command, x: x, y: y, window: under)
+            if isMouseDownBlocked { return }
             window = under
             mouseTarget = under
             keyTarget = under
         } else {
+            if isMouseDownBlocked {
+                if type == .leftMouseUp { isMouseDownBlocked = false }
+                diagnose(["event": "input_blocked_by_alert", "command": command, "x": x, "y": y])
+                acknowledgePendingMouseDown()
+                acknowledge(command)
+                return
+            }
             guard let tracking = mouseTarget ?? presented?.window else { return }
             window = tracking
         }
@@ -531,6 +561,7 @@ enum StateRenderLivePresentation {
 
     private static func scroll(x: Double, y: Double, deltaX: Double, deltaY: Double) {
         guard let (_, window) = target("scroll", x: x, y: y) else { return }
+        if blockedByAlert("scroll", x: x, y: y, window: window) { return }
         guard let pointer = mouseEvent(.mouseMoved, x: x, y: y, in: window), let source = pointer.cgEvent else {
             return fail("NSEvent could not create the pointer event for a scroll at \(x), \(y).")
         }
@@ -615,7 +646,7 @@ enum StateRenderLivePresentation {
     }
 
     private static func send(_ stroke: KeyStroke) -> Bool {
-        guard let window = keyTarget ?? presented?.window else { return false }
+        guard let state = presented, let window = keyTarget.flatMap({ state.contains($0) ? $0 : nil }) ?? state.frontWindow else { return false }
         func event(_ type: NSEvent.EventType) -> NSEvent? {
             NSEvent.keyEvent(with: type, location: .zero, modifierFlags: stroke.modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
                              windowNumber: window.windowNumber, context: nil, characters: stroke.characters,
