@@ -83,6 +83,7 @@ enum StateRenderLivePresentation {
     private static var eventNumber = 0
     private static var displaySafety: StateRenderDisplaySafety?
     private static var displaySafetyChecks = 0
+    private static var signalSources: [DispatchSourceSignal] = []
     static let regionMargin: CGFloat = 40
     static let orderInWaitMilliseconds = 10_000
     private static let orderInPollMilliseconds = 50
@@ -103,6 +104,7 @@ enum StateRenderLivePresentation {
             exit(1)
         }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Present a live render state")
+        recordProcessEnd()
         Task { @MainActor in
             do {
                 if listing {
@@ -117,6 +119,33 @@ enum StateRenderLivePresentation {
         }
         app.run()
         exit(1)
+    }
+
+    nonisolated private static func timestamp() -> String {
+        Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(Date())
+    }
+
+    nonisolated private static func writeStandardError(_ fields: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys, .withoutEscapingSlashes]) else { return }
+        FileHandle.standardError.write(data + Data("\n".utf8))
+    }
+
+    private static func recordProcessEnd() {
+        atexit {
+            StateRenderLivePresentation.writeStandardError(["event": "process_exit", "time": StateRenderLivePresentation.timestamp()])
+        }
+        let queue = DispatchQueue(label: "co.chrisyork.upshot.live-state-signals")
+        signalSources = [SIGTERM, SIGHUP, SIGINT].map { number in
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
+            source.setEventHandler {
+                writeStandardError(["event": "process_signal", "signal": Int(number), "time": timestamp()])
+                signal(number, SIG_DFL)
+                raise(number)
+            }
+            source.resume()
+            return source
+        }
     }
 
     private static func loadCatalog() async throws -> [StateRenderDefinition] {
@@ -145,7 +174,9 @@ enum StateRenderLivePresentation {
 
     private static func start(_ name: String) async throws {
         _ = try await loadCatalog()
+        diagnose(["event": "present_started", "state": name, "time": timestamp()])
         let first = try await build(resolve(name))
+        diagnose(["event": "present_finished", "state": name, "outcome": "ready", "time": timestamp()])
         presented = first
         announce(first)
         safetyTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
@@ -304,11 +335,13 @@ enum StateRenderLivePresentation {
     }
 
     private static func replace(with name: String) async {
+        diagnose(["event": "present_started", "state": name, "time": timestamp()])
         let request: Request
         do {
             request = try resolve(name)
         } catch {
             reject(error.localizedDescription)
+            diagnose(["event": "present_finished", "state": name, "outcome": "rejected", "time": timestamp()])
             return
         }
         guard let previous = presented else { return }
@@ -320,11 +353,13 @@ enum StateRenderLivePresentation {
         } catch {
             shared.restore()
             reject(error.localizedDescription)
+            diagnose(["event": "present_finished", "state": name, "outcome": "failed", "time": timestamp()])
             return
         }
         previous.stage.tearDown()
         presented = next
         announce(next)
+        diagnose(["event": "present_finished", "state": name, "outcome": "ready", "time": timestamp()])
     }
 
     private static func reject(_ reason: String) {
