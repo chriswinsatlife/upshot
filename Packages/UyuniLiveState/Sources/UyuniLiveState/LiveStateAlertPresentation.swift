@@ -13,10 +13,12 @@ final class LiveStateAlertWindow: NSWindow {
 @MainActor
 final class LiveStateAlertButtonTarget: NSObject {
     private var alert: NSAlert?
+    private let removesWindow: Bool
     private let buttonPressed: (@MainActor (NSApplication.ModalResponse) -> Void)?
 
-    init(alert: NSAlert, buttonPressed: (@MainActor (NSApplication.ModalResponse) -> Void)?) {
+    init(alert: NSAlert, removesWindow: Bool = true, buttonPressed: (@MainActor (NSApplication.ModalResponse) -> Void)?) {
         self.alert = alert
+        self.removesWindow = removesWindow
         self.buttonPressed = buttonPressed
         super.init()
         for button in alert.buttons {
@@ -29,9 +31,9 @@ final class LiveStateAlertButtonTarget: NSObject {
         guard let index = alert?.buttons.firstIndex(of: sender) else { return }
         let response = NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertFirstButtonReturn.rawValue + index)
         let window = sender.window
-        window?.orderOut(nil)
+        if removesWindow { window?.orderOut(nil) }
         LiveStateLog.event("alert_button_pressed", ["button": sender.title, "response": response.rawValue, "windowNumber": window?.windowNumber ?? 0,
-                                                    "alertRemoved": window.map { !$0.isVisible } ?? false])
+                                                    "alertRemoved": removesWindow ? window.map { !$0.isVisible } ?? false : true])
         buttonPressed?(response)
     }
 

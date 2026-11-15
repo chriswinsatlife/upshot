@@ -49,11 +49,11 @@ final class LiveStateSession {
     private var catalog = LiveStateCatalog(states: [])
     private var statesByName: [String: LiveStateDescription] = [:]
     private var unsupportedReasons: [String: String] = [:]
-    private var presented: PresentedLiveState?
+    fileprivate var presented: PresentedLiveState?
     private var activity: NSObjectProtocol?
     private var safetyTimer: Timer?
     private var isFinishing = false
-    private var isPresenting = false
+    fileprivate var isPresenting = false
     private var queuedLines: [String] = []
     private var isDispatchingMouseDown = false
     private var pendingMouseDown: LiveStateCommandRecord?
@@ -61,6 +61,7 @@ final class LiveStateSession {
     private var isMouseDownBlocked = false
     private var isPointerGestureConsumedByMenu = false
     private let menuPresenter = LiveStateMenuPresenter.shared
+    private let sheetPresenter = LiveStateSheetPresenter.shared
     private var mouseTarget: NSWindow?
     private var keyTarget: NSWindow?
     private var eventNumber = 0
@@ -69,8 +70,13 @@ final class LiveStateSession {
     private var isIsolationBegun = false
     private var commandOutcomes: [String: Int] = [:]
     private var presentedStateNames: [String] = []
-    private var buildingStack: [NSWindow] = []
-    private var buildingMenuWindow: NSWindow?
+    fileprivate var buildingStack: [NSWindow] = []
+    fileprivate var buildingMenuWindow: NSWindow?
+    fileprivate let presentWatch = LiveStatePresentWatch.shared
+    fileprivate var abandonedGenerations: Set<Int> = []
+    fileprivate var presentRecords: [Int: LiveStateCommandRecord] = [:]
+    fileprivate var presentRollback: (() -> Void)?
+    fileprivate var heartbeatTimer: Timer?
 
     init(application: any LiveStateApplication, request: LiveStateLaunchRequest) {
         self.application = application
@@ -82,6 +88,9 @@ final class LiveStateSession {
         LiveStateInteractionGuards.stageWindows = { [self] in
             Set(((presented?.stack ?? []) + buildingStack).map(ObjectIdentifier.init))
         }
+        sheetPresenter.stageContains = { [self] window in ((presented?.stack ?? []) + buildingStack).contains { $0 === window } }
+        sheetPresenter.modalHostProvider = { [self] in keyTarget.flatMap { $0.isVisible ? $0 : nil } ?? presented?.frontWindow }
+        startPresentWatch()
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Present a live state for the Uyuni canvas")
         LiveStateLog.event("latency_critical_activity_begun", ["options": ["userInitiated", "latencyCritical"]])
         Task { @MainActor in
@@ -133,7 +142,9 @@ final class LiveStateSession {
 
     private func presentFirst(_ name: String) async throws {
         let begun = ContinuousClock.now
-        let first = try await build(try resolve(name))
+        let generation = presentWatch.begin(name)
+        let first = try await build(try resolve(name), generation: generation)
+        presentWatch.end(generation)
         presented = first
         announce(first, milliseconds: LiveStateLog.milliseconds(since: begun))
         let timer = Timer(timeInterval: 0.25, repeats: true) { [self] _ in
@@ -144,10 +155,15 @@ final class LiveStateSession {
         startReadingCommands()
     }
 
-    private func build(_ description: LiveStateDescription) async throws -> PresentedLiveState {
+    private func build(_ description: LiveStateDescription, generation: Int) async throws -> PresentedLiveState {
         let begun = ContinuousClock.now
         NSApp.appearance = NSAppearance(named: description.appearance.appearanceName)
+        presentWatch.enter("make_live_state_presentation", generation: generation)
         let presentation = try await application.makeLiveStatePresentation(for: description)
+        if abandonedGenerations.contains(generation) {
+            presentation.tearDown?()
+            throw LiveStateFailure("The present of \(description.name) was abandoned after its bounded wait.")
+        }
         let menuWindow = presentation.hasMenuMargin ? LiveStateMenuWindow(around: presentation.stackWindows, margin: presentation.menuMargin) : nil
         let stack = presentation.stackWindows + (menuWindow.map { [$0] } ?? [])
         buildingStack = stack
@@ -163,20 +179,30 @@ final class LiveStateSession {
             guard Set(stack.map(ObjectIdentifier.init)).count == stack.count else {
                 throw LiveStateFailure("The app returned the same window more than once for the state \(description.name).")
             }
+            presentWatch.enter("prepare_windows", generation: generation)
             for window in stack { try LiveStateWindowPlacement.prepare(window, appearance: description.appearance) }
+            presentWatch.enter("order_in_windows", generation: generation)
             LiveStateWindowPlacement.orderIn(stack)
             for window in stack {
                 window.contentView?.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
             }
+            presentWatch.enter("settle", generation: generation)
             try await Task.sleep(for: presentation.settleDuration)
+            try requireCurrent(generation, description)
             for window in stack {
                 window.contentView?.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
                 if window.hasShadow { window.invalidateShadow() }
             }
-            for window in stack { try await LiveStateWindowPlacement.requireOrderedInBelowDesktop(window) }
+            var onscreenMilliseconds: [Double] = []
+            for window in stack {
+                presentWatch.enter("require_ordered_in_below_desktop window \(window.windowNumber)", generation: generation)
+                onscreenMilliseconds.append(try await LiveStateWindowPlacement.requireOrderedInBelowDesktop(window))
+                try requireCurrent(generation, description)
+            }
             if let openInitialMenu = presentation.openInitialMenu {
+                presentWatch.enter("open_initial_menu", generation: generation)
                 openInitialMenu()
                 for window in stack { window.displayIfNeeded() }
                 LiveStateLog.event("initial_menu_opened", ["state": description.name, "menuShown": menuPresenter.isShowing])
@@ -194,13 +220,14 @@ final class LiveStateSession {
                 regionFrame = frame
                 regionOrigin = CGPoint(x: frame.minX - display.minX, y: display.maxY - frame.maxY)
             }
+            presentWatch.enter("verify_display_safety", generation: generation)
             try verifyDisplaySafety()
             let state = PresentedLiveState(description: description, presentation: presentation, stack: stack,
                                            regionFrame: regionFrame, regionOrigin: regionOrigin, frontWindow: front, menuWindow: menuWindow)
             LiveStateLog.event("live_state_built", [
                 "state": description.name, "windowNumbers": stack.map(\.windowNumber), "region": regionFrame != nil,
                 "windowClasses": stack.map { String(describing: type(of: $0)) },
-                "levels": stack.map(\.level.rawValue), "milliseconds": LiveStateLog.milliseconds(since: begun),
+                "levels": stack.map(\.level.rawValue), "milliseconds": LiveStateLog.milliseconds(since: begun), "onscreenMilliseconds": onscreenMilliseconds,
             ])
             return state
         } catch {
@@ -236,7 +263,7 @@ final class LiveStateSession {
         LiveStateLog.event("live_state_presented", logged)
     }
 
-    private func replace(with name: String, record: LiveStateCommandRecord) async {
+    private func replace(with name: String, record: LiveStateCommandRecord, generation: Int) async {
         var record = record
         record.fields["state"] = name
         let description: LiveStateDescription
@@ -250,17 +277,34 @@ final class LiveStateSession {
         releaseMouse()
         let previousAppearance = NSApp.appearance
         let restoration = application.sharedStateRestoration()
+        presentRollback = { NSApp.appearance = previousAppearance; restoration?() }
+        defer { presentRollback = nil }
         do {
-            let next = try await build(description)
+            let next = try await build(description, generation: generation)
+            if abandonedGenerations.contains(generation) {
+                LiveStateWindowPlacement.tearDown(next.stack)
+                next.presentation.tearDown?()
+                LiveStateLog.event("abandoned_present_finished", ["state": name, "removedWindowNumbers": next.stack.map(\.windowNumber)])
+                return
+            }
+            presentWatch.enter("close_previous_menu_and_sheet", generation: generation)
             if let host = menuPresenter.hostWindow, previous.stack.contains(where: { $0 === host }) { menuPresenter.close(reason: "present") }
+            if let sheet = sheetPresenter.active, previous.stack.contains(where: { $0 === sheet.host }) { sheetPresenter.close(reason: "present") }
             isPointerGestureConsumedByMenu = false
+            presentWatch.enter("tear_down_previous_windows", generation: generation)
             LiveStateWindowPlacement.tearDown(previous.stack)
+            presentWatch.enter("tear_down_previous_presentation", generation: generation)
             previous.presentation.tearDown?()
+            presentWatch.enter("announce", generation: generation)
             presented = next
             announce(next, milliseconds: LiveStateLog.milliseconds(since: record.received))
             record.fields["previousState"] = previous.description.name
             finishCommand(record, outcome: "presented")
         } catch {
+            if abandonedGenerations.contains(generation) {
+                LiveStateLog.event("abandoned_present_finished", ["state": name, "reason": error.localizedDescription])
+                return
+            }
             NSApp.appearance = previousAppearance
             restoration?()
             record.fields["keptState"] = previous.description.name
@@ -268,7 +312,7 @@ final class LiveStateSession {
         }
     }
 
-    private func reject(_ reason: String, record: LiveStateCommandRecord) {
+    fileprivate func reject(_ reason: String, record: LiveStateCommandRecord) {
         LiveStateOutput.write(["event": "live_state_failed", "reason": reason])
         var record = record
         record.fields["reason"] = reason
@@ -279,9 +323,9 @@ final class LiveStateSession {
         let session = self
         Thread.detachNewThread {
             while let line = readLine() {
-                DispatchQueue.main.async { MainActor.assumeIsolated { session.receive(line) } }
+                LiveStateMainRunLoop.perform { session.receive(line) }
             }
-            DispatchQueue.main.async { MainActor.assumeIsolated { session.receiveEndOfInput() } }
+            LiveStateMainRunLoop.perform { session.receiveEndOfInput() }
         }
     }
 
@@ -299,7 +343,7 @@ final class LiveStateSession {
         receive("quit")
     }
 
-    private func drainQueuedLines() {
+    fileprivate func drainQueuedLines() {
         while !isPresenting, !isFinishing, !queuedLines.isEmpty {
             perform(queuedLines.removeFirst())
         }
@@ -330,8 +374,13 @@ final class LiveStateSession {
             quit(record: record)
         case .present(let name):
             isPresenting = true
+            let generation = presentWatch.begin(name)
+            presentRecords[generation] = record
             Task { @MainActor in
-                await replace(with: name, record: record)
+                await replace(with: name, record: record, generation: generation)
+                presentWatch.end(generation)
+                presentRecords.removeValue(forKey: generation)
+                guard !abandonedGenerations.contains(generation) else { return }
                 isPresenting = false
                 drainQueuedLines()
             }
@@ -403,14 +452,15 @@ final class LiveStateSession {
 
     private func acknowledgeBlocked(_ record: LiveStateCommandRecord) {
         var record = record
-        record.fields["blockedByWindowNumber"] = presented?.modalWindow?.windowNumber ?? NSNull()
+        record.fields["blockedByWindowNumber"] = sheetPresenter.active?.host.windowNumber ?? presented?.modalWindow?.windowNumber ?? NSNull()
         acknowledgePendingMouseDown()
         LiveStateOutput.write(["event": "input_replayed", "command": record.word])
-        finishCommand(record, outcome: "blocked_by_alert")
+        finishCommand(record, outcome: sheetPresenter.isShowing ? "blocked_by_sheet" : "blocked_by_alert")
         checkSafety()
     }
 
-    private func isBlockedByAlert(_ window: NSWindow) -> Bool {
+    private func isBlocked(_ window: NSWindow, x: Double, y: Double) -> Bool {
+        if let state = presented, sheetPresenter.blocks(window, screenPoint: state.screenPoint(x: x, y: y)) { return true }
         guard let modal = presented?.modalWindow else { return false }
         return modal !== window
     }
@@ -443,12 +493,12 @@ final class LiveStateSession {
             return acknowledgeMenu(record, outcome: menuPresenter.pointerMoved(to: point, dragging: false).rawValue)
         }
         guard let window = target(&record, x: x, y: y) else { return }
-        if isBlockedByAlert(window) { return acknowledgeBlocked(record) }
+        if isBlocked(window, x: x, y: y) { return acknowledgeBlocked(record) }
         guard let event = mouseEvent(.mouseMoved, x: x, y: y, in: window) else {
             return fail("NSEvent could not create the mouse moved event at \(x), \(y).")
         }
         acknowledgePendingMouseDown()
-        window.sendEvent(event)
+        LiveStateCurrentEvent.send(event, to: window)
         record.fields["dispatch"] = "sent"
         acknowledge(record)
     }
@@ -460,14 +510,14 @@ final class LiveStateSession {
             return acknowledgeMenu(record, outcome: menuPresenter.click(at: point).rawValue)
         }
         guard let window = target(&record, x: x, y: y) else { return }
-        if isBlockedByAlert(window) { return acknowledgeBlocked(record) }
+        if isBlocked(window, x: x, y: y) { return acknowledgeBlocked(record) }
         guard let down = mouseEvent(.rightMouseDown, x: x, y: y, in: window), let up = mouseEvent(.rightMouseUp, x: x, y: y, in: window) else {
             return fail("NSEvent could not create the mouse events for a right click at \(x), \(y).")
         }
         acknowledgePendingMouseDown()
         keyTarget = window
         NSApp.postEvent(up, atStart: false)
-        NSApp.sendEvent(down)
+        LiveStateCurrentEvent.send(down)
         record.fields["dispatch"] = "sent"
         acknowledge(record)
     }
@@ -476,9 +526,16 @@ final class LiveStateSession {
         guard let state = presented else { return nil }
         let point = state.screenPoint(x: x, y: y)
         eventNumber += 1
-        return NSEvent.mouseEvent(with: type, location: NSPoint(x: point.x - window.frame.minX, y: point.y - window.frame.minY),
-                                  modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                                  context: nil, eventNumber: eventNumber, clickCount: 1, pressure: type == .leftMouseUp || type == .rightMouseUp || type == .mouseMoved ? 0 : 1)
+        guard let event = NSEvent.mouseEvent(with: type, location: NSPoint(x: point.x - window.frame.minX, y: point.y - window.frame.minY),
+                                             modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                             context: nil, eventNumber: eventNumber, clickCount: 1,
+                                             pressure: type == .leftMouseUp || type == .rightMouseUp || type == .mouseMoved ? 0 : 1) else { return nil }
+        guard type == .rightMouseDown || type == .rightMouseUp else { return event }
+        guard let source = event.cgEvent else { return nil }
+        source.setIntegerValueField(.mouseEventButtonNumber, value: Int64(CGMouseButton.right.rawValue))
+        guard let secondary = NSEvent(cgEvent: source), secondary.type == type, secondary.window === window,
+              secondary.buttonNumber == Int(CGMouseButton.right.rawValue) else { return nil }
+        return secondary
     }
 
     private func click(x: Double, y: Double, record: LiveStateCommandRecord) {
@@ -489,7 +546,7 @@ final class LiveStateSession {
         }
         guard let window = target(&record, x: x, y: y) else { return }
         isMouseDownBlocked = false
-        if isBlockedByAlert(window) { return acknowledgeBlocked(record) }
+        if isBlocked(window, x: x, y: y) { return acknowledgeBlocked(record) }
         guard let down = mouseEvent(.leftMouseDown, x: x, y: y, in: window), let up = mouseEvent(.leftMouseUp, x: x, y: y, in: window) else {
             return fail("NSEvent could not create the mouse events for a click at \(x), \(y).")
         }
@@ -501,8 +558,13 @@ final class LiveStateSession {
             record.fields["dispatch"] = "posted"
         } else {
             NSApp.postEvent(up, atStart: false)
-            NSApp.sendEvent(down)
-            record.fields["dispatch"] = "sent"
+            if let view = sheetPresenter.modalHitView(at: window.convertPoint(toScreen: down.locationInWindow)) {
+                LiveStateCurrentEvent.set(down); view.mouseDown(with: down)
+                record.fields["dispatch"] = "modal_sheet_view"
+            } else {
+                LiveStateCurrentEvent.send(down)
+                record.fields["dispatch"] = "sent"
+            }
         }
         isMouseDown = false
         mouseTarget = nil
@@ -528,7 +590,7 @@ final class LiveStateSession {
                 outcome = menuPresenter.pointerMoved(to: point, dragging: true)
             default:
                 if isMouseDown, let window = mouseTarget, let up = mouseEvent(.leftMouseUp, x: x, y: y, in: window) {
-                    if isDispatchingMouseDown { NSApp.postEvent(up, atStart: false) } else { NSApp.sendEvent(up) }
+                    if isDispatchingMouseDown { NSApp.postEvent(up, atStart: false) } else { LiveStateCurrentEvent.send(up) }
                     record.fields["openingGestureEndedInWindowNumber"] = window.windowNumber
                 }
                 outcome = menuPresenter.pointerUp(at: point)
@@ -541,7 +603,7 @@ final class LiveStateSession {
         let window: NSWindow
         if type == .leftMouseDown {
             guard let under = target(&record, x: x, y: y) else { return }
-            isMouseDownBlocked = isBlockedByAlert(under)
+            isMouseDownBlocked = isBlocked(under, x: x, y: y)
             if isMouseDownBlocked { return acknowledgeBlocked(record) }
             window = under
             mouseTarget = under
@@ -573,10 +635,12 @@ final class LiveStateSession {
             menuPresenter.isPointerDown = true
             menuPresenter.pointerDownScreenPoint = presented?.screenPoint(x: x, y: y)
             pendingMouseDown = record
-            DispatchQueue.main.async { [self] in
-                MainActor.assumeIsolated { acknowledgePendingMouseDown() }
+            LiveStateMainRunLoop.perform { [self] in acknowledgePendingMouseDown() }
+            if let view = sheetPresenter.modalHitView(at: window.convertPoint(toScreen: event.locationInWindow)) {
+                LiveStateCurrentEvent.set(event); view.mouseDown(with: event)
+            } else {
+                LiveStateCurrentEvent.send(event)
             }
-            NSApp.sendEvent(event)
             isDispatchingMouseDown = false
             acknowledgePendingMouseDown()
             return
@@ -590,7 +654,7 @@ final class LiveStateSession {
             NSApp.postEvent(event, atStart: false)
             record.fields["dispatch"] = "posted"
         } else {
-            NSApp.sendEvent(event)
+            LiveStateCurrentEvent.send(event)
             record.fields["dispatch"] = "sent"
         }
         acknowledge(record)
@@ -600,7 +664,7 @@ final class LiveStateSession {
         guard isMouseDown, let window = mouseTarget ?? presented?.frontWindow, let up = mouseEvent(.leftMouseUp, x: 0, y: 0, in: window) else { return }
         isMouseDown = false
         mouseTarget = nil
-        if isDispatchingMouseDown { NSApp.postEvent(up, atStart: false) } else { NSApp.sendEvent(up) }
+        if isDispatchingMouseDown { NSApp.postEvent(up, atStart: false) } else { LiveStateCurrentEvent.send(up) }
         LiveStateLog.event("mouse_released", ["windowNumber": window.windowNumber])
     }
 
@@ -612,7 +676,7 @@ final class LiveStateSession {
             return acknowledgeMenu(record, outcome: "scrolled")
         }
         guard let window = target(&record, x: x, y: y) else { return }
-        if isBlockedByAlert(window) { return acknowledgeBlocked(record) }
+        if isBlocked(window, x: x, y: y) { return acknowledgeBlocked(record) }
         record.fields["deltaX"] = deltaX
         record.fields["deltaY"] = deltaY
         guard let pointer = mouseEvent(.mouseMoved, x: x, y: y, in: window), let source = pointer.cgEvent else {
@@ -630,7 +694,7 @@ final class LiveStateSession {
             return fail("NSEvent could not convert the pointer event into a scroll wheel event for window \(window.windowNumber).")
         }
         acknowledgePendingMouseDown()
-        NSApp.sendEvent(event)
+        LiveStateCurrentEvent.send(event)
         record.fields["dispatch"] = "sent"
         acknowledge(record)
     }
@@ -658,7 +722,7 @@ final class LiveStateSession {
     }
 
     private func send(_ stroke: LiveStateKeyStroke, record: inout LiveStateCommandRecord) -> Bool {
-        guard let state = presented, let window = state.modalWindow ?? keyTarget.flatMap({ $0.isVisible ? $0 : nil }) ?? state.inputWindows.first else {
+        guard let state = presented, let window = sheetPresenter.keyWindow() ?? state.modalWindow ?? keyTarget.flatMap({ $0.isVisible ? $0 : nil }) ?? state.inputWindows.first else {
             ignore(record, reason: "No window is presented.")
             return false
         }
@@ -672,11 +736,15 @@ final class LiveStateSession {
             fail("NSEvent could not create the key events for \(stroke.characters.debugDescription).")
             return false
         }
+        LiveStateCurrentEvent.set(down)
         acknowledgePendingMouseDown()
-        if stroke.modifiers.isDisjoint(with: [.command, .control]) || !window.performKeyEquivalent(with: down) {
-            window.sendEvent(down)
+        let offersSheetFirst = sheetPresenter.isShowing && (stroke.keyCode == LiveStateKeyStroke.returnKeyCode || stroke.keyCode == LiveStateKeyStroke.escapeKeyCode || !stroke.modifiers.isDisjoint(with: [.command, .control]))
+        if offersSheetFirst, sheetPresenter.performKey(down) {
+            record.fields["dispatch"] = "sheet_key_equivalent"
+        } else if stroke.modifiers.isDisjoint(with: [.command, .control]) || !window.performKeyEquivalent(with: down) {
+            LiveStateCurrentEvent.send(down, to: window)
         }
-        window.sendEvent(up)
+        LiveStateCurrentEvent.send(up, to: window)
         return true
     }
 
@@ -722,7 +790,7 @@ final class LiveStateSession {
         finish(status: 0, reason: nil)
     }
 
-    private func fail(_ reason: String) {
+    fileprivate func fail(_ reason: String) {
         guard !isFinishing else { return }
         LiveStateOutput.write(["event": "live_state_failed", "reason": reason])
         finish(status: 1, reason: reason)
@@ -749,5 +817,86 @@ final class LiveStateSession {
             "presentedStates": presentedStateNames, "commandOutcomes": commandOutcomes,
         ])
         exit(status)
+    }
+}
+
+extension LiveStateSession {
+    func requireCurrent(_ generation: Int, _ description: LiveStateDescription) throws {
+        guard abandonedGenerations.contains(generation) else { return }
+        throw LiveStateFailure("The present of \(description.name) was abandoned after its bounded wait.")
+    }
+
+    func startPresentWatch() {
+        let watch = presentWatch
+        watch.onTimeout = { [weak self] generation, state, step, seconds, handled in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    handled()
+                    self?.presentTimedOut(generation: generation, state: state, step: step, seconds: seconds)
+                }
+            }
+        }
+        let timer = Timer(timeInterval: 0.5, repeats: true) { _ in watch.heartbeat() }
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeatTimer = timer
+        watch.heartbeat()
+        watch.start()
+    }
+
+    func presentTimedOut(generation: Int, state: String, step: String, seconds: Double) {
+        let reason = "The present of \(state) did not finish within \(Int(presentWatch.limitSeconds)) seconds; the step that did not finish is \(step)."
+        guard presented != nil, var record = presentRecords[generation] else {
+            fail(reason)
+            return
+        }
+        abandonedGenerations.insert(generation)
+        presentRecords.removeValue(forKey: generation)
+        presentRollback?()
+        presentRollback = nil
+        buildingStack = []
+        buildingMenuWindow = nil
+        record.fields["step"] = step
+        record.fields["seconds"] = seconds.rounded(toPlaces: 3)
+        record.fields["keptState"] = presented?.description.name ?? NSNull()
+        reject(reason, record: record)
+        isPresenting = false
+        drainQueuedLines()
+    }
+}
+
+enum LiveStateMainRunLoop {
+    static func perform(_ block: @escaping @MainActor () -> Void) {
+        let runLoop = CFRunLoopGetMain()
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) { MainActor.assumeIsolated { block() } }
+        CFRunLoopWakeUp(runLoop)
+    }
+}
+
+@MainActor
+enum LiveStateCurrentEvent {
+    static let selector = NSSelectorFromString("_setCurrentEvent:")
+    static let encoding = "v24@0:8@16"
+    static let isAvailable: Bool = {
+        guard let method = class_getInstanceMethod(NSApplication.self, selector),
+              let found = method_getTypeEncoding(method).map({ String(cString: $0) }), found == encoding else {
+            LiveStateLog.event("private_guards_unavailable", ["methods": [["method": "-[NSApplication _setCurrentEvent:]", "reason": "missing or type encoding differs from \(encoding)"]]])
+            return false
+        }
+        return true
+    }()
+
+    static func set(_ event: NSEvent) {
+        guard isAvailable else { return }
+        _ = NSApp.perform(selector, with: event)
+    }
+
+    static func send(_ event: NSEvent) {
+        set(event)
+        NSApp.sendEvent(event)
+    }
+
+    static func send(_ event: NSEvent, to window: NSWindow) {
+        set(event)
+        window.sendEvent(event)
     }
 }

@@ -75,6 +75,18 @@ enum LiveStateInteractionGuards {
         }
         replace(NSRunningApplication.self, "activateWithOptions:", activate)
         replace(NSRunningApplication.self, "activateFromApplication:options:", activateFrom)
+        let activateIgnoringOtherApps: @convention(block) (NSApplication, Bool) -> Void = { _, ignoringOtherApps in
+            blocked("application_activation", ["method": "activateIgnoringOtherApps:", "ignoringOtherApps": ignoringOtherApps])
+        }
+        let activateApplication: @convention(block) (NSApplication) -> Void = { _ in
+            blocked("application_activation", ["method": "activate"])
+        }
+        let makeKeyWindow: @convention(block) (NSWindow) -> Void = { window in
+            blocked("window_made_key", ["class": String(describing: type(of: window)), "windowNumber": window.windowNumber])
+        }
+        replace(NSApplication.self, "activateIgnoringOtherApps:", activateIgnoringOtherApps)
+        replace(NSApplication.self, "activate", activateApplication)
+        replace(NSWindow.self, "makeKeyWindow", makeKeyWindow)
 
         let popUpMenu: @convention(block) (NSMenu, NSMenuItem?, NSPoint, NSView?) -> Bool = { menu, item, location, view in
             let (window, point) = windowPoint(location, in: view)
@@ -153,21 +165,26 @@ enum LiveStateInteractionGuards {
         replace(NSSavePanel.self, "beginWithCompletionHandler:", beginPanel)
         replace(NSSavePanel.self, "beginSheetModalForWindow:completionHandler:", beginPanelSheet)
 
+        let sheets = LiveStateSheetPresenter.shared
         let runAlert: @convention(block) (NSAlert) -> Int = { alert in
+            if let response = sheets.runModalAlert(alert) { return response.rawValue }
             let response = cancellationResponse(of: alert)
             blocked("alert_modal_session", alertFields(alert, response: response))
             return response
         }
-        let beginAlertSheet: @convention(block) (NSAlert, NSWindow, ModalCompletion?) -> Void = { alert, _, completion in
+        let beginAlertSheet: @convention(block) (NSAlert, NSWindow, ModalCompletion?) -> Void = { alert, window, completion in
+            if sheets.presentAlertSheet(alert, for: window, completion: modalCompletion(completion)) { return }
             let response = cancellationResponse(of: alert)
             blocked("alert_sheet", alertFields(alert, response: response))
             DispatchQueue.main.async { completion?(response) }
         }
         let runModalWindow: @convention(block) (NSApplication, NSWindow) -> Int = { _, window in
+            if let response = sheets.runModalWindow(window) { return response.rawValue }
             blocked("window_modal_session", ["class": String(describing: type(of: window)), "response": abort])
             return abort
         }
-        let beginSheet: @convention(block) (NSWindow, NSWindow, ModalCompletion?) -> Void = { _, sheet, completion in
+        let beginSheet: @convention(block) (NSWindow, NSWindow, ModalCompletion?) -> Void = { parent, sheet, completion in
+            if sheets.presentWindowSheet(sheet, for: parent, completion: modalCompletion(completion)) { return }
             blocked("window_sheet", ["class": String(describing: type(of: sheet)), "response": abort])
             DispatchQueue.main.async { completion?(abort) }
         }
@@ -176,6 +193,68 @@ enum LiveStateInteractionGuards {
         replace(NSApplication.self, "runModalForWindow:", runModalWindow)
         replace(NSWindow.self, "beginSheet:completionHandler:", beginSheet)
         replace(NSWindow.self, "beginCriticalSheet:completionHandler:", beginSheet)
+
+        func passThrough(_ owner: AnyClass, _ selectorName: String, _ makeBlock: (IMP) -> Any) {
+            let name = "-[\(NSStringFromClass(owner)) \(selectorName)]"
+            guard !installed.contains(name) else { return }
+            guard let method = class_getInstanceMethod(owner, NSSelectorFromString(selectorName)) else {
+                missing.append(name)
+                return
+            }
+            let original = method_getImplementation(method)
+            let implementation = imp_implementationWithBlock(makeBlock(original))
+            if !class_addMethod(owner, NSSelectorFromString(selectorName), implementation, method_getTypeEncoding(method)) {
+                method_setImplementation(method, implementation)
+            }
+            installed.append(name)
+        }
+        typealias EndSheetFunction = @convention(c) (AnyObject, Selector, NSWindow) -> Void
+        typealias EndSheetWithCodeFunction = @convention(c) (AnyObject, Selector, NSWindow, Int) -> Void
+        typealias StopModalFunction = @convention(c) (AnyObject, Selector) -> Void
+        typealias StopModalWithCodeFunction = @convention(c) (AnyObject, Selector, Int) -> Void
+        let stop = NSApplication.ModalResponse.stop.rawValue
+        for owner in [NSWindow.self, NSApplication.self] as [AnyClass] {
+            passThrough(owner, "endSheet:") { original in
+                let call = unsafeBitCast(original, to: EndSheetFunction.self)
+                let block: @convention(block) (AnyObject, NSWindow) -> Void = { this, sheet in
+                    if sheets.endSheet(sheet, response: NSApplication.ModalResponse(rawValue: stop)) { return }
+                    call(this, NSSelectorFromString("endSheet:"), sheet)
+                }
+                return block
+            }
+            passThrough(owner, "endSheet:returnCode:") { original in
+                let call = unsafeBitCast(original, to: EndSheetWithCodeFunction.self)
+                let block: @convention(block) (AnyObject, NSWindow, Int) -> Void = { this, sheet, code in
+                    if sheets.endSheet(sheet, response: NSApplication.ModalResponse(rawValue: code)) { return }
+                    call(this, NSSelectorFromString("endSheet:returnCode:"), sheet, code)
+                }
+                return block
+            }
+        }
+        passThrough(NSApplication.self, "stopModal") { original in
+            let call = unsafeBitCast(original, to: StopModalFunction.self)
+            let block: @convention(block) (AnyObject) -> Void = { this in
+                if sheets.stopModal(response: .stop, reason: "stop_modal") { return }
+                call(this, NSSelectorFromString("stopModal"))
+            }
+            return block
+        }
+        passThrough(NSApplication.self, "abortModal") { original in
+            let call = unsafeBitCast(original, to: StopModalFunction.self)
+            let block: @convention(block) (AnyObject) -> Void = { this in
+                if sheets.stopModal(response: .abort, reason: "abort_modal") { return }
+                call(this, NSSelectorFromString("abortModal"))
+            }
+            return block
+        }
+        passThrough(NSApplication.self, "stopModalWithCode:") { original in
+            let call = unsafeBitCast(original, to: StopModalWithCodeFunction.self)
+            let block: @convention(block) (AnyObject, Int) -> Void = { this, code in
+                if sheets.stopModal(response: NSApplication.ModalResponse(rawValue: code), reason: "stop_modal_with_code") { return }
+                call(this, NSSelectorFromString("stopModalWithCode:"), code)
+            }
+            return block
+        }
 
         var unavailablePrivateGuards: [[String: Any]] = []
         func replacePrivate(_ className: String, _ selectorName: String, encoding: String, _ block: Any) {
@@ -218,8 +297,12 @@ enum LiveStateInteractionGuards {
             return presentMenu(menu, window: window, anchor: .item(nil, topLeft: point), source: "context_menu_right_click")
         }
         replacePrivate("NSView", "_showMenuForEvent:", encoding: "B24@0:8@16", showMenuForEvent)
+        let activateWithInfo: @convention(block) (NSApplication, AnyObject?) -> Void = { _, information in
+            blocked("application_activation", ["method": "_activateWithInfo:", "information": information.map { String(describing: type(of: $0)) } ?? NSNull()])
+        }
+        replacePrivate("NSApplication", "_activateWithInfo:", encoding: "v24@0:8@16", activateWithInfo)
         if !unavailablePrivateGuards.isEmpty {
-            LiveStateLog.event("private_menu_guards_unavailable", ["methods": unavailablePrivateGuards])
+            LiveStateLog.event("private_guards_unavailable", ["methods": unavailablePrivateGuards])
         }
 
         if menuObservers.isEmpty {
@@ -257,6 +340,11 @@ enum LiveStateInteractionGuards {
                 "class": String(describing: type(of: window)), "windowNumber": window.windowNumber, "reason": reason,
             ])
         }
+    }
+
+    static func modalCompletion(_ completion: (@convention(block) (Int) -> Void)?) -> (@MainActor (NSApplication.ModalResponse) -> Void)? {
+        guard let completion else { return nil }
+        return { response in completion(response.rawValue) }
     }
 
     static func cancellationResponse(of alert: NSAlert) -> Int {

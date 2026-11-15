@@ -1,6 +1,9 @@
 import AppKit
 
 struct LiveStateKeyStroke: Equatable {
+    static let returnKeyCode: UInt16 = 36
+    static let escapeKeyCode: UInt16 = 53
+
     let keyCode: UInt16
     let characters: String
     let charactersIgnoringModifiers: String

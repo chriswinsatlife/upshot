@@ -36,6 +36,7 @@ enum LiveStateWindowPlacement {
             ("addChildWindow:ordered:", #selector(NSWindow.addChildWindow(_:ordered:)), #selector(NSWindow.uyuniLiveStateAddChildWindow(_:ordered:))),
             ("orderWindow:relativeTo:", #selector(NSWindow.order(_:relativeTo:)), #selector(NSWindow.uyuniLiveStateOrder(_:relativeTo:))),
             ("setLevel:", #selector(setter: NSWindow.level), #selector(NSWindow.uyuniLiveStateSetLevel(_:))),
+            ("orderFrontRegardless", #selector(NSWindow.orderFrontRegardless), #selector(NSWindow.uyuniLiveStateOrderFrontRegardless)),
         ]
         var missing: [String] = []
         for exchange in exchanges where !installedGuards.contains(exchange.name) {
@@ -47,9 +48,28 @@ enum LiveStateWindowPlacement {
             method_exchangeImplementations(originalMethod, replacementMethod)
             installedGuards.append(exchange.name)
         }
+        var unavailable: [[String: Any]] = []
+        let privateName = "_doOrderWindow:"
+        if !installedGuards.contains(privateName) {
+            if let originalMethod = class_getInstanceMethod(NSWindow.self, NSSelectorFromString(privateName)),
+               let replacementMethod = class_getInstanceMethod(NSWindow.self, #selector(NSWindow.uyuniLiveStateDoOrderWindow(_:))) {
+                let found = method_getTypeEncoding(originalMethod).map { String(cString: $0) } ?? ""
+                if found == privateOrderingEncoding {
+                    method_exchangeImplementations(originalMethod, replacementMethod)
+                    installedGuards.append(privateName)
+                } else {
+                    unavailable.append(["method": "-[NSWindow \(privateName)]", "reason": "type encoding \(found) differs from \(privateOrderingEncoding)"])
+                }
+            } else {
+                unavailable.append(["method": "-[NSWindow \(privateName)]", "reason": "missing"])
+            }
+        }
+        if !unavailable.isEmpty { LiveStateLog.event("private_window_guards_unavailable", ["methods": unavailable]) }
         LiveStateLog.event("window_level_guards_installed", ["methods": installedGuards, "missing": missing])
         return missing
     }
+
+    static let privateOrderingEncoding = "v24@0:8@16"
 
     static func clampedLevel(_ level: NSWindow.Level, for window: NSWindow) -> NSWindow.Level {
         guard level.rawValue >= desktopLevel else { return level }
@@ -89,7 +109,7 @@ enum LiveStateWindowPlacement {
         window.isReleasedWhenClosed = false
         window.animationBehavior = .none
         window.hidesOnDeactivate = false
-        window.collectionBehavior = [.stationary, .ignoresCycle]
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         window.sharingType = .readOnly
         window.appearance = NSAppearance(named: appearance.appearanceName)
         for child in window.childWindows ?? [] { lower(child, beneath: window) }
@@ -124,17 +144,23 @@ enum LiveStateWindowPlacement {
         return (layer, information[kCGWindowIsOnscreen as String] as? Bool ?? false)
     }
 
-    static func requireOrderedInBelowDesktop(_ window: NSWindow) async throws {
-        for _ in 0..<40 {
+    static let orderedInWaitSeconds = 2
+    static let orderedInPollMilliseconds = 10
+
+    static func requireOrderedInBelowDesktop(_ window: NSWindow) async throws -> Double {
+        let begun = ContinuousClock.now
+        let deadline = begun + .seconds(orderedInWaitSeconds)
+        while true {
             if let record = serverRecord(for: window), record.isOnscreen {
                 guard record.layer < desktopLevel else {
                     throw LiveStateFailure("Window \(window.windowNumber) is at window-server layer \(record.layer), which is not below the desktop layer \(desktopLevel).")
                 }
-                return
+                return LiveStateLog.milliseconds(since: begun)
             }
-            try await Task.sleep(for: .milliseconds(50))
+            guard ContinuousClock.now < deadline else { break }
+            try await Task.sleep(for: .milliseconds(orderedInPollMilliseconds))
         }
-        throw LiveStateFailure("Window \(window.windowNumber) was not ordered in at the window server within 2 seconds.")
+        throw LiveStateFailure("Window \(window.windowNumber) was not ordered in at the window server within \(orderedInWaitSeconds) seconds.")
     }
 
     static func tearDown(_ stack: [NSWindow]) {
@@ -160,6 +186,18 @@ extension NSWindow {
     dynamic func uyuniLiveStateOrder(_ place: NSWindow.OrderingMode, relativeTo otherWindow: Int) {
         if place != .out { LiveStateWindowPlacement.lowerBeforeOrderingIn(self) }
         uyuniLiveStateOrder(place, relativeTo: otherWindow)
+    }
+
+    @objc(uyuniLiveStateOrderFrontRegardless)
+    dynamic func uyuniLiveStateOrderFrontRegardless() {
+        LiveStateWindowPlacement.lowerBeforeOrderingIn(self)
+        uyuniLiveStateOrderFrontRegardless()
+    }
+
+    @objc(uyuniLiveStateDoOrderWindow:)
+    dynamic func uyuniLiveStateDoOrderWindow(_ options: AnyObject?) {
+        LiveStateWindowPlacement.lowerBeforeOrderingIn(self)
+        uyuniLiveStateDoOrderWindow(options)
     }
 
     @objc(uyuniLiveStateSetLevel:)

@@ -44,6 +44,10 @@ enum LiveStateMenuMetrics {
     static let popUpTitleInset: CGFloat = 9
     static let submenuOverlap: CGFloat = 4
     static let minimumWidth: CGFloat = 120
+    static let shadowBlurRadius: CGFloat = 24
+    static let shadowOffsetY: CGFloat = -8
+    static let shadowInsets = NSEdgeInsets(top: shadowBlurRadius + shadowOffsetY, left: shadowBlurRadius, bottom: shadowBlurRadius - shadowOffsetY, right: shadowBlurRadius)
+    static let noInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
     static var font: NSFont { NSFont.menuFont(ofSize: 0) }
     static var headerFont: NSFont { NSFont.menuFont(ofSize: 0) }
     static var checkmark: NSImage? { NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 12, weight: .bold)) }
@@ -248,8 +252,8 @@ final class LiveStateMenuPanel {
         container.shadow = {
             let shadow = NSShadow()
             shadow.shadowColor = NSColor.black.withAlphaComponent(isDark ? 0.55 : 0.22)
-            shadow.shadowBlurRadius = 24
-            shadow.shadowOffset = NSSize(width: 0, height: -8)
+            shadow.shadowBlurRadius = LiveStateMenuMetrics.shadowBlurRadius
+            shadow.shadowOffset = NSSize(width: 0, height: LiveStateMenuMetrics.shadowOffsetY)
             return shadow
         }()
         let material = NSVisualEffectView(frame: container.bounds)
@@ -392,10 +396,14 @@ final class LiveStateMenuPresenter {
             hostContentView = menuContentView
             placement = "menu_window"
         }
-        let placed = Self.clamp(hostFrame, in: hostContentView.convert(hostContentView.bounds, to: nil))
+        let placed = Self.clamp(hostFrame, in: hostContentView.convert(hostContentView.bounds, to: nil), reserving: placement == "menu_window" ? LiveStateMenuMetrics.shadowInsets : LiveStateMenuMetrics.noInsets)
         let panel = LiveStateMenuPanel(menu: menu, layout: layout, frameInWindow: placed, parentRow: nil, window: hostWindow, frameView: hostContentView, above: nil)
         hostContentView.layoutSubtreeIfNeeded()
         hostWindow.displayIfNeeded()
+        if !panel.isComposited, LiveStateOverlayLayer.attach(panel.container, to: hostContentView) {
+            hostWindow.displayIfNeeded()
+            placement = "content_view_layer_attached"
+        }
         if !panel.isComposited, let frameView = hostContentView.superview {
             panel.move(into: frameView, above: hostContentView)
             placement = "frame_view_above_content_view"
@@ -601,11 +609,13 @@ final class LiveStateMenuPresenter {
         let bounds = contentView.convert(contentView.bounds, to: nil)
         var frame = CGRect(origin: .zero, size: layout.size)
         frame.origin.x = parent.frameInWindow.maxX - LiveStateMenuMetrics.submenuOverlap
-        if frame.maxX > bounds.maxX - LiveStateMenuMetrics.windowMargin { frame.origin.x = parent.frameInWindow.minX - frame.width + LiveStateMenuMetrics.submenuOverlap }
+        let reserved = window is LiveStateMenuWindow ? LiveStateMenuMetrics.shadowInsets : LiveStateMenuMetrics.noInsets
+        if frame.maxX > bounds.maxX - max(LiveStateMenuMetrics.windowMargin, reserved.right) { frame.origin.x = parent.frameInWindow.minX - frame.width + LiveStateMenuMetrics.submenuOverlap }
         frame.origin.y = parent.rowTopInWindow(row) + LiveStateMenuMetrics.verticalPadding - frame.height
-        let placed = Self.clamp(frame, in: bounds)
+        let placed = Self.clamp(frame, in: bounds, reserving: reserved)
         panels.append(LiveStateMenuPanel(menu: submenu, layout: layout, frameInWindow: placed, parentRow: row, window: window, frameView: frameView, above: panels.last?.container))
         window.displayIfNeeded()
+        if let submenuPanel = panels.last, !submenuPanel.isComposited, LiveStateOverlayLayer.attach(submenuPanel.container, to: frameView) { window.displayIfNeeded() }
         LiveStateLog.event("menu_submenu_opened", ["source": source, "title": parent.rowsView.layout.rows[row].item.title, "items": layout.rows.count, "frame": NSStringFromRect(placed)])
     }
 
@@ -645,13 +655,16 @@ final class LiveStateMenuPresenter {
         menu.delegate?.menuWillOpen?(menu)
     }
 
-    private static func clamp(_ frame: CGRect, in bounds: CGRect) -> CGRect {
+    static func clamp(_ frame: CGRect, in bounds: CGRect, reserving insets: NSEdgeInsets) -> CGRect {
         let margin = LiveStateMenuMetrics.windowMargin
+        let room = CGRect(x: bounds.minX + max(margin, insets.left), y: bounds.minY + max(margin, insets.bottom),
+                          width: bounds.width - max(margin, insets.left) - max(margin, insets.right),
+                          height: bounds.height - max(margin, insets.top) - max(margin, insets.bottom))
         var result = frame
-        result.size.height = min(result.height, bounds.height - margin * 2)
-        result.size.width = min(result.width, bounds.width - margin * 2)
-        result.origin.x = min(max(result.minX, bounds.minX + margin), bounds.maxX - margin - result.width)
-        result.origin.y = min(max(result.minY, bounds.minY + margin), bounds.maxY - margin - result.height)
+        result.size.height = min(result.height, room.height)
+        result.size.width = min(result.width, room.width)
+        result.origin.x = min(max(result.minX, room.minX), room.maxX - result.width)
+        result.origin.y = min(max(result.minY, room.minY), room.maxY - result.height)
         return result.integral
     }
 }
@@ -671,5 +684,14 @@ final class LiveStateMenuWindow: NSWindow {
         hasShadow = false
         contentView = NSView(frame: CGRect(origin: .zero, size: frame.size))
         LiveStateLog.event("menu_window_created", ["frame": NSStringFromRect(frame), "margin": [margin.top, margin.left, margin.bottom, margin.right]])
+    }
+}
+
+@MainActor
+enum LiveStateOverlayLayer {
+    static func attach(_ view: NSView, to host: NSView) -> Bool {
+        guard view.superview === host, view.layer?.superlayer == nil, let hostLayer = host.layer, let layer = view.layer else { return false }
+        hostLayer.addSublayer(layer)
+        return true
     }
 }

@@ -183,7 +183,7 @@ struct MenuPickerView: View {
                 Text("Item Actions")
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(red: 0.88, green: 0.9, blue: 0.95)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.18)))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -385,6 +385,7 @@ struct HostedSettingsPopUp: View {
             menu.addItem(item)
             if option == value { current = item }
         }
+        FixtureLog.event("hosted_pop_up_current_event", ["type": NSApp.currentEvent.map { Int($0.type.rawValue) } ?? -1, "windowNumber": NSApp.currentEvent?.windowNumber ?? -1])
         guard let event = NSApp.currentEvent, let view = event.window?.contentView else { return }
         let point = view.convert(event.locationInWindow, from: nil)
         withExtendedLifetime(target) { _ = menu.popUp(positioning: current, at: point, in: view) }
