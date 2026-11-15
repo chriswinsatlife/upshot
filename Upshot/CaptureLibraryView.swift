@@ -161,9 +161,9 @@ private struct CaptureLibraryToolbar: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button("Capture Fullscreen", systemImage: "macwindow") { CaptureCoordinator.shared.captureFullscreen() }
-                Button("Capture Window", systemImage: "macwindow.on.rectangle") { CaptureCoordinator.shared.captureWindow() }
-                Button("Capture Area", systemImage: "rectangle.dashed") { CaptureCoordinator.shared.captureArea() }
+                Button("Capture Fullscreen", systemImage: "macwindow") { CaptureHotkeyAction.fullscreen.perform() }
+                Button("Capture Window", systemImage: "macwindow.on.rectangle") { CaptureHotkeyAction.window.perform() }
+                Button("Capture Area", systemImage: "rectangle.dashed") { CaptureHotkeyAction.area.perform() }
                 Divider()
                 Button("Record Screen", systemImage: "record.circle") { RecordingPickerPresenter.shared.show() }
                     .disabled(ScreenRecordingManager.shared.isActive)
@@ -238,7 +238,7 @@ private struct CaptureLibraryBrowser: View {
                 ) {
                     if activeFilter != .recordings {
                         InterfaceActionButton("Capture Area", systemImage: "rectangle.dashed") {
-                            CaptureCoordinator.shared.captureArea()
+                            CaptureHotkeyAction.area.perform()
                         }
                     }
                     if activeFilter != .screenshots {

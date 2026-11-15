@@ -47,6 +47,8 @@ final class ScreenshotManager {
             guard let selection = try await AreaCaptureSelection.shared.select(initialMode: .window, delaySeconds: delaySeconds,
                                                                               includeWindowShadow: includeShadow) else { return nil }
             return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
+        } catch is CancellationError {
+            return nil
         } catch {
             AppLog.event("capture", "window_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
@@ -60,6 +62,8 @@ final class ScreenshotManager {
             guard let selection = try await AreaCaptureSelection.shared.select(smartElement: smartElement, delaySeconds: delaySeconds,
                                                                               includeWindowShadow: includeShadow) else { return nil }
             return try await capture(selection, includeShadow: includeShadow, delaySeconds: delaySeconds)
+        } catch is CancellationError {
+            return nil
         } catch {
             AppLog.event("capture", "area_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
@@ -123,6 +127,8 @@ final class ScreenshotManager {
             let selection = AreaCaptureSelectionResult(kind: .area, rect: rect, snapshots: snapshots, frozen: true, source: AreaCaptureSelection.captureSource(in: rect), cursor: ScreenshotCursorService.snapshot(), skipBackgroundPreset: NSEvent.modifierFlags.contains(.shift))
             AppLog.event("capture", "previous_screenshot_area_capture_started")
             return try await capture(selection, includeShadow: false, delaySeconds: delaySeconds)
+        } catch is CancellationError {
+            return nil
         } catch {
             AppLog.event("capture", "previous_screenshot_area_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))

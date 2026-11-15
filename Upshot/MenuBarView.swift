@@ -10,9 +10,9 @@ struct MenuBarView: View {
 
     var body: some View {
         Group {
-            actionButton(.area, symbol: "rectangle.dashed") { CaptureCoordinator.shared.captureArea() }
-            actionButton(.fullscreen, symbol: "camera") { CaptureCoordinator.shared.captureFullscreen() }
-            actionButton(.window, symbol: "macwindow") { CaptureCoordinator.shared.captureWindow() }
+            actionButton(.area, symbol: "rectangle.dashed")
+            actionButton(.fullscreen, symbol: "camera")
+            actionButton(.window, symbol: "macwindow")
             actionButton(.allInOne, symbol: "viewfinder")
             actionButton(.scrollingCapture, symbol: "arrow.down.to.line")
             actionButton(.selfTimer, symbol: "timer")

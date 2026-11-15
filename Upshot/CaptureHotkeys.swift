@@ -388,9 +388,15 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
                 _ = try await AutomationActions.perform(self)
             } catch AutomationError.cancelled {
                 AppLog.event("settings", "automation_action_cancelled", fields: ["action": String(describing: route)])
+            } catch is CancellationError {
+                AppLog.event("settings", "automation_action_cancelled", fields: ["action": String(describing: route)])
             } catch {
                 AppLog.event("settings", "automation_action_failed", fields: ["action": String(describing: route), "error": AppLog.error(error)])
-                AppAlerts.shortcutActionFailed(actionTitle: title, error: error).runModal()
+                if AutomationActions.isCapturing {
+                    CaptureTextFeedbackPresenter.shared.showFailure(title: "Couldn\u{2019}t run \(title)", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
+                } else {
+                    AppAlerts.shortcutActionFailed(actionTitle: title, error: error).runModal()
+                }
             }
         }
     }

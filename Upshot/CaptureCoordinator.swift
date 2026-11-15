@@ -26,18 +26,6 @@ final class CaptureCoordinator {
     private var textCaptureInProgress = false
 
 
-    func captureFullscreen() {
-        Task { await performCaptureFullscreen() }
-    }
-
-    func captureWindow() {
-        Task { await performCaptureWindow() }
-    }
-
-    func captureArea() {
-        Task { await performCaptureArea() }
-    }
-
     func captureAllInOne() {
         Task { await captureAllInOneAwaiting() }
     }
@@ -67,6 +55,8 @@ final class CaptureCoordinator {
                                                                            delaySeconds: selection.delaySeconds) else { return nil }
                 return await processAndFinishCapture(url: url, displayID: ScreenshotManager.shared.lastAreaCaptureDisplayID, source: ScreenshotManager.shared.lastAreaCaptureSource)
             }
+        } catch is CancellationError {
+            return nil
         } catch {
             AppLog.event("capture", "all_in_one_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))
@@ -184,7 +174,8 @@ final class CaptureCoordinator {
         do {
             guard let selected = try await TextCaptureSelection().select() else { return .cancelled }
             image = selected
-
+        } catch is CancellationError {
+            return .cancelled
         } catch {
             AppLog.event("capture", "capture_text_capture_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: true))

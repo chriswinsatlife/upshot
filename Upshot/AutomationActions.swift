@@ -16,7 +16,10 @@ nonisolated enum AutomationError: LocalizedError {
 }
 
 enum AutomationActions {
-    private static var captureInProgress = false
+    private static var runningCapture: (requestID: UUID, action: CaptureHotkeyAction, task: Task<JSONValue, Error>)?
+    private static var latestCaptureRequestID: UUID?
+
+    static var isCapturing: Bool { runningCapture != nil }
 
     static func perform(_ action: CaptureHotkeyAction, parameters: [String: String] = [:]) async throws -> JSONValue {
         let operationID = UUID().uuidString
@@ -34,10 +37,7 @@ enum AutomationActions {
 
     private static func execute(_ action: CaptureHotkeyAction, parameters: [String: String]) async throws -> JSONValue {
         if action.route.hasPrefix("capture/") {
-            guard !captureInProgress else { throw AutomationError.message("Another automation capture is in progress.") }
-            captureInProgress = true
-            defer { captureInProgress = false }
-            return try await capture(action, parameters: parameters)
+            return try await replaceRunningCapture(with: action, parameters: parameters)
         }
         if AutomationAnnotationActions.actions.contains(action) {
             try await AutomationAnnotationActions.perform(action, parameters: parameters)
@@ -171,6 +171,21 @@ enum AutomationActions {
         default: throw AutomationError.message("Unsupported action: \(action.route)")
         }
         return ["action": .string(action.route), "status": "accepted"]
+    }
+
+    private static func replaceRunningCapture(with action: CaptureHotkeyAction, parameters: [String: String]) async throws -> JSONValue {
+        let requestID = UUID()
+        latestCaptureRequestID = requestID
+        if let running = runningCapture {
+            AppLog.event("automation", "running_capture_replaced", fields: ["previous_action": running.action.route, "action": action.route])
+            running.task.cancel()
+            _ = await running.task.result
+        }
+        guard latestCaptureRequestID == requestID else { throw AutomationError.cancelled }
+        let task = Task { @MainActor in try await capture(action, parameters: parameters) }
+        runningCapture = (requestID, action, task)
+        defer { if runningCapture?.requestID == requestID { runningCapture = nil } }
+        return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
     }
 
     private static func requireRecordingState(_ states: [ScreenRecordingState]) throws {
