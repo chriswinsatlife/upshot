@@ -270,8 +270,11 @@ final class AreaCaptureSelection {
         }
         do {
             let result = try await withTaskCancellationHandler {
-                desktopIconLease = try await DesktopIconVisibilityService.shared.beginCapture(waitForPresentation: false)
+                desktopIconLease = try await DesktopIconVisibilityService.shared.beginCapture(waitForPresentation: frozen)
                 snapshots = try AreaCaptureSnapshot.displayGeometry()
+                try Task.checkCancellation()
+                guard !cancelled else { return nil as AreaCaptureSelectionResult? }
+                if frozen { await captureSnapshotsBeforeOverlay() }
                 try Task.checkCancellation()
                 guard !cancelled else { return nil as AreaCaptureSelectionResult? }
                 return await withCheckedContinuation { continuation in
@@ -313,23 +316,28 @@ final class AreaCaptureSelection {
         return shareableContent
     }
 
+    private func captureSnapshotsBeforeOverlay() async {
+        let started = ProcessInfo.processInfo.systemUptime
+        do {
+            let content = try await loadContent()
+            try Task.checkCancellation()
+            let captured = try await AreaCaptureSnapshot.captureAll(desktopIconsPrepared: true, content: content)
+            try Task.checkCancellation()
+            guard !cancelled else { return }
+            snapshots = captured
+            AppLog.event("capture", "area_selector_frozen_snapshot_ready", fields: ["displays": String(describing: captured.count), "milliseconds": String(format: "%.0f", (ProcessInfo.processInfo.systemUptime - started) * 1000), "timing": "before_overlay"])
+        } catch {
+            if !Task.isCancelled { AppLog.event("capture", "area_selector_acquisition_unavailable", fields: ["error": AppLog.error(error), "fallback": "screenshot"]) }
+        }
+    }
+
     private func beginAcquisition() {
+        guard !frozen else { return }
         startupTask = Task { @MainActor in
             do {
                 let content = try await loadContent()
                 try Task.checkCancellation()
-                if frozen {
-                    let captured = try await AreaCaptureSnapshot.captureAll(desktopIconsPrepared: true, content: content)
-                    try Task.checkCancellation()
-                    guard !cancelled, !completingSelection, continuation != nil else { return }
-                    snapshots = captured
-                    for view in views {
-                        if let snapshot = captured.first(where: { $0.displayID == view.snapshot.displayID }) { view.updateSnapshot(snapshot) }
-                    }
-                    AppLog.event("capture", "area_selector_frozen_snapshot_ready", fields: ["displays": String(describing: captured.count)])
-                } else {
-                    await startStreams(content: content)
-                }
+                await startStreams(content: content)
             } catch {
                 if !Task.isCancelled { AppLog.event("capture", "area_selector_acquisition_unavailable", fields: ["error": AppLog.error(error), "fallback": "screenshot"]) }
             }
@@ -772,7 +780,7 @@ private final class AreaCaptureSelectionPanel: NSPanel {
 }
 
 final class AreaCaptureSelectionView: NSView {
-    private(set) var snapshot: AreaCaptureSnapshot
+    let snapshot: AreaCaptureSnapshot
     let frozen: Bool
     unowned let selector: AreaCaptureSelection
     private var tracking: NSTrackingArea?
@@ -799,11 +807,6 @@ final class AreaCaptureSelectionView: NSView {
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
     override var isOpaque: Bool { frozen && snapshot.isCaptured }
-    func updateSnapshot(_ snapshot: AreaCaptureSnapshot) {
-        self.snapshot = snapshot
-        window?.isOpaque = frozen && snapshot.isCaptured
-        needsDisplay = true
-    }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
 
     override func updateTrackingAreas() {
