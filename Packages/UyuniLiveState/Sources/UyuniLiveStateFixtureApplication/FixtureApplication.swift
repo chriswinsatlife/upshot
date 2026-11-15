@@ -51,7 +51,7 @@ final class FixtureApplication: LiveStateApplication {
     }
 
     func liveStateCatalog() async throws -> LiveStateCatalog {
-        let lines = ["counter": CounterView.sourceLine, "scrolling-list": ScrollingListView.sourceLine,
+        let lines = ["counter": CounterView.sourceLine, "standard-window-buttons": CounterView.sourceLine, "scrolling-list": ScrollingListView.sourceLine,
                      "text-and-slider": TextAndSliderView.sourceLine, "panel-over-window": PanelView.sourceLine]
         let interactionLines = ["popup-button": PopUpButtonContentView.sourceLine, "menu-picker": MenuPickerView.sourceLine,
                                 "draggable-item": DraggableItemView.sourceLine, "save-panel-button": SavePanelButtonView.sourceLine,
@@ -59,7 +59,7 @@ final class FixtureApplication: LiveStateApplication {
                                 "alert-over-window": FixtureAlert.sourceLine, "alert-alone": FixtureAlert.sourceLine, "hosted-settings": HostedSettingsView.sourceLine, "hosted-form": HostedFormView.sourceLine, "grouped-form-menu": GroupedFormMenuView.sourceLine, "capsule-panel": CapsulePanelView.sourceLine,
                                 "sheet-actions": SheetActionsContentView.sourceLine, "swiftui-sheets": SwiftUISheetsView.sourceLine,
                                 "right-click-targets": RightClickTargetsView.sourceLine, "right-click-targets-inactive-window": RightClickTargetsView.sourceLine, "activation-actions": ActivationActionsContentView.sourceLine, "hosted-settings-helper-window": HostedSettingsView.sourceLine]
-        let states = ["counter", "scrolling-list", "text-and-slider", "panel-over-window"].map { name in
+        let states = ["counter", "standard-window-buttons", "scrolling-list", "text-and-slider", "panel-over-window"].map { name in
             LiveStateDescription(name: name, baseState: name, appearance: .light, sourceFile: Self.sourceFile, sourceLine: lines[name] ?? 0)
         } + ["popup-button", "menu-picker", "draggable-item", "save-panel-button", "open-url-button", "alert-button", "alert-over-window", "alert-alone", "hosted-settings", "hosted-form", "grouped-form-menu", "capsule-panel", "sheet-actions", "swiftui-sheets", "right-click-targets", "right-click-targets-inactive-window", "activation-actions", "hosted-settings-helper-window"].map { name in
             LiveStateDescription(name: name, baseState: name, appearance: .light, sourceFile: Self.interactionSourceFile, sourceLine: interactionLines[name] ?? 0)
@@ -82,6 +82,10 @@ final class FixtureApplication: LiveStateApplication {
         switch state.baseState {
         case "counter":
             presentation = LiveStatePresentation(window: makeWindow(size: Self.baseContentSize) { size in
+                AnyView(CounterView(model: CounterModel(), size: size))
+            })
+        case "standard-window-buttons":
+            presentation = LiveStatePresentation(window: makeWindow(size: Self.baseContentSize, styleMask: [.titled, .closable, .miniaturizable, .resizable]) { size in
                 AnyView(CounterView(model: CounterModel(), size: size))
             })
         case "scrolling-list":
@@ -210,8 +214,8 @@ final class FixtureApplication: LiveStateApplication {
         return rows
     }
 
-    private func makeWindow(size: CGSize, content: (CGSize) -> AnyView) -> LiveStateWindow {
-        let window = LiveStateWindow(contentRect: NSRect(origin: Self.windowOrigin, size: size), styleMask: [.titled],
+    private func makeWindow(size: CGSize, styleMask: NSWindow.StyleMask = [.titled], content: (CGSize) -> AnyView) -> LiveStateWindow {
+        let window = LiveStateWindow(contentRect: NSRect(origin: Self.windowOrigin, size: size), styleMask: styleMask,
                                      backing: .buffered, defer: false)
         window.title = "Uyuni Live State Fixture"
         window.contentView = NSHostingView(rootView: content(size))

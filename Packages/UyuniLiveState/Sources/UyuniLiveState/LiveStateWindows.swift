@@ -49,20 +49,23 @@ enum LiveStateWindowPlacement {
             installedGuards.append(exchange.name)
         }
         var unavailable: [[String: Any]] = []
-        let privateName = "_doOrderWindow:"
-        if !installedGuards.contains(privateName) {
-            if let originalMethod = class_getInstanceMethod(NSWindow.self, NSSelectorFromString(privateName)),
-               let replacementMethod = class_getInstanceMethod(NSWindow.self, #selector(NSWindow.uyuniLiveStateDoOrderWindow(_:))) {
-                let found = method_getTypeEncoding(originalMethod).map { String(cString: $0) } ?? ""
-                if found == privateOrderingEncoding {
-                    method_exchangeImplementations(originalMethod, replacementMethod)
-                    installedGuards.append(privateName)
-                } else {
-                    unavailable.append(["method": "-[NSWindow \(privateName)]", "reason": "type encoding \(found) differs from \(privateOrderingEncoding)"])
-                }
-            } else {
-                unavailable.append(["method": "-[NSWindow \(privateName)]", "reason": "missing"])
+        let privateExchanges: [(name: String, replacement: Selector, encoding: String)] = [
+            ("_doOrderWindow:", #selector(NSWindow.uyuniLiveStateDoOrderWindow(_:)), privateOrderingEncoding),
+            ("showsWindowSharingTitlebarButton", #selector(NSWindow.uyuniLiveStateShowsWindowSharingTitlebarButton), privateSharingTitlebarButtonEncoding),
+        ]
+        for exchange in privateExchanges where !installedGuards.contains(exchange.name) {
+            guard let originalMethod = class_getInstanceMethod(NSWindow.self, NSSelectorFromString(exchange.name)),
+                  let replacementMethod = class_getInstanceMethod(NSWindow.self, exchange.replacement) else {
+                unavailable.append(["method": "-[NSWindow \(exchange.name)]", "reason": "missing"])
+                continue
             }
+            let found = method_getTypeEncoding(originalMethod).map { String(cString: $0) } ?? ""
+            guard found == exchange.encoding else {
+                unavailable.append(["method": "-[NSWindow \(exchange.name)]", "reason": "type encoding \(found) differs from \(exchange.encoding)"])
+                continue
+            }
+            method_exchangeImplementations(originalMethod, replacementMethod)
+            installedGuards.append(exchange.name)
         }
         if !unavailable.isEmpty { LiveStateLog.event("private_window_guards_unavailable", ["methods": unavailable]) }
         LiveStateLog.event("window_level_guards_installed", ["methods": installedGuards, "missing": missing])
@@ -70,6 +73,7 @@ enum LiveStateWindowPlacement {
     }
 
     static let privateOrderingEncoding = "v24@0:8@16"
+    static let privateSharingTitlebarButtonEncoding = "B16@0:8"
 
     static func clampedLevel(_ level: NSWindow.Level, for window: NSWindow) -> NSWindow.Level {
         guard level.rawValue >= desktopLevel else { return level }
@@ -198,6 +202,11 @@ extension NSWindow {
     dynamic func uyuniLiveStateDoOrderWindow(_ options: AnyObject?) {
         LiveStateWindowPlacement.lowerBeforeOrderingIn(self)
         uyuniLiveStateDoOrderWindow(options)
+    }
+
+    @objc(uyuniLiveStateShowsWindowSharingTitlebarButton)
+    dynamic func uyuniLiveStateShowsWindowSharingTitlebarButton() -> Bool {
+        false
     }
 
     @objc(uyuniLiveStateSetLevel:)
