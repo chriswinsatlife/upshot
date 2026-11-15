@@ -146,6 +146,7 @@ final class CaptureLibraryModel {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var visibleIndices: [String: Int] = [:]
     @ObservationIgnored private var itemsByID: [String: CaptureLibraryItem] = [:]
+    @ObservationIgnored private var renderItemOverrides: [String: CaptureLibraryItem] = [:]
 
     @ObservationIgnored private var corpus: [String: String] = [:]
     @ObservationIgnored private var corpusItems: [String: CaptureLibraryItem] = [:]
@@ -228,10 +229,11 @@ final class CaptureLibraryModel {
             let scan = Task.detached(priority: .userInitiated) {
                 CaptureLibraryScanner.scan(history: history, historyDirectory: directory, excludingSessionPath: activeSessionPath)
             }
-            let result = await withTaskCancellationHandler {
+            let scanned = await withTaskCancellationHandler {
                 await scan.value
             } onCancel: { scan.cancel() }
             guard !Task.isCancelled else { return }
+            let result = renderItemOverrides.isEmpty ? scanned : scanned.map(applyingRenderOverride)
             items = result
             itemsByID = Dictionary(result.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             screenshotCount = result.lazy.filter { !$0.isVideo }.count
@@ -435,10 +437,22 @@ extension CaptureLibraryModel {
         scope = .kind(.all)
         items = fixtureItems
         itemsByID = Dictionary(uniqueKeysWithValues: fixtureItems.map { ($0.id, $0) })
+        renderItemOverrides = itemsByID
         screenshotCount = fixtureItems.filter { !$0.isVideo }.count
         updateFacets()
         updateVisibleItems()
         selection = []
         isLoading = false
+    }
+
+    private func applyingRenderOverride(_ item: CaptureLibraryItem) -> CaptureLibraryItem {
+        precondition(UpshotStorage.isRenderingStates)
+        guard let fixture = renderItemOverrides[item.id] else { return item }
+        return CaptureLibraryItem(
+            id: item.id, historyIDs: item.historyIDs, name: item.name, fileURL: item.fileURL, session: item.session,
+            createdAt: item.createdAt, modifiedAt: item.modifiedAt, pixelWidth: item.pixelWidth, pixelHeight: item.pixelHeight,
+            duration: item.duration, isVideo: item.isVideo, hasEdits: fixture.hasEdits, hasDraft: fixture.hasDraft,
+            cloudURL: fixture.cloudURL, source: fixture.source, thumbnailKey: item.thumbnailKey
+        )
     }
 }
