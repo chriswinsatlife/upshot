@@ -213,9 +213,7 @@ nonisolated enum CaptureLibraryFiles {
         var moved: [(URL, URL)] = []
         do {
             for url in urls where FileManager.default.fileExists(atPath: url.path) {
-                var destination: NSURL?
-                try FileManager.default.trashItem(at: url, resultingItemURL: &destination)
-                if let destination { moved.append((url, destination as URL)) }
+                if let destination = try UpshotStorage.trashItem(at: url) { moved.append((url, destination)) }
             }
         } catch {
             for (original, trashed) in moved.reversed() { try? FileManager.default.moveItem(at: trashed, to: original) }

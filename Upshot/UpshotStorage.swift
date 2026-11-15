@@ -25,6 +25,24 @@ nonisolated enum UpshotStorage {
         return base.appendingPathComponent("Upshot", isDirectory: true)
     }
 
+    static func trashItem(at url: URL) throws -> URL? {
+        guard let fixtureRoot else {
+            var destination: NSURL?
+            try FileManager.default.trashItem(at: url, resultingItemURL: &destination)
+            return destination as URL?
+        }
+        let trash = fixtureRoot.appendingPathComponent("Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        var destination = trash.appendingPathComponent(url.lastPathComponent)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: destination.path) {
+            destination = trash.appendingPathComponent("\(url.deletingPathExtension().lastPathComponent) \(suffix)").appendingPathExtension(url.pathExtension)
+            suffix += 1
+        }
+        try FileManager.default.moveItem(at: url, to: destination)
+        return destination
+    }
+
     static var configurationFileURL: URL {
         if let fixtureRoot { return fixtureRoot.appendingPathComponent("Configuration/config.toml") }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/upshot/config.toml")
