@@ -35,8 +35,8 @@ final class CaptureCodeFeedbackPresenter {
                 panel?.close()
             }
         )
-        hostingView.sizingOptions = []
         let size = hostingView.fittingSize
+        hostingView.sizingOptions = []
 
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false

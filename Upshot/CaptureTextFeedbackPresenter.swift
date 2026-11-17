@@ -75,8 +75,8 @@ final class CaptureTextFeedbackPresenter {
             rootView: CaptureTextFeedbackView(feedback: feedback)
                 .padding(Self.shadowSlack)
         )
-        hostingView.sizingOptions = []
         let size = hostingView.fittingSize
+        hostingView.sizingOptions = []
 
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -93,6 +93,7 @@ final class CaptureTextFeedbackPresenter {
         panel.contentView = hostingView
 
         let restingFrame = NSRect(origin: origin(size: size, displayID: displayID), size: size)
+        AppLog.event("capture", "text_recognition_feedback_placed", fields: ["height": String(format: "%.1f", restingFrame.height), "width": String(format: "%.1f", restingFrame.width), "x": String(format: "%.1f", restingFrame.minX), "y": String(format: "%.1f", restingFrame.minY)])
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.setFrame(restingFrame.offsetBy(dx: 0, dy: reduceMotion ? 0 : -Self.entranceRise), display: true)
         panel.alphaValue = 0
