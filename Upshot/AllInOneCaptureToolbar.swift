@@ -55,7 +55,7 @@ struct AllInOneCaptureToolbar: View {
     private var modePanel: some View {
         InterfacePanel {
             HStack(spacing: Space.xxs) {
-                InterfaceToolbarButton("Cancel", systemImage: "xmark", labelPlacement: .hidden, action: selector.cancel)
+                InterfaceToolbarButton("Cancel", systemImage: "xmark", labelPlacement: .hidden, action: { selector.cancel(reason: "toolbar_cancel_button") })
                     .keyboardShortcut(.cancelAction)
                 InterfaceToolbarDivider()
                     .padding(.horizontal, Space.xs)

@@ -265,7 +265,7 @@ final class AreaCaptureSelection {
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 AppLog.event("capture", "area_selector_display_layout_changed", fields: ["outcome": "cancelled"])
-                self?.cancel()
+                self?.cancel(reason: "display_layout_changed")
             }
         }
         do {
@@ -285,7 +285,7 @@ final class AreaCaptureSelection {
                 }
             } onCancel: {
                 Task { @MainActor in
-                    if self.sessionID == sessionID { self.cancel() }
+                    if self.sessionID == sessionID { self.cancel(reason: "task_cancelled") }
                 }
             }
             await stopStreams()
@@ -522,6 +522,7 @@ final class AreaCaptureSelection {
     }
 
     func mouseDown(at point: CGPoint) {
+        AppLog.event("capture", "area_selector_mouse_down", fields: ["mode": mode.rawValue, "x": String(format: "%.1f", point.x), "y": String(format: "%.1f", point.y)])
         move(to: point)
         guard mode.drawsArea else { return }
         start = point
@@ -531,6 +532,7 @@ final class AreaCaptureSelection {
     }
 
     func mouseUp(at point: CGPoint, eventTime: TimeInterval) {
+        AppLog.event("capture", "area_selector_mouse_up", fields: ["dragging": String(describing: start != nil), "mode": mode.rawValue, "x": String(format: "%.1f", point.x), "y": String(format: "%.1f", point.y)])
         move(to: point)
         commitSelection(eventTime: eventTime)
     }
@@ -562,7 +564,11 @@ final class AreaCaptureSelection {
         }
     }
 
-    func cancel() { cancelled = true; finish(nil) }
+    func cancel(reason: String) {
+        if !cancelled { AppLog.event("capture", "area_selector_cancel_requested", fields: ["mode": mode.rawValue, "reason": reason]) }
+        cancelled = true
+        finish(nil)
+    }
 
     func toggleCrosshair() {
         UpshotPreferences.areaSelectionCrosshair.toggle()
@@ -578,7 +584,7 @@ final class AreaCaptureSelection {
 
     func keyDown(_ event: NSEvent) {
         if completingSelection {
-            if event.keyCode == 53 { cancel() }
+            if event.keyCode == 53 { cancel(reason: "escape_key") }
             return
         }
         if let character = event.charactersIgnoringModifiers?.lowercased() {
@@ -599,7 +605,7 @@ final class AreaCaptureSelection {
             }
         }
         switch event.keyCode {
-        case 53: cancel()
+        case 53: cancel(reason: "escape_key")
         case 49: chooseMode(mode == .window ? .area : .window)
         case 36 where isAllInOne && mode == .recording, 76 where isAllInOne && mode == .recording:
             chooseRecordingOutput(.forReturnKey(modifierFlags: event.modifierFlags), eventTime: event.timestamp)
@@ -830,7 +836,7 @@ final class AreaCaptureSelectionView: NSView {
         selector.mouseDown(at: globalPoint(event))
     }
     override func mouseUp(with event: NSEvent) { selector.mouseUp(at: globalPoint(event), eventTime: event.timestamp) }
-    override func rightMouseDown(with event: NSEvent) { selector.cancel() }
+    override func rightMouseDown(with event: NSEvent) { selector.cancel(reason: "right_mouse_down") }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
