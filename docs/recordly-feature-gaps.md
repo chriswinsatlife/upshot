@@ -5,7 +5,7 @@ sources:
   - Upshot working tree at aa518e6 on 2026-11-17
   - webadderallorg/Recordly at 1a2ea26 (2026-11-17), cloned to .local/reference/Recordly
   - Recordly GitHub releases v1.0.0 through v1.4.0
-method: static code reading by twelve research agents, one per Recordly area, then one verification agent per report that rechecked every citation against both repositories; nothing built or run
+method: static code reading by twelve Grok 4.7 research agents, one per Recordly area, then one Grok 4.7 verification agent per report, then four GPT-6.1 Sol agents that rechecked every report against both repositories; nothing built or run
 detail_reports: .local/recordly-port-research/
 ---
 
@@ -13,7 +13,7 @@ detail_reports: .local/recordly-port-research/
 
 Recordly is an Electron screen recorder and demo-video editor with 36,974 GitHub stars and about 223,000 lines of TypeScript. Each item below is a Recordly feature that Upshot lacks or implements only in part. The full behavior, the Recordly implementation with file and line citations, the Upshot code that exists today, a port specification, and an effort estimate for every item are in the detail report for its area in `.local/recordly-port-research/`.
 
-The twelve reports hold 190 features. Upshot already has 18 of them at comparable depth. Of the remaining 172, the reports rate 69 High value for demo-video quality, 73 Medium, and 30 Low. After merging features that two reports both covered, the High-value gaps are the list below.
+The twelve reports hold 187 features. Upshot already has 19 of them at comparable depth. Of the remaining 168, the reports rate 61 High value for demo-video quality, 69 Medium, and 38 Low. A feature whose Recordly code exists but appears on no Recordly screen is rated Low. After merging the two aspect ratio features into one, the 60 High-value gaps are the list below.
 
 Effort is Small for under a day, Medium for one to three days, and Large for more than three days.
 
@@ -45,7 +45,6 @@ Report: `.local/recordly-port-research/timeline-editing.md`
 
 - Drag reorder of clips, Absent, Large: Recordly lets the user drag a clip to a new place in the sequence. Upshot always plays clips in source order.
 - Per-clip speed, Partial, Medium: Recordly clip speed runs from 0.25× to 30× in preview. Upshot runs from 1× to 8×, so Upshot has no slow motion.
-- Speed changes that keep the voice at its original pitch, Partial, Small: Recordly stretches the audio so speech keeps its pitch at a new speed. Upshot sets no setting to keep the pitch.
 - Edge trim of a clip, Partial, Medium: Recordly lets a clip end be dragged out again to bring back footage that was trimmed away. Upshot's trim stops at the neighboring clip's edge.
 - Split at the playhead, Partial, Medium: Recordly splits with a configurable Command-B, keeps the left half selected, and splits any zoom that covers the split point. Upshot selects the right half, splits with a fixed Command-B, and also splits the clip lane on c at the hover time and on s at the playhead, and it leaves a covering zoom whole.
 - Delete a clip, Partial, Small: Recordly can delete any clip, including the last one. Upshot refuses to delete the last clip.
@@ -81,7 +80,6 @@ Report: `.local/recordly-port-research/webcam-overlay.md`
 
 Report: `.local/recordly-port-research/audio.md`
 
-- Separate system and microphone tracks, Partial, Large: Recordly records system audio and the microphone as separate files and lets each be turned on or off in the editor. Upshot records both but cannot control each one on its own in the editor.
 - Clip mute, Absent, Medium: Recordly can mute the sound of one clip and keep its picture. Upshot has no mute for a clip.
 
 ## Captions
@@ -130,21 +128,15 @@ Report: `.local/recordly-port-research/projects-library-sharing-and-editor-shell
 
 - Five-second hover preview, Absent, Large: hovering a Recordly project card plays the edited video, muted, for five seconds. Upshot shows a still.
 - Upload while the export is still writing, Absent, Large: Recordly starts uploading a share link while the MP4 is still being written. Upshot uploads after the export finishes.
-- Saved editor presets, Partial, Medium: a Recordly preset saves the whole editor look, including zoom timing, motion blur, and cursor springs. Upshot's saved look covers background, padding, corners, shadow, cursor size and style, and the camera bubble.
 - Composed project thumbnails, Partial, Medium: Recordly project cards show a still of the edited video with wallpaper and frame. Upshot shows the exported file or the raw recording.
-- Cloud share link, Partial, Medium: Recordly publishes the current edit with a title of up to 200 characters and notes of up to 2000 characters, then returns a link. Upshot uploads a finished file and stores the URL, and the share action has no title or notes form.
+- Cloud share link, Partial, Medium: Recordly's share form takes a title of up to 200 characters and notes of up to 2000 characters, and its success state plays the published video. Upshot's share form takes a title and a comments switch, then uploads the current edit and copies the link, with no notes field and no published preview.
 - Project file format and reopening, Partial, Medium: a Recordly project file holds the full edit plus undo history and reopens it. An Upshot project package holds the edit without undo history.
-- Autosave, Partial, Small: Recordly saves silently every 300 ms while there are changes. Upshot writes a draft 250 ms after a change and asks before closing.
 
 ## Features Recordly Announced as Extensions
 
 Report: `.local/recordly-port-research/extensions-and-release-history.md`
 
-Recordly removed its extension system on 2026-08-28 in commit `c574fd8d99`, and its marketplace site returned an error on 2026-11-17. The three features below were announced in Recordly v1.1.21 as extension ideas and do not exist in the current Recordly build. The extension report still rates each one High value for Upshot.
-
-- Device frames, Absent, Large: the recording drawn inside a laptop, phone, tablet, or desktop frame.
-- Browser mockups, Absent, Medium: the recording drawn inside a browser window frame.
-- Cursor click sounds, Absent, Medium: a click sound placed on every recorded click.
+Recordly removed its extension system on 2026-08-28 in commit `c574fd8d99`, and its marketplace site returned an error on 2026-11-17. Device frames, browser mockups, cursor click sounds, and extension wallpapers were announced in Recordly v1.1.21 as extension ideas. None of the four exists in the current Recordly build, so the extension report rates each one Low as a port candidate.
 
 ## Medium and Low Value Gaps
 
