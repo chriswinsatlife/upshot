@@ -212,7 +212,8 @@ final class AreaCaptureSelection {
     }
 
     func select(smartElement: Bool = false, allInOne: Bool = false, initialMode: AllInOneCaptureMode = .area, scrolling: Bool = false,
-                delaySeconds: Int = 0, includeWindowShadow: Bool = false, includeWindowCursor: Bool = true) async throws -> AreaCaptureSelectionResult? {
+                delaySeconds: Int = 0, includeWindowShadow: Bool = false, includeWindowCursor: Bool = true,
+                freezesScreen: Bool? = nil) async throws -> AreaCaptureSelectionResult? {
         guard !active, !CaptureCountdownPresenter.shared.isRunning, !Task.isCancelled else { return nil }
         cursor = ScreenshotCursorService.snapshot()
         active = true
@@ -243,7 +244,7 @@ final class AreaCaptureSelection {
         aspect = nil
         self.includeWindowShadow = includeWindowShadow
         windowShowsCursor = includeWindowCursor && UpshotPreferences.screenshotShowCursor
-        frozen = UpshotPreferences.areaSelectionFreezeScreen
+        frozen = freezesScreen ?? UpshotPreferences.areaSelectionFreezeScreen
         isAllInOne = allInOne
         isScrollingOnly = scrolling
         mode = scrolling ? .scrolling : smartElement ? .element : allInOne ? UpshotPreferences.allInOneLastMode : initialMode
