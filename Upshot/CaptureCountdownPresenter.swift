@@ -83,8 +83,8 @@ final class CaptureCountdownPresenter {
         dismiss()
 
         let hostingView = NSHostingView(rootView: CaptureCountdownView(model: model, onCancel: { [weak self] in self?.cancel() }))
-        hostingView.sizingOptions = []
         let size = hostingView.fittingSize
+        hostingView.sizingOptions = []
 
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
