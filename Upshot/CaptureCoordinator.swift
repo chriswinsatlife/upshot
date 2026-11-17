@@ -205,10 +205,11 @@ final class CaptureCoordinator {
         }
 
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        let written = NSPasteboard.general.setString(text, forType: .string)
+        AppLog.event("capture", "capture_text_clipboard_written", fields: ["characters": String(text.count), "written": String(describing: written)])
         CaptureTextFeedbackPresenter.shared.showCopied(text: text, displayID: displayID)
         if UpshotPreferences.playSounds {
-            CaptureFeedbackSound.play()
+            CaptureTextSound.play()
         }
         return .copied(text)
     }
