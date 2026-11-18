@@ -204,14 +204,52 @@ final class CaptureCoordinator {
             return .noTextFound
         }
 
-        NSPasteboard.general.clearContents()
-        let written = NSPasteboard.general.setString(text, forType: .string)
+        let pasteboard = NSPasteboard.general
+        let previousText = pasteboard.string(forType: .string)
+        pasteboard.clearContents()
+        let written = pasteboard.setString(text, forType: .string)
         AppLog.event("capture", "capture_text_clipboard_written", fields: ["characters": String(text.count), "written": String(describing: written)])
+        if written {
+            keepCapturedTextAfterClipboardRestore(text, previousText: previousText, changeCount: pasteboard.changeCount)
+        }
         CaptureTextFeedbackPresenter.shared.showCopied(text: text, displayID: displayID)
         if UpshotPreferences.playSounds {
             CaptureTextSound.play()
         }
         return .copied(text)
+    }
+
+    private static let transientPasteboardType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+    private static let concealedPasteboardType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+    private static let clipboardRestoreWatchDuration: TimeInterval = 1.5
+
+    private func keepCapturedTextAfterClipboardRestore(_ text: String, previousText: String?, changeCount: Int) {
+        Task {
+            let pasteboard = NSPasteboard.general
+            let start = Date()
+            func elapsedMilliseconds() -> String { String(format: "%.0f", Date().timeIntervalSince(start) * 1000) }
+            while Date().timeIntervalSince(start) < Self.clipboardRestoreWatchDuration {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard pasteboard.changeCount != changeCount else { continue }
+                let types = pasteboard.types ?? []
+                let restoredPreviousContents = types.contains(Self.transientPasteboardType)
+                    && !types.contains(Self.concealedPasteboardType)
+                    && pasteboard.string(forType: .string) == previousText
+                guard restoredPreviousContents else {
+                    AppLog.event("capture", "capture_text_clipboard_checked", fields: ["outcome": "replaced", "milliseconds": elapsedMilliseconds()])
+                    return
+                }
+                pasteboard.clearContents()
+                let rewritten = pasteboard.setString(text, forType: .string)
+                AppLog.event("capture", "capture_text_clipboard_checked", fields: [
+                    "outcome": "previous_contents_restored_by_another_app",
+                    "milliseconds": elapsedMilliseconds(),
+                    "rewritten": String(describing: rewritten)
+                ])
+                return
+            }
+            AppLog.event("capture", "capture_text_clipboard_checked", fields: ["outcome": "retained", "milliseconds": elapsedMilliseconds()])
+        }
     }
 
     func recordFullscreen(_ display: SCDisplay) {
