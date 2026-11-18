@@ -87,6 +87,12 @@ enum LiveStateInteractionGuards {
         replace(NSApplication.self, "activateIgnoringOtherApps:", activateIgnoringOtherApps)
         replace(NSApplication.self, "activate", activateApplication)
         replace(NSWindow.self, "makeKeyWindow", makeKeyWindow)
+        let setActivationPolicy: @convention(block) (NSApplication, Int) -> Bool = { _, policy in
+            guard policy != NSApplication.ActivationPolicy.prohibited.rawValue else { return true }
+            blocked("activation_policy_change", ["requestedPolicy": policy, "callers": Array(Thread.callStackSymbols.dropFirst().prefix(8))])
+            return false
+        }
+        replace(NSApplication.self, "setActivationPolicy:", setActivationPolicy)
 
         let popUpMenu: @convention(block) (NSMenu, NSMenuItem?, NSPoint, NSView?) -> Bool = { menu, item, location, view in
             let (window, point) = windowPoint(location, in: view)

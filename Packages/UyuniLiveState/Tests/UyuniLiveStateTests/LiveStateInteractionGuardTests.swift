@@ -5,29 +5,14 @@ import Testing
 
 @MainActor
 struct LiveStateInteractionGuardTests {
-    static let originalImplementations: [String: IMP] = {
-        _ = NSApplication.shared
-        var implementations: [String: IMP] = [:]
-        for (owner, selector): (AnyClass, String) in guardedMethods {
-            implementations[selector] = class_getMethodImplementation(owner, NSSelectorFromString(selector))
-        }
-        return implementations
-    }()
-
-    static let guardedMethods: [(AnyClass, String)] = [
-        (NSWorkspace.self, "openURL:"), (NSWorkspace.self, "openURL:configuration:completionHandler:"),
-        (NSSavePanel.self, "runModal"), (NSAlert.self, "runModal"), (NSWindow.self, "beginSheet:completionHandler:"),
-        (NSView.self, "beginDraggingSessionWithItems:event:source:"), (NSRunningApplication.self, "activateWithOptions:"),
-    ]
-
     init() {
-        _ = Self.originalImplementations
+        _ = NSApplication.shared
         #expect(LiveStateInteractionGuards.install().isEmpty)
     }
 
     func requireReplaced(_ owner: AnyClass, _ selector: String) throws {
-        let original = try #require(Self.originalImplementations[selector])
-        try #require(class_getMethodImplementation(owner, NSSelectorFromString(selector)) != original)
+        let implementation = try #require(class_getMethodImplementation(owner, NSSelectorFromString(selector)))
+        try #require(imp_getBlock(implementation) != nil)
     }
 
     @Test func workspaceOpensReturnFailureWithoutOpening() throws {
