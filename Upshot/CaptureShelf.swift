@@ -192,6 +192,10 @@ final class CaptureShelf {
 
     func dismiss(id: ShelfItem.ID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        AppLog.event("quick_access", "quick_access_card_dismissed", fields: [
+            "item": id.uuidString,
+            "remaining_cards": String(items.count - 1)
+        ])
         if QuickLookPreviewPresenter.currentURL == items[index].url {
             QuickLookPreviewPresenter.dismiss()
         }
@@ -283,17 +287,31 @@ final class CaptureShelf {
     }
 
     func canPerform(_ action: OverlayCardAction, id: ShelfItem.ID) -> Bool {
-        guard let item = item(id: id), item.activity == nil, draggingID == nil,
-              !CloudUploader.shared.uploadingItems.contains(id) else { return false }
-        if (action == .pin || action == .compress) && item.kind != .image { return false }
-        if action == .delete && isOpenInEditor(id: id) { return false }
-        if action == .upload && !CloudUploader.shared.isConfigured { return false }
-        return true
+        refusalReason(for: action, id: id) == nil
+    }
+
+    private func refusalReason(for action: OverlayCardAction, id: ShelfItem.ID) -> String? {
+        guard let item = item(id: id) else { return "card_missing" }
+        if let activity = item.activity { return "card_busy_\(activity)" }
+        if draggingID != nil { return "card_dragging" }
+        if CloudUploader.shared.uploadingItems.contains(id) { return "card_uploading" }
+        if (action == .pin || action == .compress) && item.kind != .image { return "unsupported_for_video" }
+        if action == .delete && isOpenInEditor(id: id) { return "open_in_editor" }
+        if action == .upload && !CloudUploader.shared.isConfigured { return "cloud_not_configured" }
+        return nil
     }
 
     @discardableResult
     func perform(_ action: OverlayCardAction, id: ShelfItem.ID) -> Bool {
-        guard canPerform(action, id: id) else { return false }
+        var fields = ["action": String(describing: action), "item": id.uuidString]
+        if let reason = refusalReason(for: action, id: id) {
+            fields["outcome"] = "refused"
+            fields["reason"] = reason
+            AppLog.event("quick_access", "quick_access_action", fields: fields)
+            return false
+        }
+        fields["outcome"] = "started"
+        AppLog.event("quick_access", "quick_access_action", fields: fields)
 
         switch action {
         case .copy: copy(id: id)
@@ -334,14 +352,33 @@ final class CaptureShelf {
         guard let item = item(id: id) else { return }
         switch item.kind {
         case .image:
-            guard copyImageToClipboard(item.url) else { return }
+            guard copyImageToClipboard(item.url) else {
+                recordActionResult("copy", id: id, outcome: "failed")
+                return
+            }
             dismiss(id: id)
+            recordActionResult("copy", id: id, outcome: "succeeded")
         case .video:
             Task {
-                guard await copyVideoToClipboard(item.url, itemID: id) else { return }
+                guard await copyVideoToClipboard(item.url, itemID: id) else {
+                    recordActionResult("copy", id: id, outcome: "failed")
+                    return
+                }
                 dismiss(id: id)
+                recordActionResult("copy", id: id, outcome: "succeeded")
             }
         }
+    }
+
+    private func recordActionResult(_ action: String, id: ShelfItem.ID, outcome: String, destination: String? = nil) {
+        var fields = [
+            "action": action,
+            "item": id.uuidString,
+            "outcome": outcome,
+            "card": item(id: id) == nil ? "closed" : "retained"
+        ]
+        if let destination { fields["destination"] = destination }
+        AppLog.event("quick_access", "quick_access_action_result", fields: fields)
     }
 
     func pin(id: ShelfItem.ID) {
@@ -427,21 +464,28 @@ final class CaptureShelf {
         if !choosingLocation && UpshotPreferences.saveButtonUsesConfiguredFolder {
             guard item.savedURL == nil else {
                 dismiss(id: id)
+                recordActionResult("save", id: id, outcome: "already_saved", destination: "configured_folder")
                 return
             }
             switch item.kind {
             case .video:
                 Task {
-                    guard let savedURL = await saveVideoToDefaultLocation(from: item.url, itemID: id) else { return }
+                    guard let savedURL = await saveVideoToDefaultLocation(from: item.url, itemID: id) else {
+                        recordActionResult("save", id: id, outcome: "failed", destination: "configured_folder")
+                        return
+                    }
                     update(id) { $0.savedURL = savedURL }
                     dismiss(id: id)
+                    recordActionResult("save", id: id, outcome: "succeeded", destination: "configured_folder")
                 }
             case .image:
                 do {
                     let savedURL = try ScreenshotFileActions.saveToDefaultLocation(from: item.url)
                     update(id) { $0.savedURL = savedURL }
                     dismiss(id: id)
+                    recordActionResult("save", id: id, outcome: "succeeded", destination: "configured_folder")
                 } catch {
+                    recordActionResult("save", id: id, outcome: "failed", destination: "configured_folder")
                     presentSaveFailure(error, id: id)
                 }
             }
@@ -458,8 +502,14 @@ final class CaptureShelf {
         panel.canCreateDirectories = true
         panel.title = item.kind == .video ? "Save Recording" : "Save Screenshot"
 
+        recordActionResult("save", id: id, outcome: "save_panel_opened", destination: "save_panel")
         panel.begin { [weak self] response in
-            guard response == .OK, let destination = panel.url else { return }
+            guard response == .OK, let destination = panel.url else {
+                Task { @MainActor in
+                    self?.recordActionResult("save", id: id, outcome: "cancelled", destination: "save_panel")
+                }
+                return
+            }
             Task { @MainActor in
                 guard let self else { return }
                 do {
@@ -471,7 +521,9 @@ final class CaptureShelf {
                     }
                     self.update(id) { $0.savedURL = destination }
                     self.dismiss(id: id)
+                    self.recordActionResult("save", id: id, outcome: "succeeded", destination: "save_panel")
                 } catch {
+                    self.recordActionResult("save", id: id, outcome: "failed", destination: "save_panel")
                     FailureAlert.present(.saveCapture, error: error)
                 }
             }
