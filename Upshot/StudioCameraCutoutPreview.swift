@@ -24,6 +24,7 @@ nonisolated struct StudioCutoutLayerParameters: Equatable, Sendable {
     /// See StudioCutoutStyle.feather(picture:canvas:).
     var feather: SIMD4<Float>
     var shadowAlpha: CGFloat
+    var pictureCrop = RecordingCameraCropGeometry.unit
 }
 
 /// The person cut out of `player`'s camera, filling its frame the way the
@@ -330,10 +331,9 @@ nonisolated final class StudioCameraCutoutPipeline: @unchecked Sendable {
         let height = CGFloat(CVPixelBufferGetHeight(camera))
         guard width > 0, height > 0 else { return }
         // Aspect-fill, as the framed camera's player layer draws it.
-        let fill = max(size.width / width, size.height / height)
-        let picture = CGRect(
-            x: (size.width - width * fill) / 2, y: (size.height - height * fill) / 2,
-            width: width * fill, height: height * fill
+        let picture = RecordingCameraCropGeometry.fillRect(
+            sourceSize: CGSize(width: width, height: height),
+            destination: CGRect(origin: .zero, size: size), crop: parameters.pictureCrop
         )
         let presented = renderer.renderLayer(
             camera: camera,

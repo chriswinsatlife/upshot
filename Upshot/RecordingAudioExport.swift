@@ -108,7 +108,11 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
             duration: CMTime(seconds: duration, preferredTimescale: 600)
         )
         let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: RecordingAudioChannels.decodedSettings(mono: configuration.monoAudio))
-        output.audioMix = RecordingAudioGain.makeMix(tracks: tracks, volume: configuration.volume)
+        output.audioMix = RecordingAudioGain.makeMix(
+            tracks: tracks,
+            volume: configuration.volume,
+            clipTimeline: configuration.replacementURL == nil ? timeline : nil
+        )
         output.alwaysCopiesSampleData = false
         reader.add(output)
 

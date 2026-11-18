@@ -281,6 +281,7 @@ nonisolated enum RecordingSessionStore {
             .appendingPathComponent(name)
             .appendingPathExtension(RecordingSession.directoryExtension)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        DevelopmentCaptureMarker.mark(directory)
         return RecordingSession(directoryURL: directory)
     }
 

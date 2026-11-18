@@ -23,12 +23,21 @@ struct CloudUploadResult: Sendable {
     let url: String
     let filename: String
     let size: Int
+    var acceptsNotes = false
+    var previewURL: URL?
+    var notesWereSaved: Bool?
 }
 
 @MainActor
 @Observable
 final class CloudUploader: NSObject {
     static let shared = CloudUploader()
+    private var notesWorkerURL: String?
+    private var workerAcceptsNotes = false
+    var acceptsNotes: Bool {
+        workerAcceptsNotes && notesWorkerURL == CloudCredentialStore.shared.workerURL
+    }
+    private(set) var uploadedPreviewURLs: [UUID: URL] = [:]
 
     /// Upload progress keyed by preview item ID.
     private(set) var uploadProgress: [UUID: Double] = [:]
@@ -57,121 +66,189 @@ final class CloudUploader: NSObject {
         itemID: UUID,
         fileURL: URL,
         title: String? = nil,
-        socialEnabled: Bool = true
+        socialEnabled: Bool = true,
+        notes: String? = nil,
+        exportConfiguration: RecordingStudioExporter.Configuration? = nil,
+        renderedDocument: RecordingEditDocument? = nil,
+        onExportProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> CloudUploadResult {
-        guard isConfigured else {
-            throw CloudUploadError.notConfigured
-        }
-
-        // The Dock mirrors the whole span - the deliverable render (when
-        // one is needed) plus the upload itself.
-        let dockProgressID = DockExportProgressCoordinator.shared.start()
-
-        // A session recording must upload what the user sees, not the raw
-        // screen master: render the saved project into the flattened
-        // deliverable first (cached until the edits change).
-        var fileURL = fileURL
-        let sessionDirectory = fileURL.deletingLastPathComponent()
-        if RecordingSession.isSessionDirectory(sessionDirectory) {
-            uploadingItems.insert(itemID)
-            uploadProgress[itemID] = 0
-            do {
-                fileURL = try await RecordingSessionRenderer.ensureDeliverable(
-                    for: RecordingSession(directoryURL: sessionDirectory)
-                )
-            } catch {
-                DockExportProgressCoordinator.shared.finish(dockProgressID)
-                uploadingItems.remove(itemID)
-                uploadProgress.removeValue(forKey: itemID)
-                failedItemIDs.insert(itemID)
-                throw error
-            }
-        }
-
+        guard isConfigured else { throw CloudUploadError.notConfigured }
+        guard activeTasks[itemID] == nil else { throw CloudUploadError.alreadyUploading }
         let creds = CloudCredentialStore.shared.snapshot()
-        let fileName = fileURL.lastPathComponent
-        let mimeType = mimeTypeForFile(fileURL)
-        let isVideo = mimeType.hasPrefix("video/")
-        let dimensions: (width: Int, height: Int)?
-        let duration: Double?
-
-        if isVideo {
-            let videoMeta = await videoDimensions(at: fileURL)
-            dimensions = videoMeta.dimensions
-            duration = videoMeta.duration
-        } else {
-            dimensions = imageDimensions(at: fileURL)
-            duration = nil
-        }
-
+        let dockProgressID = DockExportProgressCoordinator.shared.start()
         uploadingItems.insert(itemID)
         uploadProgress[itemID] = 0
-
-        let uploadTask = Task { [weak self] () throws -> CloudUploadResult in
-            let result = try await Self.streamUpload(
-                fileURL: fileURL,
-                filename: fileName,
-                contentType: mimeType,
-                mediaType: isVideo ? "video" : "image",
-                width: dimensions?.width,
-                height: dimensions?.height,
-                duration: duration,
-                title: title,
-                socialEnabled: socialEnabled,
-                creds: creds,
-                progress: { [weak self] fraction in
-                    Task { @MainActor [weak self] in
-                        self?.uploadProgress[itemID] = fraction
-                        DockExportProgressCoordinator.shared.update(
-                            dockProgressID,
-                            progress: fraction
-                        )
-                    }
+        failedItemIDs.remove(itemID)
+        AppLog.event("recording", "cloud_upload_started", fields: ["growing": String(exportConfiguration != nil)])
+        let uploadTask = Task { [self] () throws -> CloudUploadResult in
+            var destination = fileURL
+            let directory = fileURL.deletingLastPathComponent()
+            let session = RecordingSession.isSessionDirectory(directory)
+                ? RecordingSession(directoryURL: directory) : nil
+            var configuration = exportConfiguration
+            let document = renderedDocument ?? session?.effectiveEditDocument()
+            if configuration == nil, let session {
+                let exportOptions = RecordingExportOptionStore.load(from: session.directoryURL)
+                let exportAppearance = RecordingExportAppearanceStore.load(from: session.directoryURL)
+                let requiresRendering = session.hasCamera || session.loadCaptureManifest()?.pointerSynthesized == true
+                    || document != nil || exportOptions != nil || exportAppearance != nil
+                if !requiresRendering {
+                    destination = session.screenURL
+                } else if exportOptions == nil, exportAppearance == nil,
+                          let existing = session.freshFinalURL(matching: document) {
+                    destination = existing
+                } else {
+                    configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
                 }
-            )
-
-            return result
-        }
-
-        activeTasks[itemID] = uploadTask
-
-        do {
-            let result = try await uploadTask.value
-            DockExportProgressCoordinator.shared.finish(dockProgressID)
-            activeTasks.removeValue(forKey: itemID)
-            uploadingItems.remove(itemID)
-            uploadProgress.removeValue(forKey: itemID)
-            uploadedURLs[itemID] = result.url
-            if isVideo {
-                scheduleSidecarUpload(uploadID: result.id, fileURL: fileURL, title: title, creds: creds)
+            }
+            let renders = configuration != nil
+            let report: @Sendable (Double) -> Void = { [weak self] value in
+                Task { @MainActor [weak self] in
+                    self?.uploadProgress[itemID] = value
+                    DockExportProgressCoordinator.shared.update(dockProgressID, progress: renders ? 0.5 + value * 0.5 : value)
+                }
+            }
+            var result: CloudUploadResult
+            if var configuration {
+                configuration.deliveryOptions.format = .video
+                let source = GrowingCloudUploadSource()
+                configuration.growingUploadSource = source
+                let container = configuration.exportSettings.effectiveContainer
+                let filename = destination.deletingPathExtension().lastPathComponent + "." + container.fileExtension
+                let contentType = mimeTypeForFile(URL(fileURLWithPath: filename))
+                let duration = configuration.clipTimeline.duration
+                let pendingDestination = destination
+                async let uploading = Self.streamUpload(
+                    fileURL: pendingDestination, filename: filename, contentType: contentType,
+                    mediaType: "video", width: nil, height: nil,
+                    duration: duration, title: title, socialEnabled: socialEnabled,
+                    creds: creds, progress: report, growingSource: source
+                )
+                var temporaryURL: URL?
+                defer {
+                    if let temporaryURL { try? FileManager.default.removeItem(at: temporaryURL) }
+                }
+                do {
+                    let rendered = try await RecordingStudioExporter().export(configuration) { value in
+                        onExportProgress?(value)
+                        Task { @MainActor in
+                            DockExportProgressCoordinator.shared.update(dockProgressID, progress: value * 0.5)
+                        }
+                    }
+                    onExportProgress?(1)
+                    temporaryURL = rendered
+                    try Task.checkCancellation()
+                    source.finished(rendered)
+                    result = try await uploading
+                    if let session {
+                        destination = try session.installFinalVideo(movingFrom: rendered, renderedFrom: document)
+                    } else {
+                        destination = rendered
+                    }
+                    scheduleSidecarUpload(uploadID: result.id, fileURL: destination, title: title, creds: creds, removeFileAfterUpload: session == nil)
+                    temporaryURL = nil
+                } catch {
+                    source.failed(error)
+                    throw error
+                }
+            } else {
+                let mimeType = mimeTypeForFile(destination)
+                let isVideo = mimeType.hasPrefix("video/")
+                let metadata = isVideo ? await videoDimensions(at: destination) : (dimensions: nil, duration: nil)
+                let dimensions = isVideo ? metadata.dimensions : imageDimensions(at: destination)
+                result = try await Self.streamUpload(
+                    fileURL: destination, filename: destination.lastPathComponent, contentType: mimeType,
+                    mediaType: isVideo ? "video" : "image", width: dimensions?.width, height: dimensions?.height,
+                    duration: metadata.duration, title: title, socialEnabled: socialEnabled,
+                    creds: creds, progress: report
+                )
+                if isVideo { scheduleSidecarUpload(uploadID: result.id, fileURL: destination, title: title, creds: creds) }
+            }
+            try Task.checkCancellation()
+            let currentCredentials = CloudCredentialStore.shared.snapshot()
+            guard currentCredentials.workerURL == creds.workerURL, currentCredentials.uploadToken == creds.uploadToken else {
+                throw CancellationError()
+            }
+            if let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                do {
+                    guard result.acceptsNotes else { throw CloudUploadError.notesUnsupported }
+                    try await Self.uploadNotes(String(notes.prefix(2000)), uploadID: result.id, creds: creds)
+                    result.notesWereSaved = true
+                } catch {
+                    try Task.checkCancellation()
+                    result.notesWereSaved = false
+                    AppLog.event("recording", "cloud_share_notes_failed", fields: ["error": AppLog.error(error)])
+                }
             }
             return result
-        } catch is CancellationError {
+        }
+        activeTasks[itemID] = uploadTask
+        let credentialWatch = Task { @MainActor in
+            while !Task.isCancelled {
+                let current = CloudCredentialStore.shared.snapshot()
+                if current.workerURL != creds.workerURL || current.uploadToken != creds.uploadToken {
+                    uploadTask.cancel()
+                    return
+                }
+                do { try await Task.sleep(for: .milliseconds(250)) }
+                catch { return }
+            }
+        }
+        defer {
+            credentialWatch.cancel()
             DockExportProgressCoordinator.shared.finish(dockProgressID)
             activeTasks.removeValue(forKey: itemID)
             uploadingItems.remove(itemID)
             uploadProgress.removeValue(forKey: itemID)
-            throw CancellationError()
+        }
+        do {
+            let result = try await withTaskCancellationHandler {
+                try await uploadTask.value
+            } onCancel: {
+                uploadTask.cancel()
+            }
+            try Task.checkCancellation()
+            uploadedURLs[itemID] = result.url
+            workerAcceptsNotes = result.acceptsNotes
+            notesWorkerURL = creds.workerURL
+            uploadedPreviewURLs[itemID] = result.previewURL
+            AppLog.event("recording", "cloud_upload_completed", fields: ["bytes": String(result.size)])
+            return result
         } catch {
-            DockExportProgressCoordinator.shared.finish(dockProgressID)
-            activeTasks.removeValue(forKey: itemID)
-            uploadingItems.remove(itemID)
-            uploadProgress.removeValue(forKey: itemID)
-            failedItemIDs.insert(itemID)
+            if !Task.isCancelled, !(error is CancellationError) { failedItemIDs.insert(itemID) }
+            AppLog.event("recording", "cloud_upload_failed", fields: ["error": AppLog.error(error)])
+            if Task.isCancelled { throw CancellationError() }
             throw error
         }
+    }
+
+    nonisolated private static func uploadNotes(_ notes: String, uploadID: String, creds: CloudCredentials) async throws {
+        guard let url = URL(string: "\(normalizeWorkerURL(creds.workerURL))/api/assets/\(uploadID)") else {
+            throw CloudUploadError.invalidURL
+        }
+        let boundary = "upshot-\(UUID().uuidString)"
+        let body = Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"notes\"\r\n\r\n\(notes)\r\n--\(boundary)--\r\n".utf8)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let (_, response) = try await URLSession.shared.upload(for: request, from: body)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw CloudUploadError.invalidResponse }
+        AppLog.event("recording", "cloud_share_notes_uploaded")
     }
 
     /// Ships the share-page extras (poster, title, transcript) after the
     /// video itself is up. Best-effort and detached: the share link is
     /// already usable, sidecars enrich the page when they land.
-    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, title: String?, creds: CloudCredentials) {
+    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, title: String?, creds: CloudCredentials, removeFileAfterUpload: Bool = false) {
         let item = ScreenshotHistoryStore.shared.items.first {
             $0.url.standardizedFileURL == fileURL.standardizedFileURL
         }
         let sessionDirectory = item?.recordingSession?.directoryURL
         let createdAt = item?.createdAt ?? Date()
         Task.detached(priority: .utility) {
+            defer { if removeFileAfterUpload { try? FileManager.default.removeItem(at: fileURL) } }
             await CloudSidecarUploader.uploadVideoSidecars(
                 uploadID: uploadID,
                 uploadedFileURL: fileURL,
@@ -185,7 +262,6 @@ final class CloudUploader: NSObject {
 
     func cancelUpload(for itemID: UUID) {
         activeTasks[itemID]?.cancel()
-        activeTasks.removeValue(forKey: itemID)
         uploadingItems.remove(itemID)
         uploadProgress.removeValue(forKey: itemID)
     }
@@ -194,6 +270,7 @@ final class CloudUploader: NSObject {
         uploadingItems.remove(itemID)
         uploadProgress.removeValue(forKey: itemID)
         uploadedURLs.removeValue(forKey: itemID)
+        uploadedPreviewURLs.removeValue(forKey: itemID)
         failedItemIDs.remove(itemID)
     }
 
@@ -255,7 +332,8 @@ final class CloudUploader: NSObject {
         title: String?,
         socialEnabled: Bool,
         creds: CloudCredentials,
-        progress: (@Sendable (Double) -> Void)?
+        progress: (@Sendable (Double) -> Void)?,
+        growingSource: GrowingCloudUploadSource? = nil
     ) async throws -> CloudUploadResult {
         let workerBase = normalizeWorkerURL(creds.workerURL)
         let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -288,10 +366,10 @@ final class CloudUploader: NSObject {
 
         let responseData: Data
         let response: URLResponse
-        let size = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        if size >= 90 * 1024 * 1024 {
+        let size = growingSource == nil ? (try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) : 0
+        if growingSource != nil || size >= 90 * 1024 * 1024 {
             (responseData, response) = try await MultipartCloudUpload.upload(
-                fileURL: fileURL, request: request, progress: progress
+                fileURL: fileURL, request: request, progress: progress, growingSource: growingSource
             )
         } else {
             let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
@@ -318,7 +396,7 @@ final class CloudUploader: NSObject {
         }
 
         progress?(1)
-        return CloudUploadResult(id: id, url: shareURL, filename: name, size: fileSize)
+        return CloudUploadResult(id: id, url: shareURL, filename: name, size: fileSize, acceptsNotes: json?["acceptsNotes"] as? Bool ?? false, previewURL: (json?["previewURL"] as? String).flatMap(URL.init(string:)).flatMap { ["http", "https"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil })
     }
 
     // MARK: - Helpers
@@ -406,6 +484,8 @@ private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, Se
 // MARK: - Errors
 
 enum CloudUploadError: LocalizedError {
+    case notesUnsupported
+    case alreadyUploading
     case notConfigured
     case invalidURL
     case networkError(Error)
@@ -414,6 +494,10 @@ enum CloudUploadError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .notesUnsupported:
+            "The Upshot Cloud Worker does not accept share notes."
+        case .alreadyUploading:
+            "This recording is already uploading."
         case .notConfigured:
             "Cloud upload is not configured. Set your worker URL and upload token in Settings."
         case .invalidURL:

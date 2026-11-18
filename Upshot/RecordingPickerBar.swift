@@ -31,7 +31,7 @@ struct RecordingPickerControls: View {
     @AppStorage(UpshotPreferences.recordingStartDelaySecondsKey) private var startDelaySeconds = 0
     @AppStorage(UpshotPreferences.recordingTeleprompterEnabledKey) private var teleprompterEnabled = false
 
-    private static let timerOptions = [0, 1, 3, 5]
+    private static let timerOptions = [0, 1, 3, 5, 10]
 
     var body: some View {
         HStack(spacing: Space.xxs) {
@@ -82,16 +82,19 @@ struct RecordingPickerControls: View {
         .fixedSize()
         .task {
             guard !UpshotStorage.isRenderingStates else { return }
-            cameras = RecordingDeviceCatalog.cameras()
+            refreshCameras()
+            await warmCameraPreview()
             await sources.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)
             .receive(on: RunLoop.main)) { _ in
-            cameras = RecordingDeviceCatalog.cameras()
+            refreshCameras()
+            Task { await warmCameraPreview() }
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)
             .receive(on: RunLoop.main)) { _ in
-            cameras = RecordingDeviceCatalog.cameras()
+            refreshCameras()
+            Task { await warmCameraPreview() }
         }
     }
 
@@ -178,7 +181,7 @@ struct RecordingPickerControls: View {
         guard let camera = cameras.first(where: { $0.uniqueID == cameraID }) else {
             return "Camera unavailable - click to choose another camera"
         }
-        return "Camera on - \(camera.localizedName), click to switch"
+        return "Camera on - \(cameraName(camera)), click to switch"
     }
 
     private var microphoneAccessibilityLabel: String {
@@ -200,6 +203,7 @@ struct RecordingPickerControls: View {
         ) {
             Button {
                 cameraID = ""
+                AppLog.event("recording", "camera_device_disabled")
                 Task { await CameraRecordingManager.shared.stopPreview() }
             } label: {
                 menuSelectionLabel("Off", isSelected: cameraID.isEmpty)
@@ -215,7 +219,7 @@ struct RecordingPickerControls: View {
                 Button {
                     selectCamera(device.uniqueID)
                 } label: {
-                    menuSelectionLabel(device.localizedName, isSelected: cameraID == device.uniqueID)
+                    menuSelectionLabel(cameraName(device), isSelected: cameraID == device.uniqueID)
                 }
             }
         }
@@ -291,13 +295,30 @@ struct RecordingPickerControls: View {
             let authorized = await RecordingInputAuthorization.ensureAccess(for: .camera)
             cameraID = authorized ? deviceID : ""
             if authorized {
+                AppLog.event("recording", "camera_device_selected")
                 await warmCameraPreview()
             }
         }
     }
 
+    private func cameraName(_ device: AVCaptureDevice) -> String {
+        device.localizedName.isEmpty ? "Camera \((cameras.firstIndex { $0.uniqueID == device.uniqueID } ?? 0) + 1)" : device.localizedName
+    }
+
+    private func refreshCameras() {
+        cameras = RecordingDeviceCatalog.cameras()
+        guard !cameraID.isEmpty, !cameras.contains(where: { $0.uniqueID == cameraID }) else { return }
+        if let fallback = cameras.first {
+            cameraID = fallback.uniqueID
+            AppLog.event("recording", "camera_device_fallback_selected")
+        } else {
+            AppLog.event("recording", "camera_device_unavailable")
+            Task { await CameraRecordingManager.shared.stopPreview() }
+        }
+    }
+
     private func warmCameraPreview() async {
-        guard !cameraID.isEmpty else { return }
+        guard !cameraID.isEmpty, cameras.contains(where: { $0.uniqueID == cameraID }) else { return }
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: false)
         await CameraRecordingManager.shared.startPreview(deviceID: cameraID, displayID: displayID)
     }

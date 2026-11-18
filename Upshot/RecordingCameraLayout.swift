@@ -42,8 +42,40 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
     enum Shape: String, Codable, CaseIterable, Sendable {
         case circle
         case square
+        case squircle
+        case rectangle
         /// 3:4, taller than wide.
         case portrait
+    }
+
+    enum PositionPreset: String, Codable, CaseIterable, Sendable {
+        case topLeading, topCenter, topTrailing
+        case centerLeading, center, centerTrailing
+        case bottomLeading, bottomCenter, bottomTrailing
+        case custom
+
+        var point: CGPoint {
+            switch self {
+            case .topLeading: CGPoint(x: 0, y: 0)
+            case .topCenter: CGPoint(x: 0.5, y: 0)
+            case .topTrailing: CGPoint(x: 1, y: 0)
+            case .centerLeading: CGPoint(x: 0, y: 0.5)
+            case .center: CGPoint(x: 0.5, y: 0.5)
+            case .centerTrailing: CGPoint(x: 1, y: 0.5)
+            case .bottomLeading: CGPoint(x: 0, y: 1)
+            case .bottomCenter: CGPoint(x: 0.5, y: 1)
+            case .bottomTrailing, .custom: CGPoint(x: 1, y: 1)
+            }
+        }
+
+        init(_ corner: Corner) {
+            switch corner {
+            case .topLeading: self = .topLeading
+            case .topTrailing: self = .topTrailing
+            case .bottomLeading: self = .bottomLeading
+            case .bottomTrailing: self = .bottomTrailing
+            }
+        }
     }
 
     enum Side: String, Codable, CaseIterable, Sendable {
@@ -68,6 +100,7 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
     }
 
     static let sizeRange: ClosedRange<Double> = 0.12...0.45
+    static let dimensionRange: ClosedRange<Double> = 0.10...1
     static let splitRatioRange: ClosedRange<Double> = 0.45...1.2
     static let spacingRange: ClosedRange<Double> = 0...0.12
     static let cutoutSizeRange: ClosedRange<Double> = 0.3...0.9
@@ -90,6 +123,62 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
     /// Cutout camera frame height as a fraction of the canvas's smaller
     /// dimension.
     var cutoutSize: Double
+    var positionPreset: PositionPreset?
+    var positionX: Double = 1
+    var positionY: Double = 1
+    var width: Double?
+    var height: Double?
+
+    var resolvedPositionPreset: PositionPreset { positionPreset ?? PositionPreset(corner) }
+
+    var position: CGPoint {
+        guard resolvedPositionPreset == .custom else { return resolvedPositionPreset.point }
+        return CGPoint(
+            x: Self.clamped(positionX, to: 0...1, fallback: 1),
+            y: Self.clamped(positionY, to: 0...1, fallback: 1)
+        )
+    }
+
+    var widthFraction: Double { Self.clamped(width ?? size, to: Self.dimensionRange, fallback: 0.26) }
+    var heightFraction: Double {
+        if shape == .circle { return widthFraction }
+        return Self.clamped(height ?? (shape == .portrait ? widthFraction * 4 / 3 : widthFraction),
+                            to: Self.dimensionRange, fallback: 0.26)
+    }
+
+    mutating func setPosition(_ point: CGPoint) {
+        positionX = Self.clamped(Double(point.x), to: 0...1, fallback: 1)
+        positionY = Self.clamped(Double(point.y), to: 0...1, fallback: 1)
+        positionPreset = .custom
+    }
+
+    mutating func selectPosition(_ preset: PositionPreset) {
+        positionPreset = preset
+        guard preset != .custom else { return }
+        positionX = Double(preset.point.x)
+        positionY = Double(preset.point.y)
+        switch preset {
+        case .topLeading: corner = .topLeading
+        case .topTrailing: corner = .topTrailing
+        case .bottomLeading: corner = .bottomLeading
+        case .bottomTrailing: corner = .bottomTrailing
+        default: break
+        }
+    }
+
+    mutating func selectShape(_ shape: Shape) {
+        let current = widthFraction
+        self.shape = shape
+        if shape == .portrait {
+            size = Self.clamped(current, to: Self.sizeRange, fallback: 0.26)
+            width = nil
+            height = nil
+            return
+        }
+        width = min(current * (shape == .rectangle ? 16 / 9 : 1), 1)
+        height = current
+        size = width ?? current
+    }
 
     init(
         kind: Kind = .pictureInPicture,
@@ -143,6 +232,7 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, corner, shape, size, side, splitRatio, screenFit, spacing, placement, cutoutSize
+        case positionPreset, positionX, positionY, width, height
     }
 
     init(from decoder: any Decoder) throws {
@@ -171,6 +261,15 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
             placement: placement ?? .trailing,
             cutoutSize: try container.decodeIfPresent(Double.self, forKey: .cutoutSize) ?? 0.6
         )
+        positionPreset = value(.positionPreset)
+        positionX = Self.clamped(try container.decodeIfPresent(Double.self, forKey: .positionX) ?? Double(position.x), to: 0...1, fallback: 1)
+        positionY = Self.clamped(try container.decodeIfPresent(Double.self, forKey: .positionY) ?? Double(position.y), to: 0...1, fallback: 1)
+        width = try container.decodeIfPresent(Double.self, forKey: .width).map {
+            Self.clamped($0, to: Self.dimensionRange, fallback: 0.26)
+        }
+        height = try container.decodeIfPresent(Double.self, forKey: .height).map {
+            Self.clamped($0, to: Self.dimensionRange, fallback: 0.26)
+        }
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -185,6 +284,11 @@ nonisolated struct RecordingCameraLayout: Codable, Hashable, Sendable {
         try container.encode(spacing, forKey: .spacing)
         try container.encode(placement.rawValue, forKey: .placement)
         try container.encode(cutoutSize, forKey: .cutoutSize)
+        try container.encodeIfPresent(positionPreset, forKey: .positionPreset)
+        try container.encode(positionX, forKey: .positionX)
+        try container.encode(positionY, forKey: .positionY)
+        try container.encodeIfPresent(width, forKey: .width)
+        try container.encodeIfPresent(height, forKey: .height)
     }
 
     private static func clamped(_ value: Double, to range: ClosedRange<Double>, fallback: Double) -> Double {
@@ -212,7 +316,8 @@ nonisolated extension RecordingCameraLayout {
         case .pictureInPicture:
             switch shape {
             case .circle: "Circle"
-            case .square: "Bubble"
+            case .square, .squircle: "Bubble"
+            case .rectangle: "Rectangle"
             case .portrait: "Portrait"
             }
         case .split: "Split"
@@ -261,6 +366,7 @@ nonisolated extension RecordingCameraLayout {
     /// Normalized canvas center the bubble roughly occupies, written beside
     /// the layout so older builds still open the project sensibly.
     var legacyCenter: CGPoint {
+        if positionPreset != nil { return CGPoint(x: 0.15 + position.x * 0.7, y: 0.15 + position.y * 0.7) }
         let near = 0.15, far = 0.85
         return switch corner {
         case .topLeading: CGPoint(x: near, y: near)
@@ -309,7 +415,9 @@ nonisolated struct RecordingCameraLayoutTimelineBlock: Identifiable, Equatable, 
     let editorStart: TimeInterval
     let editorEnd: TimeInterval
 
-    var id: UUID { cue.id }
+    var fragmentID: UUID? = nil
+
+    var id: UUID { fragmentID ?? cue.id }
 }
 
 // MARK: - Frames
@@ -327,6 +435,8 @@ nonisolated struct RecordingCameraLayoutFrame: Equatable, Sendable {
     /// person, cut out of the background. A morph blends the two, so the
     /// background melts away as the camera settles into a cutout.
     var cameraCutout: CGFloat = 0
+    var cameraSquircle: CGFloat = 0
+    var cameraBubble: CGFloat = 0
 
     /// Blends two frames. Something hidden at one end appears from (or
     /// leaves into) a slightly smaller copy of where it sits at the other,
@@ -345,11 +455,13 @@ nonisolated struct RecordingCameraLayoutFrame: Equatable, Sendable {
             from.cameraRect = to.cameraRect.scaledAboutCenter(0.82)
             from.cameraCornerRadius = to.cameraCornerRadius * 0.82
             from.cameraCutout = to.cameraCutout
+            from.cameraSquircle = to.cameraSquircle
         }
         if to.cameraOpacity <= 0.001 {
             to.cameraRect = from.cameraRect.scaledAboutCenter(0.82)
             to.cameraCornerRadius = from.cameraCornerRadius * 0.82
             to.cameraCutout = from.cameraCutout
+            to.cameraSquircle = from.cameraSquircle
         }
         // Fades run in the first part of the move, so a layer arriving is
         // solid well before it lands and one leaving is gone before it stops.
@@ -360,7 +472,9 @@ nonisolated struct RecordingCameraLayoutFrame: Equatable, Sendable {
             cameraRect: from.cameraRect.lerp(to: to.cameraRect, t),
             cameraCornerRadius: from.cameraCornerRadius.lerp(to: to.cameraCornerRadius, t),
             cameraOpacity: from.cameraOpacity.lerp(to: to.cameraOpacity, fade),
-            cameraCutout: from.cameraCutout.lerp(to: to.cameraCutout, t)
+            cameraCutout: from.cameraCutout.lerp(to: to.cameraCutout, t),
+            cameraSquircle: from.cameraSquircle.lerp(to: to.cameraSquircle, t),
+            cameraBubble: from.cameraBubble.lerp(to: to.cameraBubble, t)
         )
     }
 }
@@ -384,6 +498,9 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
     private let margin: CGFloat
     /// The corner camera's scale once a zoom lands; 1 when it doesn't shrink.
     let zoomedCameraScale: CGFloat
+    private let zoomResponse: RecordingCameraZoomResponse
+    private let reactsToZoom: Bool
+    private let pictureCrop: CGRect
 
     init(
         base: RecordingStudioLayout,
@@ -399,10 +516,15 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
         let canvas = base.canvasSize
         minDimension = max(1, min(canvas.width, canvas.height))
         let inset = min(max(style.padding, 0), 0.475) * minDimension
-        contentArea = CGRect(origin: .zero, size: canvas).insetBy(dx: inset, dy: inset)
+        contentArea = style.paddingSides == nil
+            ? CGRect(origin: .zero, size: canvas).insetBy(dx: inset, dy: inset)
+            : base.cardRect
         roundness = min(max(style.camera.roundness, 0), 0.5)
         margin = RecordingStudioLayout.bubbleMargin(forMinDimension: minDimension)
         zoomedCameraScale = style.camera.shrinksDuringZoom ? 1 - style.camera.zoomShrinkAmount : 1
+        zoomResponse = style.camera.zoomResponse
+        reactsToZoom = style.camera.shrinksDuringZoom
+        pictureCrop = style.camera.pictureCrop
     }
 
     /// A corner camera's scale for how far the screen has zoomed: full
@@ -414,9 +536,24 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
         return 1 - (1 - zoomedCameraScale) * t
     }
 
+    func cameraScale(forMagnification magnification: Double, zoomProgress: Double) -> CGFloat {
+        guard zoomResponse == .magnification else { return cameraScale(forZoomProgress: zoomProgress) }
+        guard reactsToZoom else { return 1 }
+        let zoom = magnification.isFinite ? max(1, magnification) : 1
+        return 1 - (1 - zoomedCameraScale) * CGFloat(1 - 1 / zoom)
+    }
+
+    func position(for rect: CGRect) -> CGPoint {
+        let card = base.cardRect
+        return CGPoint(
+            x: min(max((rect.minX - card.minX - margin) / max(0.001, card.width - margin * 2 - rect.width), 0), 1),
+            y: min(max((rect.minY - card.minY - margin) / max(0.001, card.height - margin * 2 - rect.height), 0), 1)
+        )
+    }
+
     /// `zoomProgress` is how far the screen has zoomed at that moment
     /// (ViewportTimeline.zoomProgress), which a corner camera shrinks with.
-    func frame(for layout: RecordingCameraLayout, zoomProgress: Double = 0) -> RecordingCameraLayoutFrame {
+    func frame(for layout: RecordingCameraLayout, zoomProgress: Double = 0, magnification: Double = 1) -> RecordingCameraLayoutFrame {
         let card = base.cardRect
         let layout = showsCamera ? layout : .screenOnly
         switch layout.kind {
@@ -440,13 +577,15 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
                 cameraOpacity: 1
             )
         case .pictureInPicture:
-            let camera = pipCamera(for: layout, in: card, scale: cameraScale(forZoomProgress: zoomProgress))
+            let camera = pipCamera(for: layout, in: card, scale: cameraScale(forMagnification: magnification, zoomProgress: zoomProgress))
             return RecordingCameraLayoutFrame(
                 screenRect: card,
                 screenOpacity: 1,
                 cameraRect: camera.rect,
                 cameraCornerRadius: camera.radius,
-                cameraOpacity: 1
+                cameraOpacity: 1,
+                cameraSquircle: layout.shape == .squircle ? 1 : 0,
+                cameraBubble: 1
             )
         case .split:
             let split = splitRects(for: layout)
@@ -485,7 +624,9 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
             return RecordingCameraLayoutFrame(
                 screenRect: card,
                 screenOpacity: 1,
-                cameraRect: cutoutCamera(for: layout, scale: cameraScale(forZoomProgress: zoomProgress)),
+                cameraRect: cutoutCamera(for: layout, scale: zoomResponse == .progress
+                    ? cameraScale(forZoomProgress: zoomProgress)
+                    : (reactsToZoom ? 1 - 0.1 * CGFloat(min(max(zoomProgress, 0), 1)) : 1)),
                 cameraCornerRadius: 0,
                 cameraOpacity: 1,
                 cameraCutout: 1
@@ -495,15 +636,16 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
 
     func frame(
         for state: RecordingCameraLayoutTimeline.State,
-        zoomProgress: Double = 0
+        zoomProgress: Double = 0,
+        magnification: Double = 1
     ) -> RecordingCameraLayoutFrame {
         switch state {
         case .settled(let layout):
-            return frame(for: layout, zoomProgress: zoomProgress)
+            return frame(for: layout, zoomProgress: zoomProgress, magnification: magnification)
         case .transition(let from, let to, let progress):
             return .interpolate(
-                frame(for: from, zoomProgress: zoomProgress),
-                frame(for: to, zoomProgress: zoomProgress),
+                frame(for: from, zoomProgress: zoomProgress, magnification: magnification),
+                frame(for: to, zoomProgress: zoomProgress, magnification: magnification),
                 progress: CGFloat(RecordingCameraLayoutTimeline.ease(progress))
             )
         }
@@ -512,9 +654,10 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
     /// The resting layout moved into a frame.
     func layout(
         for state: RecordingCameraLayoutTimeline.State,
-        zoomProgress: Double = 0
+        zoomProgress: Double = 0,
+        magnification: Double = 1
     ) -> RecordingStudioLayout {
-        base.applying(frame(for: state, zoomProgress: zoomProgress))
+        base.applying(frame(for: state, zoomProgress: zoomProgress, magnification: magnification))
     }
 
     /// The camera tucked into a corner of the screen card.
@@ -523,6 +666,26 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
         in card: CGRect,
         scale: CGFloat = 1
     ) -> (rect: CGRect, radius: CGFloat) {
+        if layout.width != nil || layout.height != nil || layout.shape == .rectangle || layout.shape == .squircle {
+            let width = CGFloat(layout.widthFraction) * minDimension * scale
+            let heightFraction = layout.shape == .rectangle
+                ? RecordingCameraCropGeometry.matchedHeight(width: layout.widthFraction, height: layout.heightFraction,
+                                                            sourceAspect: cameraAspect, crop: pictureCrop)
+                : layout.heightFraction
+            let height = CGFloat(heightFraction) * minDimension * scale
+            let maxWidth = max(0, card.width - margin * 2) * 0.62
+            let maxHeight = max(0, card.height - margin * 2) * 0.62
+            let reduction = min(1, maxWidth / max(width, 0.001), maxHeight / max(height, 0.001))
+            let size = CGSize(width: width * reduction, height: height * reduction)
+            let point = layout.position
+            let rect = CGRect(
+                x: card.minX + margin + max(0, card.width - margin * 2 - size.width) * point.x,
+                y: card.minY + margin + max(0, card.height - margin * 2 - size.height) * point.y,
+                width: size.width, height: size.height
+            )
+            let short = min(size.width, size.height)
+            return (rect, layout.shape == .circle ? short / 2 : max(4, roundness * short))
+        }
         let requested = CGFloat(layout.size) * minDimension
         let aspect: CGFloat = layout.shape == .portrait ? 3 / 4 : 1
         // Never let the camera outgrow the card it sits in.
@@ -530,14 +693,9 @@ nonisolated struct RecordingCameraLayoutResolver: Sendable {
         // Shrinks toward its corner: the margins stay put.
         let width = max(24, min(requested, maxWidth)) * scale
         let size = CGSize(width: width, height: width / aspect)
-        let x: CGFloat = switch layout.corner {
-        case .topLeading, .bottomLeading: card.minX + margin
-        case .topTrailing, .bottomTrailing: card.maxX - margin - size.width
-        }
-        let y: CGFloat = switch layout.corner {
-        case .topLeading, .topTrailing: card.minY + margin
-        case .bottomLeading, .bottomTrailing: card.maxY - margin - size.height
-        }
+        let point = layout.position
+        let x = card.minX + margin + (card.width - margin * 2 - size.width) * point.x
+        let y = card.minY + margin + (card.height - margin * 2 - size.height) * point.y
         let short = min(size.width, size.height)
         let radius = layout.shape == .circle ? short / 2 : max(4, roundness * short)
         return (CGRect(origin: CGPoint(x: x, y: y), size: size), radius)
@@ -653,7 +811,9 @@ extension RecordingStudioLayout {
             contentCropRect: contentCropRect,
             screenOpacity: frame.screenOpacity,
             cameraOpacity: frame.cameraOpacity,
-            cameraCutout: Self.melt(frame.cameraCutout)
+            cameraCutout: Self.melt(frame.cameraCutout),
+            cameraSquircle: frame.cameraSquircle,
+            cameraBubble: frame.cameraBubble
         )
     }
 
@@ -718,14 +878,16 @@ nonisolated struct RecordingCameraLayoutTimeline: Equatable, Sendable {
         for cues: [RecordingCameraLayoutCue],
         clipTimeline: RecordingClipTimeline
     ) -> [RecordingCameraLayoutTimelineBlock] {
-        cues.compactMap { cue in
-            let slices = clipTimeline.slices(overlapping: cue.start, sourceEnd: cue.end)
-            guard let first = slices.first, let last = slices.last else { return nil }
-            return RecordingCameraLayoutTimelineBlock(
-                cue: cue,
-                editorStart: first.editorStart,
-                editorEnd: last.editorEnd
-            )
+        cues.flatMap { cue in
+            clipTimeline.editorRegions(overlapping: cue.start, sourceEnd: cue.end)
+                .enumerated().map { index, region in
+                    RecordingCameraLayoutTimelineBlock(
+                        cue: cue,
+                        editorStart: region.start,
+                        editorEnd: region.end,
+                        fragmentID: index == 0 ? nil : region.fragmentID(for: cue.id)
+                    )
+                }
         }
         .sorted { $0.editorStart < $1.editorStart }
     }

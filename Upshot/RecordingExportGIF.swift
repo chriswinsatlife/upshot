@@ -31,13 +31,17 @@ nonisolated enum RecordingGIFExporter {
     ) async throws -> URL {
         let asset = AVURLAsset(url: videoURL)
         let duration = try await asset.load(.duration).seconds
-        guard duration.isFinite, duration > 0 else { throw ExportError.invalidDuration }
+        guard duration.isFinite, duration > 0 else {
+            AppLog.event("recording", "gif_export_failed", fields: ["stage": "duration"])
+            throw ExportError.invalidDuration
+        }
         let outputURL = videoURL.deletingPathExtension().appendingPathExtension("gif")
         guard let destination = CGImageDestinationCreateWithURL(outputURL as CFURL, UTType.gif.identifier as CFString, 0, nil) else {
+            AppLog.event("recording", "gif_export_failed", fields: ["stage": "destination"])
             throw ExportError.destinationUnavailable
         }
         CGImageDestinationSetProperties(destination, [
-            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: options.effectiveGIFLoops ? 0 : 1]
         ] as CFDictionary)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -71,11 +75,22 @@ nonisolated enum RecordingGIFExporter {
                 let time = Double(index) / frameRate
                 let extracted = try await generator.image(at: CMTime(seconds: time, preferredTimescale: 60_000)).image
                 let image: CGImage = try autoreleasepool {
+                    let source = CIImage(cgImage: extracted)
+                    let size = (options.gifSize ?? .original).outputSize(for: source.extent.size)
+                    var resized = source
+                    if size != source.extent.size {
+                        let resizer = CIFilter.lanczosScaleTransform()
+                        resizer.inputImage = source
+                        resizer.scale = Float(size.height / source.extent.height)
+                        resizer.aspectRatio = Float((size.width / source.extent.width) / (size.height / source.extent.height))
+                        guard let result = resizer.outputImage else { throw ExportError.encodingFailed }
+                        resized = result
+                    }
                     let filter = CIFilter.colorPosterize()
-                    filter.inputImage = CIImage(cgImage: extracted)
+                    filter.inputImage = resized
                     filter.levels = options.gifQuality.colorLevels
                     guard let filtered = filter.outputImage,
-                          let rendered = context.createCGImage(filtered, from: filtered.extent) else {
+                          let rendered = context.createCGImage(filtered, from: CGRect(origin: .zero, size: size)) else {
                         throw ExportError.encodingFailed
                     }
                     return rendered
@@ -98,10 +113,17 @@ nonisolated enum RecordingGIFExporter {
             }
             if let previous { append(previous, duration: accumulatedDuration) }
             guard CGImageDestinationFinalize(destination) else { throw ExportError.encodingFailed }
-            AppLog.event("recording", "gif_export_completed", fields: ["duration": String(describing: encodedDuration), "fps": String(describing: options.gifFrameRate.rawValue), "frames": String(describing: emittedFrames), "optimized": String(describing: String(options.optimizesGIF)), "quality": String(describing: options.gifQuality.rawValue), "sourceFrames": String(describing: frameCount)])
+            AppLog.event("recording", "gif_export_completed", fields: [
+                "duration": String(encodedDuration), "fps": String(options.gifFrameRate.rawValue),
+                "frames": String(emittedFrames), "optimized": String(options.optimizesGIF),
+                "quality": options.gifQuality.rawValue, "sourceFrames": String(frameCount),
+                "loops": String(options.effectiveGIFLoops), "size": options.gifSize?.rawValue ?? "legacy",
+                "width": String(previous?.width ?? 0), "height": String(previous?.height ?? 0)
+            ])
             progress(1)
             return outputURL
         } catch {
+            AppLog.event("recording", "gif_export_failed", fields: ["stage": "encoding", "error": AppLog.error(error)])
             generator.cancelAllCGImageGeneration()
             try? FileManager.default.removeItem(at: outputURL)
             throw error

@@ -16,15 +16,22 @@ import SwiftUI
 struct StudioCanvasOverlayLayer: View {
     let images: [(overlay: RecordingImageOverlay, image: RecordingOverlayImage)]
     let texts: [RecordingTextOverlay]
+    let arrows: [RecordingArrowOverlay]
+    let placement: RecordingOverlayPlacement
     let sourceTime: TimeInterval
     let canvasSize: CGSize
 
     var body: some View {
         Canvas { context, size in
             context.withCGContext { cgContext in
+                for overlay in arrows {
+                    placement.draw(space: overlay.coordinateSpace, canvasSize: size, in: cgContext) { referenceSize in
+                        RecordingArrowOverlayRenderer.draw(overlay, canvasSize: referenceSize, in: cgContext)
+                    }
+                }
                 for (overlay, image) in images {
                     RecordingImageOverlayRenderer.draw(
-                        overlay, image: image, atSourceTime: sourceTime, canvasSize: size, in: cgContext
+                        overlay, image: image, atSourceTime: sourceTime, canvasSize: size, placement: placement, in: cgContext
                     )
                 }
                 for overlay in texts {
@@ -32,6 +39,7 @@ struct StudioCanvasOverlayLayer: View {
                         overlay,
                         atSourceTime: sourceTime,
                         canvasSize: size,
+                        placement: placement,
                         in: cgContext
                     )
                 }
@@ -47,6 +55,7 @@ struct StudioCanvasOverlayLayer: View {
 struct StudioImageEditingLayer: View {
     @Bindable var model: RecordingStudioModel
     let images: [RecordingImageOverlay]
+    let placement: RecordingOverlayPlacement
     let canvasSize: CGSize
 
     @State private var dragBase: RecordingImageOverlay?
@@ -55,7 +64,7 @@ struct StudioImageEditingLayer: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(images) { overlay in
-                let rect = overlay.rect(canvasSize: canvasSize)
+                let rect = overlay.rect(canvasSize: canvasSize, placement: placement)
                 let isSelected = model.selectedImageID == overlay.id
                 Rectangle()
                     .fill(Color.white.opacity(0.001))
@@ -86,6 +95,8 @@ struct StudioImageEditingLayer: View {
                             hoveredID = nil
                         }
                     }
+                    .opacity(overlay.coordinateSpace == .canvas ? 1 : placement.opacity)
+                    .allowsHitTesting(overlay.coordinateSpace == .canvas || placement.opacity > 0.5)
                     .onTapGesture { model.selectImage(id: overlay.id) }
                     .gesture(moveGesture(for: overlay))
             }
@@ -105,10 +116,12 @@ struct StudioImageEditingLayer: View {
             .onChanged { value in
                 begin(overlay)
                 guard let dragBase, canvasSize.width > 0, canvasSize.height > 0 else { return }
+                let reference = placement.referenceRect(for: dragBase.coordinateSpace, canvasSize: canvasSize)
+                guard reference.width > 0, reference.height > 0 else { return }
                 var moved = dragBase
                 moved.center = CGPoint(
-                    x: dragBase.center.x + value.translation.width / canvasSize.width,
-                    y: dragBase.center.y + value.translation.height / canvasSize.height
+                    x: dragBase.center.x + value.translation.width / reference.width,
+                    y: dragBase.center.y + value.translation.height / reference.height
                 )
                 model.setImage(moved)
             }
@@ -149,6 +162,7 @@ struct StudioImageEditingLayer: View {
 struct StudioTextEditingLayer: View {
     @Bindable var model: RecordingStudioModel
     let texts: [RecordingTextOverlay]
+    let placement: RecordingOverlayPlacement
     let canvasSize: CGSize
 
     @State private var dragBase: RecordingTextOverlay?
@@ -157,7 +171,7 @@ struct StudioTextEditingLayer: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(texts) { overlay in
-                let rect = RecordingTextOverlayRenderer.layout(overlay, canvasSize: canvasSize).rect
+                let rect = RecordingTextOverlayRenderer.layout(overlay, canvasSize: canvasSize, placement: placement).rect
                 let isSelected = model.selectedTextID == overlay.id
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.white.opacity(0.001))
@@ -180,6 +194,8 @@ struct StudioTextEditingLayer: View {
                             hoveredID = nil
                         }
                     }
+                    .opacity(overlay.coordinateSpace == .canvas ? 1 : placement.opacity)
+                    .allowsHitTesting(overlay.coordinateSpace == .canvas || placement.opacity > 0.5)
                     .onTapGesture { model.selectText(id: overlay.id) }
                     .gesture(moveGesture(for: overlay))
                     .help("Drag to move. Edit the text in the inspector.")
@@ -199,10 +215,12 @@ struct StudioTextEditingLayer: View {
                     model.beginTextEdit()
                 }
                 guard let dragBase, canvasSize.width > 0, canvasSize.height > 0 else { return }
+                let reference = placement.referenceRect(for: dragBase.coordinateSpace, canvasSize: canvasSize)
+                guard reference.width > 0, reference.height > 0 else { return }
                 var moved = dragBase
                 moved.center = CGPoint(
-                    x: dragBase.center.x + value.translation.width / canvasSize.width,
-                    y: dragBase.center.y + value.translation.height / canvasSize.height
+                    x: dragBase.center.x + value.translation.width / reference.width,
+                    y: dragBase.center.y + value.translation.height / reference.height
                 )
                 model.setText(moved)
             }
@@ -315,7 +333,7 @@ struct StudioRedactionEditingLayer: View {
 
 /// A region's resize handle: a square at the corners, a bar on the edges,
 /// like the crop tool's but sized for smaller boxes.
-private struct StudioRegionHandle: View {
+struct StudioRegionHandle: View {
     let isCorner: Bool
     let isHorizontal: Bool
 

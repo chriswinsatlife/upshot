@@ -9,6 +9,8 @@
 
 import AppKit
 import AVFoundation
+import CoreGraphics
+import ImageIO
 import Observation
 
 nonisolated struct RecordingProjectSummary: Identifiable, Equatable, Sendable {
@@ -40,6 +42,7 @@ final class RecordingProjectStore {
 
     private(set) var projects: [RecordingProjectSummary] = []
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    private static var posterTasks: [URL: (revision: String, id: UUID, task: Task<CGImage?, Never>)] = [:]
 
     /// Deliberately empty until something asks. Summarizing every package
     /// walks the Recordings folder, which is not worth doing at launch when
@@ -99,30 +102,69 @@ final class RecordingProjectStore {
 
     // MARK: - Posters
 
-    /// A cached first frame, written into the package so the browser doesn't
-    /// decode video every time it opens.
     static func poster(for session: RecordingSession) async -> NSImage? {
-        if let cached = NSImage(contentsOf: session.posterURL) {
-            return cached
-        }
-        // Prefer the flattened deliverable when there is one: it shows the
-        // background and camera, which is what the project actually looks like.
-        let source = session.existingFinalURL ?? session.screenURL
-        guard let image = await VideoPreviewImageLoader.thumbnail(at: source, maxPixelSize: 640) else {
-            return nil
-        }
-        writePoster(image, to: session.posterURL)
-        return image
+        guard let image = await posterImage(for: session) else { return nil }
+        return NSImage(cgImage: image, size: .zero)
     }
 
-    private static func writePoster(_ image: NSImage, to url: URL) {
-        guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72])
-        else {
-            return
+    static func refreshPoster(for session: RecordingSession) {
+        Task { _ = await posterImage(for: session) }
+    }
+
+    static func posterImage(for session: RecordingSession) async -> CGImage? {
+        let revision = RecordingProjectPosterRevision.value(for: session)
+        let stampURL = RecordingProjectPosterRevision.url(for: session)
+        if let data = try? Data(contentsOf: stampURL),
+           (try? JSONDecoder().decode(String.self, from: data)) == revision,
+           let source = CGImageSourceCreateWithURL(session.posterURL as CFURL, nil),
+           let image = CGImageSourceCreateImageAtIndex(source, 0, nil) { return image }
+        if let pending = posterTasks[session.directoryURL], pending.revision == revision {
+            return await pending.task.value
         }
-        try? jpeg.write(to: url, options: .atomic)
+        posterTasks[session.directoryURL]?.task.cancel()
+        let id = UUID()
+        let task = Task<CGImage?, Never> {
+            do {
+                let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
+                try Task.checkCancellation()
+                let cameraDuration = if let url = configuration.cameraURL {
+                    try await AVURLAsset(url: url).load(.duration).seconds
+                } else { 0.0 }
+                let renderer = try RecordingProjectPreviewRenderer(configuration: configuration, cameraDuration: cameraDuration)
+                let image = try await withTaskCancellationHandler {
+                    try await renderer.firstFrame()
+                } onCancel: { Task { await renderer.cancel() } }
+                try Task.checkCancellation()
+                guard RecordingProjectPosterRevision.value(for: session) == revision else { return nil }
+                let bitmap = NSBitmapImageRep(cgImage: image)
+                guard let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                try jpeg.write(to: session.posterURL, options: .atomic)
+                try JSONEncoder().encode(revision).write(to: stampURL, options: .atomic)
+                AppLog.event("library", "project_poster_generated", fields: [
+                    "item": AppLog.identifier(session.directoryURL.path),
+                    "width": String(image.width), "height": String(image.height)
+                ])
+                return image
+            } catch is CancellationError {
+                return nil
+            } catch {
+                AppLog.event("library", "project_poster_failed", fields: [
+                    "item": AppLog.identifier(session.directoryURL.path), "error": AppLog.error(error)
+                ])
+                guard !Task.isCancelled else { return nil }
+                let fallback = session.freshFinalURL(matching: session.effectiveEditDocument()) ?? session.screenURL
+                guard let image = await VideoPreviewImageLoader.thumbnail(at: fallback, maxPixelSize: 640) else { return nil }
+                return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            }
+        }
+        posterTasks[session.directoryURL] = (revision, id, task)
+        let image = await task.value
+        if posterTasks[session.directoryURL]?.id == id {
+            posterTasks.removeValue(forKey: session.directoryURL)
+        }
+        return image
     }
 
     // MARK: - Summaries

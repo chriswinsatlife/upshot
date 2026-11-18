@@ -5,9 +5,10 @@ import UniformTypeIdentifiers
 private extension ZoomAnchorMode {
     var inspectorTitle: String {
         switch self {
+        case .safeZone: "Auto"
         case .pointerAnchor: "Pointer"
         case .smartAnchor: "Smart"
-        case .pinnedAnchor: "Fixed"
+        case .pinnedAnchor: "Manual"
         }
     }
 }
@@ -59,7 +60,7 @@ enum StudioInspectorPage: String, CaseIterable, Identifiable, Hashable {
         allCases.filter { page in
             switch page {
             case .look, .zoom, .audio, .clip: true
-            case .camera: model.hasCameraVideo
+            case .camera: model.session != nil
             case .cursor: model.pointerIsSynthesized
             case .keystrokes: model.hasKeystrokes
             case .captions: model.canTranscribe || model.hasSubtitles
@@ -78,7 +79,7 @@ enum StudioInspectorPage: String, CaseIterable, Identifiable, Hashable {
         if model.selectedCue != nil { return .zoom }
         if model.selectedLayoutCue != nil { return .camera }
         if model.selectedAudioClip != nil { return .audio }
-        if model.selectedText != nil || model.selectedRedaction != nil || model.selectedImage != nil { return nil }
+        if model.selectedArrow != nil || model.selectedText != nil || model.selectedRedaction != nil || model.selectedImage != nil { return nil }
         return available(for: model).contains(current) ? current : .look
     }
 }
@@ -89,6 +90,7 @@ private enum StudioInspectorContent: Hashable {
     case layout(UUID)
     case text(UUID)
     case redaction(UUID)
+    case arrow(UUID)
     case image(UUID)
     case audio(UUID)
 }
@@ -97,6 +99,7 @@ struct StudioInspector: View {
     @Bindable var model: RecordingStudioModel
     @Binding var page: StudioInspectorPage
     @State private var wallpaperStore = AnnotationWallpaperStore.shared
+    @State private var studioWallpaperLibrary = StudioWallpaperLibrary.shared
     @State private var stylePresetStore = RecordingStudioStylePresetStore.shared
     @State private var transcriptTab: StudioTranscriptTab = UpshotStorage.isRenderingStates && StateRenderer.scenario.contains("transcript") ? .edit : .captions
     @State private var isAudioExportOptionsPresented = false
@@ -132,7 +135,16 @@ struct StudioInspector: View {
                     if let redaction = model.selectedRedaction {
                         selectedRedactionPage(for: redaction)
                     }
+                case .arrow:
+                    if let arrow = model.selectedArrow {
+                        VStack(alignment: .leading, spacing: Space.xxl) {
+                            selectionHeader("Arrow", onDone: { model.selectedArrowID = nil })
+                            StudioArrowInspectorControls(model: model, arrow: arrow)
+                            deleteButton("Delete Arrow") { model.removeArrow(id: arrow.id) }
+                        }
+                    }
                 case .image:
+
                     if let image = model.selectedImage {
                         selectedImagePage(for: image)
                     }
@@ -167,6 +179,7 @@ struct StudioInspector: View {
         if let cue = model.selectedLayoutCue { return .layout(cue.id) }
         if let text = model.selectedText { return .text(text.id) }
         if let redaction = model.selectedRedaction { return .redaction(redaction.id) }
+        if let arrow = model.selectedArrow { return .arrow(arrow.id) }
         if let image = model.selectedImage { return .image(image.id) }
         if let clip = model.selectedAudioClip { return .audio(clip.id) }
         let available = StudioInspectorPage.available(for: model)
@@ -230,8 +243,26 @@ struct StudioInspector: View {
                 wallpaperStore: wallpaperStore,
                 onPickWallpaper: pickWallpaper,
                 onPreview: { model.previewBackground($0, isHovering: $1) },
-                onEndPreview: { model.previewBackground = nil }
+                onEndPreview: { model.previewBackground = nil },
+                showsStudioWallpapers: true
             )
+            if studioWallpaperLibrary.isImporting { ProgressView().controlSize(.small) }
+            if let error = studioWallpaperLibrary.errorMessage {
+                InterfaceRowLabel("Wallpaper unavailable", detail: error)
+            }
+            RecordingStudioGradientControls(model: model)
+            InspectorHalfField {
+                InspectorSlider("Blur", value: Binding(
+                    get: { model.style.backgroundBlur },
+                    set: { value in
+                        model.style.backgroundBlur = (value * 4).rounded() / 4
+                        AppLog.event("recording", "studio_background_blur_changed", fields: ["radius": String(Double(model.style.backgroundBlur))])
+                    }
+                ), range: 0...8, format: InspectorValueFormat(
+                    multiplier: 1, fractionDigits: 1, suffix: " px", showsPositiveSign: false,
+                    step: 0.25, acceptedSuffixes: ["px"]
+                ))
+            }
         }
 
         group("Frame", accessory: {
@@ -239,8 +270,11 @@ struct StudioInspector: View {
                 InterfaceResetButton(help: "Reset padding, corners, and shadow") {
                     withAnimation(.morphIfAllowed) {
                         model.style.padding = 0.06
+                        model.style.paddingSides = nil
                         model.style.cornerRadius = 0.02
                         model.style.shadow = 0.45
+                        model.style.usesLayeredShadow = false
+                        AppLog.event("recording", "studio_frame_reset")
                     }
                 }
                 .transition(.opacity)
@@ -257,6 +291,19 @@ struct StudioInspector: View {
                 )) {
                     ForEach(ExportAspectPreset.allCases, id: \.self) { preset in
                         Text(preset.title).tag(preset)
+                    }
+                }
+
+                if model.exportAspect == .custom {
+                    InterfaceRow("Width") {
+                        InterfaceValueWithUnitField(
+                            "Aspect ratio width", value: $model.exportCustomAspectWidth, unit: "", range: 128...7680
+                        )
+                    }
+                    InterfaceRow("Height") {
+                        InterfaceValueWithUnitField(
+                            "Aspect ratio height", value: $model.exportCustomAspectHeight, unit: "", range: 128...7680
+                        )
                     }
                 }
 
@@ -283,42 +330,71 @@ struct StudioInspector: View {
     }
 
     private var frameControls: some View {
-        controls {
-            InspectorFieldPair {
-                InspectorSlider("Padding", value: $model.style.padding, range: 0...0.18, format: .percent())
-            } trailing: {
-                InspectorSlider("Corners", value: $model.style.cornerRadius, range: 0...0.08, format: .percent())
-            }
-
-            InspectorHalfField {
-                InspectorSlider("Shadow", value: $model.style.shadow, range: 0...1, format: .percent())
-                    .disabled(model.style.background == .none)
-            }
-        }
+        RecordingStudioFrameControls(model: model)
     }
 
     private func pickWallpaper() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
+        panel.allowedContentTypes = [.image, .movie]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.title = "Choose Video Background Wallpaper"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            wallpaperStore.addRecentWallpaper(url)
-            model.style.background = .customWallpaper(AnnotationCustomWallpaper(url: url))
+            AppLog.event("recording", "studio_wallpaper_import_requested")
+            Task { @MainActor in
+                if let wallpaper = await studioWallpaperLibrary.importWallpaper(url) {
+                    model.previewBackground = nil
+                    model.style.background = .customWallpaper(wallpaper)
+                }
+            }
         }
     }
 
     @ViewBuilder
     private var cameraPage: some View {
+        group("Camera Source") {
+            if let name = model.cameraSourceDisplayName {
+                InterfaceRow(name, systemImage: "video") {
+                    Button("Change source", action: chooseCameraFootage)
+                }
+            } else {
+                InterfaceRowLabel("Add a webcam video", detail: "Use your recorded camera or add a video to appear alongside your screen.")
+                Button("Upload footage", action: chooseCameraFootage)
+            }
+            if model.isLoadingCameraSource { ProgressView().controlSize(.small) }
+            if let error = model.cameraSourceError { InterfaceRowLabel("Camera video unavailable", detail: error) }
+            if let notice = model.cameraSourceNotice {
+                InterfaceToast(notice, systemImage: "checkmark.circle.fill", tone: .success)
+            }
+            if model.resolvedCameraURL != nil {
+                Button("Remove from project", role: .destructive) { model.removeCameraFootage() }
+            }
+        }
+        .disabled(model.isLoadingCameraSource)
+
         group("Camera", isOn: $model.style.camera.isVisible, toggleTitle: "Show camera") {
             StudioCameraLayoutPicker(model: model, layout: model.style.camera.layout) { layout, isContinuous in
                 if isContinuous {
                     model.style.camera.layout = layout
                 } else {
                     withAnimation(.morphQuickIfAllowed) { model.style.camera.layout = layout }
+                }
+            }
+        }
+        .disabled(!model.hasCameraVideo)
+
+        if model.hasCameraVideo {
+            group("Picture Crop") {
+                RecordingCameraCropControl(
+                    player: model.cameraPlayer,
+                    sourceAspect: model.cameraVideoAspect,
+                    crop: $model.style.camera.pictureCrop
+                )
+                Button("Reset crop") {
+                    model.style.camera.pictureCrop = RecordingCameraCropGeometry.unit
+                    AppLog.event("recording", "camera_picture_crop_reset")
                 }
             }
         }
@@ -333,6 +409,18 @@ struct StudioInspector: View {
             }
         }
         .disabled(!model.style.camera.isVisible)
+    }
+
+    private func chooseCameraFootage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.movie, .video]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose a camera video to appear alongside the recording."
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in await model.importCameraFootage(from: url) }
+        }
     }
 
     private func selectedLayoutPage(for selected: RecordingCameraLayoutCue) -> some View {
@@ -366,11 +454,59 @@ struct StudioInspector: View {
         let pressCount = model.recordedPressTimes.count
         group("Zoom", isOn: $model.zoomEnabled, toggleTitle: "Enable zooms") {
             controls {
+                if model.exportAppearance.zoomMotion == nil {
+                    modeSwitchRow(
+                        "Animation",
+                        selection: $model.exportAppearance.zoomAnimationStyle,
+                        options: RecordingZoomAnimationStyle.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.rawValue) }
+                    )
+                }
+
                 modeSwitchRow(
-                    "Animation",
-                    selection: $model.exportAppearance.zoomAnimationStyle,
-                    options: RecordingZoomAnimationStyle.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.rawValue) }
+                    "Motion",
+                    selection: Binding(
+                        get: { RecordingMotionPreset.matching(appearance: model.exportAppearance, style: model.style)?.rawValue ?? "Custom" },
+                        set: { value in
+                            guard let preset = RecordingMotionPreset(rawValue: value) else { return }
+                            model.applyMotionPreset(preset)
+                        }
+                    ),
+                    options: RecordingMotionPreset.allCases.map { InterfaceModeSwitchOption(value: $0.rawValue, title: $0.rawValue) }
                 )
+                .help("Applying a preset replaces zoom timing, cursor size, smoothing and click bounce.")
+
+                if RecordingMotionPreset.matching(appearance: model.exportAppearance, style: model.style) == nil {
+                    Text("Custom · Your settings differ from these presets.")
+                        .font(.dsCaption)
+                        .foregroundStyle(Palette.secondaryLabel)
+                }
+
+                if model.exportAppearance.zoomMotion != nil {
+                    InspectorFieldPair {
+                        zoomMotionSlider("Zoom In", keyPath: \.zoomInDuration, range: 0.06...4)
+                    } trailing: {
+                        zoomMotionSlider("Zoom Out", keyPath: \.zoomOutDuration, range: 0.06...4)
+                    }
+                }
+
+                Toggle("Connect Zooms", isOn: Binding(
+                    get: { model.exportAppearance.zoomMotion?.connectZooms ?? false },
+                    set: { value in
+                        var motion = model.exportAppearance.zoomMotion ?? RecordingZoomMotionSettings()
+                        motion.connectZooms = value
+                        model.updateZoomMotion(motion, action: "connect_zooms")
+                    }
+                ))
+                .help("Smooth consecutive zoom regions into a continuous camera move.")
+
+                if model.exportAppearance.zoomMotion?.connectZooms == true {
+                    InspectorFieldPair {
+                        zoomMotionSlider("Gap", keyPath: \.connectedZoomGap, range: 0...5)
+                            .help("Connections use positive gaps of at most 1.5 seconds.")
+                    } trailing: {
+                        zoomMotionSlider("Pan", keyPath: \.connectedZoomDuration, range: 0.06...4)
+                    }
+                }
 
                 HStack(spacing: Space.m) {
                     Button {
@@ -385,7 +521,6 @@ struct StudioInspector: View {
                     } label: {
                         Label("Auto Zoom", systemImage: "pointer.arrow.rays")
                     }
-                    .disabled(pressCount == 0)
                     .help(
                         pressCount == 0
                             ? "No clicks were recorded"
@@ -394,6 +529,25 @@ struct StudioInspector: View {
                 }
             }
         }
+    }
+
+    private func zoomMotionSlider(
+        _ title: String,
+        keyPath: WritableKeyPath<RecordingZoomMotionSettings, TimeInterval>,
+        range: ClosedRange<CGFloat>
+    ) -> some View {
+        InspectorSlider(title, value: Binding(
+            get: { CGFloat((model.exportAppearance.zoomMotion ?? RecordingZoomMotionSettings())[keyPath: keyPath]) },
+            set: { value in
+                var motion = model.exportAppearance.zoomMotion ?? RecordingZoomMotionSettings()
+                motion[keyPath: keyPath] = Double(value)
+                model.updateZoomMotion(motion, action: title)
+            }
+        ), range: range, format: InspectorValueFormat(
+            multiplier: 1, fractionDigits: 2, suffix: " s", showsPositiveSign: false,
+            step: 0.01, acceptedSuffixes: ["seconds", "second", "s"]
+        ))
+        .help("Duration in seconds")
     }
 
     @ViewBuilder
@@ -439,11 +593,11 @@ struct StudioInspector: View {
                     set: { anchorMode in
                         var updated = selected
                         updated.anchorMode = anchorMode
-                        if anchorMode == .pinnedAnchor,
-                           let pointer = model.pointerLocation(at: model.currentTime) {
-                            updated.pinnedPoint = pointer
+                        if anchorMode == .safeZone, model.exportAppearance.zoomMotion == nil {
+                            model.updateZoomMotion(RecordingZoomMotionSettings(), action: "auto_tracking")
                         }
                         withAnimation(.morphIfAllowed) { model.updateZoomCue(updated) }
+                        AppLog.event("recording", "zoom_tracking_changed", fields: ["mode": anchorMode.rawValue])
                     }
                 ),
                 options: ZoomAnchorMode.allCases.map { InterfaceModeSwitchOption(value: $0, title: $0.inspectorTitle) }
@@ -501,6 +655,20 @@ struct StudioInspector: View {
                     .help("How much of the frame's edge stays in view while zoomed")
                 }
             }
+
+            StudioInspectorPickerRow("Amount", selection: Binding(
+                get: { selected.zoom },
+                set: { model.setZoomAmountPreset($0, for: selected) }
+            )) {
+                if !RecordingZoomAmount.presets.contains(selected.zoom) {
+                    Text(InspectorValueFormat.magnification(fractionDigits: 2).displayString(for: CGFloat(selected.zoom)))
+                        .tag(selected.zoom)
+                }
+                ForEach(RecordingZoomAmount.presets, id: \.self) { amount in
+                    Text(InspectorValueFormat.magnification(fractionDigits: 2).displayString(for: CGFloat(amount)))
+                        .tag(amount)
+                }
+            }
         }
     }
 
@@ -515,8 +683,8 @@ struct StudioInspector: View {
                     model.updateZoomCue(updated)
                 }
             ),
-            range: 1.1...3,
-            format: .magnification(fractionDigits: 1)
+            range: 1.1...5,
+            format: .magnification(fractionDigits: 2)
         )
     }
 
@@ -556,12 +724,21 @@ struct StudioInspector: View {
                     InspectorSlider("Size", value: $model.style.cursorScale, range: 1...4, format: .magnification(fractionDigits: 1))
                 }
 
-                if let shape = model.style.cursorStyle.shape, !shape.isCircle {
+                if model.style.cursorStyle.supportsInversion {
                     InterfaceToggleRow("Invert colors", isOn: $model.style.invertsCursor)
+                        .onChange(of: model.style.invertsCursor) { _, inverted in
+                            AppLog.event("recording", "studio_cursor_inversion_changed", fields: [
+                                "style": model.style.cursorStyle.rawValue,
+                                "inverted": String(inverted)
+                            ])
+                        }
                 }
 
                 if model.canShowPressEffects {
                     InterfaceToggleRow("Click highlights", isOn: $model.showsClickEffects)
+                    if model.showsClickEffects {
+                        RecordingClickEffectControls(model: model)
+                    }
                 }
             }
         }
@@ -620,9 +797,23 @@ struct StudioInspector: View {
     @ViewBuilder
     private var transcriptionControls: some View {
         controls {
+            StudioInspectorPickerRow("Language", selection: $model.transcriptionLocaleIdentifier) {
+                Text("System Default").tag("")
+                ForEach(model.transcriptionLocales, id: \.identifier) { locale in
+                    Text(RecordingTranscriptionService.localeTitle(locale)).tag(locale.identifier(.bcp47))
+                }
+                if !model.transcriptionLocaleIdentifier.isEmpty,
+                   !model.transcriptionLocales.contains(where: {
+                       $0.identifier(.bcp47) == model.transcriptionLocaleIdentifier
+                   }) {
+                    Text(model.transcriptionLocaleIdentifier).tag(model.transcriptionLocaleIdentifier)
+                }
+            }
+            .disabled(model.transcriptionState.isTranscribing)
+
             switch model.transcriptionState {
             case .transcribing:
-                InterfaceRowLabel("Transcribing narration on this Mac…")
+                InterfaceRowLabel("Transcribing audio on this Mac…")
                     .transition(.opacity)
             case .failed(let message):
                 InterfaceRowLabel("Transcription failed", detail: message, detailIsCritical: true)
@@ -635,15 +826,19 @@ struct StudioInspector: View {
                 if model.hasSubtitles {
                     subtitleEditor
                 } else {
+                    if model.transcriptionCompleted {
+                        InterfaceRowLabel("No speech detected")
+                    }
                     Button {
                         withAnimation(.morphIfAllowed) { model.transcribe() }
                     } label: {
-                        Label("Transcribe Narration", systemImage: "waveform")
+                        Label("Transcribe Audio", systemImage: "waveform")
                     }
-                    .help("Turn the microphone narration into subtitles, transcribed on this Mac")
+                    .help("Transcribe microphone and system audio on this Mac. Microphone speech takes priority during overlap.")
                 }
             }
         }
+        .task { await model.loadTranscriptionLocales() }
     }
 
     private var subtitleEditor: some View {
@@ -689,34 +884,8 @@ struct StudioInspector: View {
     }
 
     private var captionControls: some View {
-        let verticalRange = SubtitleBarStyle.verticalRange
-        let fontScaleRange = SubtitleBarStyle.fontScaleRange
         return controls {
-            InspectorFieldPair {
-                InspectorSlider(
-                    "Position",
-                    value: Binding(
-                        get: { CGFloat(model.subtitleStyle.verticalPosition) },
-                        set: { model.subtitleStyle.verticalPosition = Double($0) }
-                    ),
-                    range: CGFloat(verticalRange.lowerBound)...CGFloat(verticalRange.upperBound),
-                    format: .percent()
-                )
-            } trailing: {
-                InspectorSlider(
-                    "Size",
-                    value: Binding(
-                        get: { CGFloat(model.subtitleStyle.fontScale) },
-                        set: { model.subtitleStyle.fontScale = Double($0) }
-                    ),
-                    range: CGFloat(fontScaleRange.lowerBound)...CGFloat(fontScaleRange.upperBound),
-                    format: .magnification(fractionDigits: 1)
-                )
-            }
-
-            if model.hasTranscriptWords {
-                InterfaceToggleRow("Highlight spoken word", isOn: $model.subtitleStyle.highlightsSpokenWord)
-            }
+            StudioCaptionAppearanceControls(model: model)
 
             subtitleList
                 .help("Click a timestamp to jump there. Edit any line to fix the transcription.")
@@ -969,15 +1138,32 @@ struct StudioInspector: View {
         if let clip = shownClip {
             group(clipTitle(for: clip)) {
                 controls {
-                    StudioInspectorPickerRow("Speed", selection: Binding(
-                        get: { RecordingClipSegment.speedPresets.first { abs($0 - clip.speed) < 0.001 } ?? clip.speed },
-                        set: { model.setClipSpeed($0, forClipID: clip.id) }
-                    )) {
-                        ForEach(RecordingClipSegment.speedPresets, id: \.self) { speed in
-                            Text(RecordingClipSegment.speedTitle(speed)).tag(speed)
-                        }
-                    }
-                    .help("Speed of the clip under the playhead. Audio speeds up with it.")
+                    InspectorSlider(
+                        "Speed",
+                        value: Binding(
+                            get: { CGFloat(clip.speed) },
+                            set: { value in
+                                let step = RecordingClipSegment.speedStep
+                                model.setClipSpeed((Double(value) / step).rounded() * step, forClipID: clip.id)
+                            }
+                        ),
+                        range: CGFloat(RecordingClipSegment.minimumSpeed)...CGFloat(RecordingClipSegment.maximumSpeed),
+                        format: InspectorValueFormat(
+                            multiplier: 1,
+                            fractionDigits: 2,
+                            suffix: "×",
+                            showsPositiveSign: false,
+                            step: CGFloat(RecordingClipSegment.speedStep),
+                            acceptedSuffixes: ["×", "x"]
+                        )
+                    )
+                    .help("Playback speed of the clip under the playhead. Audio stays in sync.")
+
+                    InterfaceToggleRow("Mute clip", isOn: Binding(
+                        get: { clip.muted },
+                        set: { model.setClipMuted($0, forClipID: clip.id) }
+                    ))
+                    .help("Silence this clip's recorded audio while keeping its picture and imported audio.")
 
                     if model.canDeleteSelectedClip {
                         Button(role: .destructive) {
@@ -1065,6 +1251,8 @@ struct StudioInspector: View {
 
     private var usesDefaultLayout: Bool {
         abs(model.style.padding - 0.06) < 0.0001
+            && model.style.paddingSides == nil
+            && !model.style.usesLayeredShadow
             && abs(model.style.cornerRadius - 0.02) < 0.0001
             && abs(model.style.shadow - 0.45) < 0.0001
     }
@@ -1341,29 +1529,37 @@ struct StudioAudioExportOptions: View {
 private struct StudioCursorStylePicker: View {
     @Binding var selection: RecordingCursorStyle
     let inverted: Bool
+    @State private var hoveredStyle: RecordingCursorStyle?
 
     private struct Preview {
         var image: NSImage
         var size: CGSize
         var glyph: CGRect
+        var needsCursorShadow: Bool
     }
 
     private struct PreviewKey: Hashable {
         var style: RecordingCursorStyle
         var inverted: Bool
+        var pointing: Bool
     }
 
     private static let previews: [PreviewKey: Preview] = {
         var previews: [PreviewKey: Preview] = [:]
         for style in RecordingCursorStyle.allCases {
             for inverted in [false, true] {
-                let artwork = style.shape?.artwork(inverted: inverted) ?? PointerArtworkCapture.defaultArtwork()
-                if let artwork, let image = NSImage(data: artwork.imageData) {
-                    previews[PreviewKey(style: style, inverted: inverted)] = Preview(
-                        image: image,
-                        size: CGSize(width: artwork.referenceSize.width, height: artwork.referenceSize.height),
-                        glyph: opaqueBounds(of: image)
+                for pointing in [false, true] {
+                    let artwork = RecordingCursorArtworkCatalog.previewArtwork(
+                        style: style, pointing: pointing, inverted: inverted
                     )
+                    if let artwork, let image = NSImage(data: artwork.imageData) {
+                        previews[PreviewKey(style: style, inverted: inverted, pointing: pointing)] = Preview(
+                            image: image,
+                            size: CGSize(width: artwork.referenceSize.width, height: artwork.referenceSize.height),
+                            glyph: opaqueBounds(of: image, alphaThreshold: style.usesArtworkCatalog ? 128 : 65),
+                            needsCursorShadow: artwork.needsCursorShadow
+                        )
+                    }
                 }
             }
         }
@@ -1372,11 +1568,22 @@ private struct StudioCursorStylePicker: View {
 
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
-            ForEach(RecordingCursorStyle.allCases, id: \.self) { style in
-                InspectorTile(title: style.title, isSelected: selection == style) {
+            ForEach(RecordingCursorStyle.selectableStyles, id: \.self) { style in
+                InspectorTile(
+                    title: style.title,
+                    isSelected: selection == style || (style == .tahoe && selection == .tahoeInverted)
+                ) {
                     selection = style
+                    AppLog.event("recording", "studio_cursor_style_changed", fields: ["style": style.rawValue])
                 } content: {
                     preview(style)
+                }
+                .onHover { hovering in
+                    if hovering && style.usesArtworkCatalog {
+                        hoveredStyle = style
+                    } else if hoveredStyle == style {
+                        hoveredStyle = nil
+                    }
                 }
             }
         }
@@ -1384,7 +1591,10 @@ private struct StudioCursorStylePicker: View {
 
     private func preview(_ style: RecordingCursorStyle) -> some View {
         GeometryReader { proxy in
-            if let preview = Self.previews[PreviewKey(style: style, inverted: inverted)] {
+            let previewStyle: RecordingCursorStyle = style == .tahoe && selection == .tahoeInverted ? .tahoeInverted : style
+            if let preview = Self.previews[PreviewKey(
+                style: previewStyle, inverted: inverted, pointing: hoveredStyle == style
+            )] {
                 let scale = proxy.size.width / 40
                 let size = CGSize(width: preview.size.width * scale, height: preview.size.height * scale)
                 let shape = style.shape
@@ -1393,8 +1603,14 @@ private struct StudioCursorStylePicker: View {
                 }
                 Image(nsImage: preview.image)
                     .resizable()
-                    .interpolation(.high)
+                    .interpolation(style.usesNearestNeighborSampling ? .none : .high)
                     .frame(width: size.width, height: size.height)
+                    .shadow(
+                        color: .black.opacity(preview.needsCursorShadow ? Double(RecordingCursorShadowMetrics.opacity) : 0),
+                        radius: preview.needsCursorShadow ? RecordingCursorShadowMetrics.blurRadius : 0,
+                        x: RecordingCursorShadowMetrics.offsetX,
+                        y: RecordingCursorShadowMetrics.offsetY
+                    )
                     .background {
                         if let material = shape?.material {
                             PointerMaterialView(
@@ -1423,7 +1639,7 @@ private struct StudioCursorStylePicker: View {
         .frame(width: size.width, height: size.height)
     }
 
-    private static func opaqueBounds(of image: NSImage) -> CGRect {
+    private static func opaqueBounds(of image: NSImage, alphaThreshold: UInt8) -> CGRect {
         let full = CGRect(x: 0, y: 0, width: 1, height: 1)
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let context = CGContext(
@@ -1444,7 +1660,7 @@ private struct StudioCursorStylePicker: View {
 
         var minX = width, minY = height, maxX = -1, maxY = -1
         for y in 0..<height {
-            for x in 0..<width where pixels[y * width + x] > 64 {
+            for x in 0..<width where pixels[y * width + x] >= alphaThreshold {
                 minX = min(minX, x)
                 maxX = max(maxX, x)
                 minY = min(minY, y)

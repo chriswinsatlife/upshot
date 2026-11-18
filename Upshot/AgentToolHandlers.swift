@@ -1,12 +1,14 @@
 
 import AppKit
 import AVFoundation
+import CoreGraphics
 import Foundation
 
 enum AgentItemKind: String, CaseIterable {
     case zoom
     case text
     case redaction
+    case arrow
     case cameraLayout = "camera_layout"
     case caption
     case image
@@ -16,6 +18,7 @@ enum AgentItemKind: String, CaseIterable {
         switch self {
         case .zoom: "zoomCues"
         case .text: "textOverlays"
+        case .arrow: "arrowOverlays"
         case .redaction: "redactions"
         case .cameraLayout: "cameraLayoutCues"
         case .caption: "subtitleCues"
@@ -30,6 +33,7 @@ enum AgentItemKind: String, CaseIterable {
         switch self {
         case .zoom: "Zoom"
         case .text: "Text"
+        case .arrow: "Arrow"
         case .redaction: "Redaction"
         case .cameraLayout: "Layout"
         case .caption: "Caption"
@@ -42,6 +46,7 @@ enum AgentItemKind: String, CaseIterable {
         switch self {
         case .zoom: try JSONValue(encoding: item.decode(as: ZoomCue.self))
         case .text: try JSONValue(encoding: item.decode(as: RecordingTextOverlay.self))
+        case .arrow: try JSONValue(encoding: item.decode(as: RecordingArrowOverlay.self))
         case .redaction: try JSONValue(encoding: item.decode(as: RecordingRedaction.self))
         case .cameraLayout: try JSONValue(encoding: item.decode(as: RecordingCameraLayoutCue.self))
         case .caption: try JSONValue(encoding: item.decode(as: RecordingSubtitleCue.self))
@@ -112,6 +117,7 @@ extension AgentTools {
                 "sourceStart": seconds(segment.sourceStart),
                 "sourceEnd": seconds(segment.sourceEnd),
                 "speed": .number(segment.speed),
+                "muted": .bool(segment.muted),
                 "editedStart": edited.map { seconds($0.lowerBound) } ?? .null,
                 "editedEnd": edited.map { seconds($0.upperBound) } ?? .null,
             ]
@@ -160,6 +166,7 @@ extension AgentTools {
         let label: JSONValue? = switch kind {
         case .zoom: item["zoom"].flatMap(\.doubleValue).map { .string("\($0)x") }
         case .text, .caption: item["text"]
+        case .arrow: item["direction"]
         case .redaction: item["style"]
         case .cameraLayout: item["layout"]?["kind"]
         case .image, .audio: item["displayName"]
@@ -190,7 +197,7 @@ extension AgentTools {
                 throw AgentToolError.message("This recording has no audio to transcribe.")
             }
             if !model.transcriptionState.isTranscribing {
-                model.transcribe()
+                model.transcribe(localeIdentifier: arguments.optionalString("language"))
             }
             var waited = 0.0
             while model.transcriptionState.isTranscribing {
@@ -208,6 +215,9 @@ extension AgentTools {
         let includeCut = arguments.bool("include_cut_words", default: true)
         let timeline = model.clipTimeline
         guard !words.isEmpty || !model.subtitleCues.isEmpty else {
+            if model.transcriptionCompleted {
+                return [text("No speech detected. Transcription completed with zero captions.")]
+            }
             throw AgentToolError.message("This recording has no transcript. Call get_transcript again with transcribe_if_missing: true.")
         }
 
@@ -342,10 +352,32 @@ extension AgentTools {
         return [json(editResult(model, removedSeconds: before - model.duration))]
     }
 
+    static func setClipMuted(_ arguments: AgentArguments) async throws -> [JSONValue] {
+        let model = try await AgentProjects.shared.model(for: arguments.recording())
+        let clipID = try arguments.string("clip_id")
+        guard let id = UUID(uuidString: clipID),
+              model.clipTimeline.segments.contains(where: { $0.id == id }) else {
+            AppLog.event("recording", "agent_clip_mute_failed", fields: ["reason": "unknown_clip"])
+            throw AgentToolError.message("clip_id must identify an existing clip from get_recording.")
+        }
+        guard let muted = arguments.raw["muted"]?.boolValue else {
+            AppLog.event("recording", "agent_clip_mute_failed", fields: ["reason": "invalid_muted"])
+            throw AgentToolError.message("muted must be true or false.")
+        }
+        model.performAgentEdit { model.setClipMuted(muted, forClipID: id) }
+        model.flushDraft()
+        return [json(try recordingSummary(model))]
+    }
+
     static func setSpeed(_ arguments: AgentArguments) async throws -> [JSONValue] {
         let model = try await AgentProjects.shared.model(for: arguments.recording())
         let clock = try arguments.clock()
-        let speed = min(max(try arguments.double("speed"), RecordingClipSegment.minimumSpeed), RecordingClipSegment.maximumSpeed)
+        let requestedSpeed = try arguments.double("speed")
+        guard requestedSpeed.isFinite, requestedSpeed > 0 else {
+            AppLog.event("automation", "clip_speed_rejected", fields: ["reason": "invalid_rate"])
+            throw AgentToolError.message("Playback speed must be finite and greater than zero.")
+        }
+        let speed = min(max(requestedSpeed, RecordingClipSegment.minimumSpeed), RecordingClipSegment.maximumSpeed)
         let a = try toSource(try arguments.double("start"), clock: clock, model: model)
         let b = try toSource(try arguments.double("end"), clock: clock, model: model)
         let lower = min(a, b), upper = max(a, b)
@@ -363,11 +395,21 @@ extension AgentTools {
             if segment.sourceEnd - end < minimum { end = segment.sourceEnd }
             var pieces: [RecordingClipSegment] = []
             if start > segment.sourceStart {
-                pieces.append(RecordingClipSegment(sourceStart: segment.sourceStart, sourceEnd: start, speed: segment.speed))
+                var leading = segment
+                leading.sourceEnd = start
+                pieces.append(leading)
             }
-            pieces.append(RecordingClipSegment(sourceStart: start, sourceEnd: end, speed: speed))
+            var changed = segment
+            changed.id = UUID()
+            changed.sourceStart = start
+            changed.sourceEnd = end
+            changed.speed = speed
+            pieces.append(changed)
             if end < segment.sourceEnd {
-                pieces.append(RecordingClipSegment(sourceStart: end, sourceEnd: segment.sourceEnd, speed: segment.speed))
+                var trailing = segment
+                trailing.id = UUID()
+                trailing.sourceStart = end
+                pieces.append(trailing)
             }
             pieces[0].id = segment.id
             segments.append(contentsOf: pieces)
@@ -377,6 +419,7 @@ extension AgentTools {
         document.clips = segments
         let before = model.duration
         model.performAgentEdit { model.applyAgentDocument(document, actionName: "Change Speed") }
+        AppLog.event("automation", "clip_speed_changed", fields: ["speed": String(speed), "clip_count": String(segments.count)])
         model.flushDraft()
         return [json(editResult(model, removedSeconds: before - model.duration))]
     }
@@ -469,6 +512,7 @@ extension AgentTools {
                 throw AgentToolError.message("No \(kind.rawValue) item has id \(id). get_recording lists them.")
             }
             fields = try convertTimes(fields, kind: kind, clock: clock, model: model)
+            fields = try convertOverlayPlacement(fields, item: list[position], kind: kind, model: model)
             let normalized = try validated(list[position].merging(.object(fields)), kind: kind, label: "Entry \(index)")
             list[position] = normalized
             updated.append(normalized)
@@ -526,14 +570,95 @@ extension AgentTools {
         return [text("Added.")]
     }
 
+    static func setCameraSource(_ arguments: AgentArguments) async throws -> [JSONValue] {
+        let model = try await AgentProjects.shared.model(for: arguments.recording())
+        guard model.session != nil else { throw AgentToolError.message("Camera footage requires a recording project.") }
+        guard !model.isLoadingCameraSource else { throw AgentToolError.message("A camera source is already loading.") }
+        if let raw = arguments.optionalString("path") {
+            let path = (raw as NSString).expandingTildeInPath
+            guard path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else {
+                throw AgentToolError.message("Pass an absolute path to an existing camera video.")
+            }
+            await model.importCameraFootage(from: URL(fileURLWithPath: path))
+            if let error = model.cameraSourceError { throw AgentToolError.message(error) }
+        } else {
+            model.removeCameraFootage()
+        }
+        model.closeOpenUndoGroups()
+        model.flushDraft()
+        return [json(["hasCamera": .bool(model.hasCameraVideo), "document": try JSONValue(encoding: model.editDocument)])]
+    }
+
     static func updateProject(_ arguments: AgentArguments) async throws -> [JSONValue] {
         let model = try await AgentProjects.shared.model(for: arguments.recording())
-        guard let patch = arguments.raw["patch"], let keys = patch.objectValue?.keys, !keys.isEmpty else {
+        guard let patch = arguments.raw["patch"], let keys = patch.objectValue?.keys,
+              !keys.isEmpty || arguments.raw["appearance"] != nil || arguments.raw["motionPreset"] != nil else {
             throw AgentToolError.message("Pass \"patch\": an object of the document fields to change.")
         }
         let document = try JSONValue(encoding: model.editDocument)
-        try apply(document.merging(patch), to: model, actionName: "Edit Project")
-        return [json(["applied": .array(keys.sorted().map { .string($0) }), "editedDuration": seconds(model.duration)])]
+        let appearance = try arguments.raw["appearance"].map {
+            try JSONValue(encoding: model.exportAppearance).merging($0).decode(as: RecordingExportAppearance.self)
+        }
+        let preset = try arguments.raw["motionPreset"].map { value -> RecordingMotionPreset in
+            guard let raw = value.stringValue, let preset = RecordingMotionPreset(rawValue: raw) else {
+                AppLog.event("recording", "agent_motion_preset_failed")
+                throw AgentToolError.message("motionPreset must be Focused or Cinematic.")
+            }
+            return preset
+        }
+        let captionPatch = patch["subtitleAppearance"]
+        var captionStyle = model.subtitleStyle
+        if let presetID = captionPatch?["preset"]?.stringValue {
+            guard let selected = StudioCaptionPreset(rawValue: presetID) else {
+                AppLog.event("recording", "agent_caption_preset_failed")
+                throw AgentToolError.message("subtitleAppearance.preset must be upshot, reveal, or serif.")
+            }
+            captionStyle.apply(selected)
+        }
+        var captionAppearance = try JSONValue(encoding: captionStyle)
+        if let captionPatch, captionPatch.objectValue != nil { captionAppearance = captionAppearance.merging(captionPatch) }
+        for (oldKey, newKey) in [
+            ("subtitleVerticalPosition", "verticalPosition"),
+            ("subtitleFontScale", "fontScale"),
+            ("subtitleWordHighlight", "highlightsSpokenWord")
+        ] {
+            if let value = patch[oldKey] { captionAppearance = captionAppearance.merging([newKey: value]) }
+        }
+        let cursorPatch = try normalizedCursorPatch(patch, currentEffect: model.clickEffectSettings.effect)
+        var updatedDocument = document.merging(cursorPatch)
+        updatedDocument = try RecordingStudioFrameAgentEdits.normalize(patch, document: updatedDocument)
+        updatedDocument = try RecordingCameraBubbleAgentEdits.normalize(patch, document: updatedDocument, current: model.style.camera)
+        if patch["exportSettings"]?["resolution"] != nil {
+            updatedDocument = updatedDocument.merging(["exportSettings": ["resolutionUsesLongestEdge": true]])
+        }
+        if captionPatch?.objectValue != nil || patch["subtitleVerticalPosition"] != nil
+            || patch["subtitleFontScale"] != nil || patch["subtitleWordHighlight"] != nil {
+            updatedDocument = updatedDocument.merging(["subtitleAppearance": captionAppearance])
+        }
+        try apply(updatedDocument, to: model, actionName: "Edit Project")
+        if let cameraPatch = patch["style"], cameraPatch["cameraLayout"] != nil
+            || cameraPatch["cameraPreviewFrame"] != nil || cameraPatch["cameraZoomResponse"] != nil
+            || cameraPatch["cameraZoomShrinkAmount"] != nil || cameraPatch["cameraShrinksDuringZoom"] != nil {
+            AppLog.event("recording", "agent_camera_bubble_updated", fields: [
+                "position": model.style.camera.layout.resolvedPositionPreset.rawValue,
+                "shape": model.style.camera.layout.shape.rawValue,
+                "frame": model.style.camera.previewFrame.rawValue,
+                "zoom_response": model.style.camera.zoomResponse.rawValue
+            ])
+        }
+        if patch["cameraSource"] != nil {
+            await model.waitForCameraSource()
+            if let error = model.cameraSourceError { throw AgentToolError.message(error) }
+        }
+        if let appearance {
+            model.exportAppearance = appearance
+            AppLog.event("recording", "agent_zoom_motion_updated")
+        }
+        if let preset { model.applyMotionPreset(preset) }
+        var applied = keys.sorted()
+        if appearance != nil { applied.append("appearance") }
+        if preset != nil { applied.append("motionPreset") }
+        return [json(["applied": .array(applied.map { .string($0) }), "editedDuration": seconds(model.duration)])]
     }
 
 
@@ -604,11 +729,16 @@ extension AgentTools {
         }
         if let patch = arguments.raw["settings"], patch.objectValue?.isEmpty == false {
             let merged = try JSONValue(encoding: model.exportSettings).merging(patch)
-            let settings: VideoCompressionSettings
+            var settings: VideoCompressionSettings
             do {
                 settings = try merged.decode(as: VideoCompressionSettings.self)
             } catch {
                 throw AgentToolError.message("Invalid export settings: \(describe(error)). See get_editing_guide.")
+            }
+            if patch["resolution"] != nil { settings.resolutionUsesLongestEdge = true }
+            guard settings.resolution != .custom || settings.hasValidCustomResolution else {
+                AppLog.event("automation", "agent_export_resolution_rejected")
+                throw AgentToolError.message("Custom width and height must be even integers between 2 and 8192.")
             }
             model.exportSettings = settings
             model.export()
@@ -788,6 +918,43 @@ extension AgentTools {
         return fields
     }
 
+    private static func convertOverlayPlacement(
+        _ fields: [String: JSONValue], item: JSONValue, kind: AgentItemKind, model: RecordingStudioModel
+    ) throws -> [String: JSONValue] {
+        guard kind == .text || kind == .image,
+              let rawSpace = fields["coordinateSpace"]?.stringValue,
+              let space = RecordingOverlayCoordinateSpace(rawValue: rawSpace) else { return fields }
+        let oldRawSpace = item["coordinateSpace"]?.stringValue ?? RecordingOverlayCoordinateSpace.canvas.rawValue
+        let oldSpace = RecordingOverlayCoordinateSpace(rawValue: oldRawSpace) ?? .canvas
+        guard oldSpace != space else { return fields }
+        let placement = model.overlayPlacement
+        let canvas = model.basePreviewCanvasSize
+        let source = placement.referenceRect(for: oldSpace, canvasSize: canvas)
+        let destination = placement.referenceRect(for: space, canvasSize: canvas)
+        guard source.width > 0, source.height > 0, destination.width > 0, destination.height > 0 else {
+            AppLog.event("automation", "overlay_coordinate_space_failed", fields: ["kind": kind.rawValue])
+            throw AgentToolError.message("Cannot change overlay placement while the recorded picture has zero dimensions.")
+        }
+        var fields = fields
+        if fields["center"] == nil, let encoded = item["center"] {
+            let center = try encoded.decode(as: CGPoint.self)
+            fields["center"] = try JSONValue(encoding: RecordingOverlayPlacement.convert(center, from: source, to: destination))
+        }
+        let sizeKey = kind == .text ? "fontSize" : "width"
+        let scale = kind == .text ? source.height / destination.height : source.width / destination.width
+        if fields[sizeKey] == nil, let size = item[sizeKey]?.doubleValue {
+            fields[sizeKey] = .number(size * Double(scale))
+        }
+        if kind == .image, fields["cornerRadius"] == nil, let radius = item["cornerRadius"]?.doubleValue {
+            fields["cornerRadius"] = .number(radius * Double(min(source.width, source.height) / min(destination.width, destination.height)))
+        }
+        if kind == .image, fields["shadowScale"] == nil {
+            let shadowScale = item["shadowScale"]?.doubleValue ?? 1
+            fields["shadowScale"] = .number(shadowScale * Double(min(source.width, source.height) / min(destination.width, destination.height)))
+        }
+        return fields
+    }
+
     private static func validated(_ item: JSONValue, kind: AgentItemKind, label: String) throws -> JSONValue {
         let normalized: JSONValue
         do {
@@ -805,11 +972,43 @@ extension AgentTools {
     }
 
     private static func apply(_ document: JSONValue, to model: RecordingStudioModel, actionName: String) throws {
-        let decoded: RecordingEditDocument
+        var decoded: RecordingEditDocument
         do {
             decoded = try document.decode(as: RecordingEditDocument.self)
         } catch {
             throw AgentToolError.message("That would not be a valid project: \(describe(error)).")
+        }
+        if let settings = decoded.exportSettings,
+           settings.resolution == .custom, !settings.hasValidCustomResolution {
+            AppLog.event("automation", "agent_export_resolution_rejected")
+            throw AgentToolError.message("Custom width and height must be even integers between 2 and 8192.")
+        }
+        for dimension in [decoded.exportCustomAspectWidth, decoded.exportCustomAspectHeight].compactMap({ $0 }) {
+            guard (128...7680).contains(dimension) else {
+                AppLog.event("automation", "agent_export_aspect_rejected")
+                throw AgentToolError.message("Custom aspect width and height must be integers between 128 and 7680.")
+            }
+        }
+        if decoded.exportAspectPreset != model.exportAspect
+            || (decoded.exportCustomAspectWidth ?? 1920) != model.exportCustomAspectWidth
+            || (decoded.exportCustomAspectHeight ?? 1080) != model.exportCustomAspectHeight {
+            let source = decoded.exportAspectPreset == .original
+                ? RecordingStudioLayout.originalCanvasSize(
+                    sourceSize: model.videoSize, style: decoded.style.value,
+                    contentCropRect: decoded.normalizedVideoCropRect
+                )
+                : decoded.exportAspectPreset.canvasSize(
+                    for: model.videoSize,
+                    customWidth: decoded.exportCustomAspectWidth ?? 1920,
+                    customHeight: decoded.exportCustomAspectHeight ?? 1080
+                )
+            decoded.exportSettings?.refitCustomResolution(to: source)
+        }
+        if let source = decoded.cameraSource, source.kind == .uploaded {
+            guard let session = model.session, let url = source.url(in: session.directoryURL),
+                  FileManager.default.fileExists(atPath: url.path) else {
+                throw AgentToolError.message("The uploaded camera source must exist in the project's media directory. Use set_camera_source to import a video.")
+            }
         }
         model.performAgentEdit { model.applyAgentDocument(decoded, actionName: actionName) }
         model.flushDraft()
@@ -836,6 +1035,7 @@ extension AgentTools {
                     "sourceStart": seconds(segment.sourceStart),
                     "sourceEnd": seconds(segment.sourceEnd),
                     "speed": .number(segment.speed),
+                    "muted": .bool(segment.muted),
                     "editedStart": edited.map { seconds($0.lowerBound) } ?? .null,
                     "editedEnd": edited.map { seconds($0.upperBound) } ?? .null,
                 ]

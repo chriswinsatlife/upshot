@@ -43,7 +43,9 @@ struct StudioLaneBlock<Item: Identifiable>: Identifiable where Item.ID == UUID {
     let editorStart: TimeInterval
     let editorEnd: TimeInterval
 
-    var id: UUID { item.id }
+    var fragmentID: UUID? = nil
+
+    var id: UUID { fragmentID ?? item.id }
     var editorLength: TimeInterval { max(0, editorEnd - editorStart) }
 }
 
@@ -254,7 +256,7 @@ where Item.ID == UUID {
         let frames = Dictionary(uniqueKeysWithValues: blocks.map {
             ($0.id, StudioBlockFrame(editorStart: $0.editorStart, editorEnd: $0.editorEnd, scale: scale))
         })
-        let selected = blocks.first { $0.id == selectedID }
+        let selected = blocks.filter { $0.item.id == selectedID }
 
         ZStack(alignment: .topLeading) {
             Color.clear
@@ -270,19 +272,21 @@ where Item.ID == UUID {
                 )
             }
 
-            ForEach(blocks.filter { $0.id != selectedID } + (selected.map { [$0] } ?? [])) { block in
+            ForEach(blocks.filter { $0.item.id != selectedID } + selected) { block in
                 if let frame = frames[block.id] {
                     blockView(block, frame: frame)
                 }
             }
 
-            if let selected, let frame = frames[selected.id] {
-                StudioSelectionFrame(blockWidth: frame.width, blockHeight: blockHeight)
-                    .offset(
-                        x: frame.minX - StudioBlockMetrics.handleWidth,
-                        y: StudioBlockMetrics.inset - StudioBlockMetrics.rimWidth
-                    )
-                    .allowsHitTesting(false)
+            ForEach(selected) { block in
+                if let frame = frames[block.id] {
+                    StudioSelectionFrame(blockWidth: frame.width, blockHeight: blockHeight)
+                        .offset(
+                            x: frame.minX - StudioBlockMetrics.handleWidth,
+                            y: StudioBlockMetrics.inset - StudioBlockMetrics.rimWidth
+                        )
+                        .allowsHitTesting(false)
+                }
             }
         }
         .frame(height: height, alignment: .topLeading)
@@ -302,7 +306,7 @@ where Item.ID == UUID {
 
     @ViewBuilder
     private func blockView(_ block: StudioLaneBlock<Item>, frame: StudioBlockFrame) -> some View {
-        let isSelected = block.id == selectedID
+        let isSelected = block.item.id == selectedID
         let state = StudioBlockState(
             width: frame.width,
             height: blockHeight,
@@ -332,7 +336,8 @@ where Item.ID == UUID {
             entries: blocks.compactMap { block in
                 frames[block.id].map { .init(id: block.id, frame: $0) }
             },
-            selectedID: selectedID
+            selectedID: blocks.first(where: { $0.item.id == selectedID && $0.id == activeTarget.blockID })?.id
+                ?? blocks.first(where: { $0.item.id == selectedID })?.id
         )
     }
 
@@ -438,7 +443,7 @@ where Item.ID == UUID {
     }
 
     private func room(around block: StudioLaneBlock<Item>, among spans: [StudioLaneSpan]) -> ClosedRange<TimeInterval> {
-        let others = spans.filter { $0.id != block.id }
+        let others = spans.filter { $0.id != block.item.id }
         let floor = others.map(\.editorEnd).filter { $0 <= block.editorStart + 0.0001 }.max() ?? 0
         let ceiling = others.map(\.editorStart).filter { $0 >= block.editorEnd - 0.0001 }.min() ?? scale.duration
         return floor...max(floor, ceiling)
@@ -507,14 +512,25 @@ extension StudioBlockLane where Decoration == EmptyView {
 
 func studioMovedSourceRange(
     model: RecordingStudioModel,
-    editorStart: TimeInterval,
-    editorLength: TimeInterval
+    sourceStart: TimeInterval,
+    sourceEnd: TimeInterval,
+    editorAnchor: TimeInterval,
+    editorDelta: TimeInterval
 ) -> (start: TimeInterval, end: TimeInterval) {
-    let start = min(max(0, editorStart), max(0, model.duration - editorLength))
-    return (
-        model.sourceTime(atEditorTime: start),
-        model.sourceTime(atEditorTime: start + editorLength)
-    )
+    let regions = model.clipTimeline.editorRegions(overlapping: sourceStart, sourceEnd: sourceEnd)
+    if regions.count == 1, let region = regions.first {
+        let editorLength = region.end - region.start
+        let editorStart = min(max(0, editorAnchor + editorDelta), max(0, model.duration - editorLength))
+        let start = model.sourceTime(atEditorTime: editorStart)
+        let end = model.sourceTime(atEditorTime: editorStart + editorLength)
+        if end > start { return (start, end) }
+    }
+    let anchor = min(max(editorAnchor, 0), model.duration)
+    let target = min(max(editorAnchor + editorDelta, 0), model.duration)
+    let sourceDelta = model.sourceTime(atEditorTime: target) - model.sourceTime(atEditorTime: anchor)
+    let length = min(max(0, sourceEnd - sourceStart), model.sourceDuration)
+    let start = min(max(sourceStart + sourceDelta, 0), max(0, model.sourceDuration - length))
+    return (start, start + length)
 }
 
 struct StudioBlockStyle {

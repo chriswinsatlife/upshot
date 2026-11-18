@@ -9,25 +9,36 @@ nonisolated enum RecordingAudioGain {
         volume.isFinite ? min(2, max(0, volume)) : 1
     }
 
-    static func makeMix(tracks: [AVAssetTrack], volume: Double) -> AVAudioMix? {
-        let parameters = inputParameters(tracks: tracks, volume: volume)
+    static func makeMix(
+        tracks: [AVAssetTrack],
+        volume: Double,
+        clipTimeline: RecordingClipTimeline? = nil
+    ) -> AVAudioMix? {
+        let parameters = inputParameters(tracks: tracks, volume: volume, clipTimeline: clipTimeline)
         guard !parameters.isEmpty else { return nil }
         let mix = AVMutableAudioMix()
         mix.inputParameters = parameters
         return mix
     }
 
-    /// The parameters that apply `volume` to each track; empty at unity,
-    /// which needs none. Shared with mixes that carry other tracks too.
-    static func inputParameters(tracks: [AVAssetTrack], volume: Double) -> [AVMutableAudioMixInputParameters] {
+    static func inputParameters(
+        tracks: [AVAssetTrack],
+        volume: Double,
+        clipTimeline: RecordingClipTimeline? = nil
+    ) -> [AVMutableAudioMixInputParameters] {
         let gain = Float(normalized(volume))
-        guard gain != 1 else { return [] }
+        let mutedRanges = clipTimeline.map { RecordingCompositionBuilder.recordedAudioMuteRanges(in: $0) } ?? []
+        guard gain != 1 || !mutedRanges.isEmpty else { return [] }
         return tracks.map { track in
             let parameters = AVMutableAudioMixInputParameters(track: track)
-            if gain <= 1 {
-                parameters.setVolume(gain, at: .zero)
-            } else {
+            let mixVolume = min(gain, 1)
+            parameters.setVolume(mixVolume, at: .zero)
+            if gain > 1 {
                 parameters.audioTapProcessor = makeTap(gain: gain)
+            }
+            for range in mutedRanges {
+                parameters.setVolume(0, at: range.start)
+                parameters.setVolume(mixVolume, at: CMTimeRangeGetEnd(range))
             }
             return parameters
         }

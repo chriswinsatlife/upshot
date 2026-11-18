@@ -37,31 +37,50 @@ struct StudioCameraLayoutPicker: View {
         switch layout.kind {
         case .pictureInPicture:
             VStack(alignment: .leading, spacing: Space.m) {
-                StudioInspectorPickerRow("Corner", selection: Binding(
-                    get: { layout.corner },
-                    set: { corner in edit { $0.corner = corner } }
-                )) {
-                    ForEach(RecordingCameraLayout.Corner.allCases, id: \.self) { corner in
-                        Text(corner.title).tag(corner)
+                LazyVGrid(columns: columns, spacing: Space.s) {
+                    ForEach(RecordingCameraLayout.PositionPreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
+                        Toggle(preset.title, isOn: Binding(
+                            get: { layout.resolvedPositionPreset == preset },
+                            set: { selected in if selected { edit { $0.selectPosition(preset) } } }
+                        ))
+                        .toggleStyle(.button)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(preset.title)
+                        .accessibilityAddTraits(layout.resolvedPositionPreset == preset ? .isSelected : [])
                     }
                 }
 
-                if layout.shape != .circle {
-                    StudioInspectorModeSwitchRow(
-                        "Shape",
-                        selection: Binding(
-                            get: { layout.shape },
-                            set: { shape in edit { $0.shape = shape } }
-                        ),
-                        options: [RecordingCameraLayout.Shape.square, .portrait].map {
-                            InterfaceModeSwitchOption(value: $0, title: $0.title, systemImage: $0.systemImage)
-                        }
-                    )
+                InspectorFieldPair {
+                    positionSlider("Horizontal", horizontal: true)
+                } trailing: {
+                    positionSlider("Vertical", horizontal: false)
+                }
+
+                StudioInspectorPickerRow("Shape", selection: Binding(
+                    get: { layout.shape == .square ? .squircle : layout.shape },
+                    set: { shape in
+                        edit { $0.selectShape(shape) }
+                        model.style.camera.roundness = 0.1
+                    }
+                )) {
+                    ForEach([RecordingCameraLayout.Shape.circle, .squircle, .rectangle, .portrait], id: \.self) { shape in
+                        Text(shape.title).tag(shape)
+                    }
                 }
 
                 InspectorFieldPair {
-                    slider("Size", \.size, range: RecordingCameraLayout.sizeRange)
+                    if layout.shape == .portrait {
+                        slider("Size", \.size, range: RecordingCameraLayout.sizeRange)
+                    } else {
+                        dimensionSlider("Width", horizontal: true)
+                    }
                 } trailing: {
+                    if layout.shape != .circle && layout.shape != .portrait {
+                        dimensionSlider("Height", horizontal: false)
+                    }
+                }
+
+                InspectorFieldPair {
                     InspectorSlider(
                         "Rounding",
                         value: $model.style.camera.roundness,
@@ -69,11 +88,31 @@ struct StudioCameraLayoutPicker: View {
                         format: .percent()
                     )
                     .disabled(layout.shape == .circle)
-                }
-
-                InspectorHalfField {
+                } trailing: {
                     zoomShrinkSlider
                 }
+
+                StudioInspectorPickerRow("Frame", selection: Binding(
+                    get: { model.style.camera.previewFrame == .legacy ? .standard : model.style.camera.previewFrame },
+                    set: {
+                        model.style.camera.previewFrame = $0
+                        AppLog.event("recording", "camera_bubble_frame_changed", fields: ["frame": $0.rawValue])
+                    }
+                )) {
+                    ForEach([RecordingCameraPreviewFrame.standard, .softBlur], id: \.self) { frame in
+                        Text(frame.title).tag(frame)
+                    }
+                }
+
+                InterfaceToggleRow("Camera reacts to zoom", isOn: Binding(
+                    get: { model.style.camera.shrinksDuringZoom },
+                    set: {
+                        model.style.camera.shrinksDuringZoom = $0
+                        model.style.camera.zoomResponse = .magnification
+                        model.style.camera.zoomShrinkAmount = RecordingCameraBubbleSettings.defaultZoomShrinkAmount
+                        AppLog.event("recording", "camera_zoom_response_changed", fields: ["enabled": String($0)])
+                    }
+                ))
             }
         case .cutout:
             VStack(alignment: .leading, spacing: Space.m) {
@@ -131,8 +170,13 @@ struct StudioCameraLayoutPicker: View {
         InspectorSlider(
             "Shrink",
             value: Binding(
-                get: { model.style.camera.shrinksDuringZoom ? model.style.camera.zoomShrinkAmount : 0 },
+                get: {
+                    guard model.style.camera.shrinksDuringZoom else { return 0 }
+                    return layout.kind == .cutout && model.style.camera.zoomResponse == .magnification
+                        ? 0.1 : model.style.camera.zoomShrinkAmount
+                },
                 set: { amount in
+                    if layout.kind == .cutout { model.style.camera.zoomResponse = .progress }
                     if amount < 0.01 {
                         model.style.camera.shrinksDuringZoom = false
                     } else {
@@ -142,12 +186,54 @@ struct StudioCameraLayoutPicker: View {
                             amount
                         )
                     }
+                    AppLog.event("recording", "camera_zoom_shrink_changed", fields: ["amount": String(Double(amount))])
                 }
             ),
-            range: 0...RecordingCameraBubbleSettings.zoomShrinkAmountRange.upperBound,
+            range: 0...(layout.kind == .cutout ? 0.4 : RecordingCameraBubbleSettings.zoomShrinkAmountRange.upperBound),
             format: .percent()
         )
-        .help("How much smaller the camera gets while the screen is zoomed in. 0% keeps it full size.")
+        .help(model.style.camera.zoomResponse == .magnification && layout.kind == .pictureInPicture
+              ? "Maximum shrink as magnification increases. At 70%, a 2× zoom scales the camera to 65%."
+              : "How much smaller the camera gets while the screen is zoomed in. 0% keeps it full size.")
+    }
+
+    private func positionSlider(_ title: String, horizontal: Bool) -> some View {
+        InspectorSlider(title, value: Binding(
+            get: { horizontal ? layout.position.x : layout.position.y },
+            set: { value in
+                var next = layout
+                var point = layout.position
+                if horizontal { point.x = (value * 100).rounded() / 100 }
+                else { point.y = (value * 100).rounded() / 100 }
+                next.setPosition(point)
+                onChange(next, true)
+                AppLog.event("recording", "camera_bubble_position_changed", fields: [
+                    "x": String(next.positionX), "y": String(next.positionY)
+                ])
+            }
+        ), range: 0...1, format: .percent())
+    }
+
+    private func dimensionSlider(_ title: String, horizontal: Bool) -> some View {
+        InspectorSlider(title, value: Binding(
+            get: { CGFloat(horizontal ? layout.widthFraction : layout.heightFraction) },
+            set: { value in
+                var next = layout
+                let fraction = Double((value * 100).rounded() / 100)
+                if horizontal {
+                    next.width = fraction
+                    next.size = fraction
+                    if layout.shape == .squircle || layout.shape == .square { next.height = fraction }
+                } else {
+                    next.width = layout.widthFraction
+                    next.height = fraction
+                }
+                onChange(next, true)
+                AppLog.event("recording", "camera_bubble_dimensions_changed", fields: [
+                    "width": String(next.widthFraction), "height": String(next.heightFraction)
+                ])
+            }
+        ), range: 0.1...1, format: .percent())
     }
 
     private var isPortraitCanvas: Bool {
@@ -160,6 +246,9 @@ struct StudioCameraLayoutPicker: View {
         change(&next)
         guard next != layout else { return }
         onChange(next, false)
+        AppLog.event("recording", "camera_bubble_layout_changed", fields: [
+            "position": next.resolvedPositionPreset.rawValue, "shape": next.shape.rawValue
+        ])
     }
 
     private func slider(
@@ -266,7 +355,11 @@ private struct StudioCameraLayoutTileButtonStyle: ButtonStyle {
 
 extension RecordingCameraLayout {
     fileprivate var miniature: RecordingCameraLayout {
-        RecordingCameraLayout(kind: kind, corner: corner, shape: shape, side: side, placement: placement)
+        var miniature = RecordingCameraLayout(kind: kind, corner: corner, shape: shape, side: side, placement: placement)
+        miniature.positionPreset = positionPreset
+        miniature.positionX = positionX
+        miniature.positionY = positionY
+        return miniature
     }
 }
 
@@ -365,17 +458,13 @@ private struct MiniatureGeometry {
     private func cornerCamera(for layout: RecordingCameraLayout) -> (rect: CGRect, radius: CGFloat) {
         let size: CGSize = if layout.shape == .portrait {
             CGSize(width: (unit * 0.32).rounded(), height: (unit * 0.32 * 4 / 3).rounded())
+        } else if layout.shape == .rectangle {
+            CGSize(width: (unit * 0.4 * 16 / 9).rounded(), height: (unit * 0.4).rounded())
         } else {
             CGSize(width: (unit * 0.4).rounded(), height: (unit * 0.4).rounded())
         }
-        let x: CGFloat = switch layout.corner {
-        case .topLeading, .bottomLeading: stage.minX + margin
-        case .topTrailing, .bottomTrailing: stage.maxX - margin - size.width
-        }
-        let y: CGFloat = switch layout.corner {
-        case .topLeading, .topTrailing: stage.minY + margin
-        case .bottomLeading, .bottomTrailing: stage.maxY - margin - size.height
-        }
+        let x = stage.minX + margin + max(0, stage.width - margin * 2 - size.width) * layout.position.x
+        let y = stage.minY + margin + max(0, stage.height - margin * 2 - size.height) * layout.position.y
         let short = min(size.width, size.height)
         let radius = layout.shape == .circle ? short / 2 : (short * 0.3).rounded()
         return (CGRect(origin: CGPoint(x: x, y: y), size: size), radius)
@@ -692,6 +781,23 @@ extension RecordingCameraLayout.Placement {
     }
 }
 
+extension RecordingCameraLayout.PositionPreset {
+    var title: String {
+        switch self {
+        case .topLeading: "Top left"
+        case .topCenter: "Top center"
+        case .topTrailing: "Top right"
+        case .centerLeading: "Center left"
+        case .center: "Center"
+        case .centerTrailing: "Center right"
+        case .bottomLeading: "Bottom left"
+        case .bottomCenter: "Bottom center"
+        case .bottomTrailing: "Bottom right"
+        case .custom: "Custom"
+        }
+    }
+}
+
 extension RecordingCameraLayout.Corner {
     var title: String {
         switch self {
@@ -716,7 +822,8 @@ extension RecordingCameraLayout.Shape {
     var title: String {
         switch self {
         case .circle: "Circle"
-        case .square: "Square"
+        case .square, .squircle: "Square"
+        case .rectangle: "Rectangle"
         case .portrait: "Portrait"
         }
     }
@@ -724,7 +831,8 @@ extension RecordingCameraLayout.Shape {
     var systemImage: String {
         switch self {
         case .circle: "circle"
-        case .square: "square"
+        case .square, .squircle: "square"
+        case .rectangle: "rectangle"
         case .portrait: "rectangle.portrait"
         }
     }

@@ -137,9 +137,12 @@ nonisolated enum RecordingAudioClipMixer {
         recordingTracks: [AVAssetTrack],
         recordingVolume: Double,
         clips: [RecordingAudioClip],
-        trackIDs: [UUID: CMPersistentTrackID]
+        trackIDs: [UUID: CMPersistentTrackID],
+        clipTimeline: RecordingClipTimeline? = nil
     ) -> AVAudioMix? {
-        var parameters = RecordingAudioGain.inputParameters(tracks: recordingTracks, volume: recordingVolume)
+        var parameters = RecordingAudioGain.inputParameters(
+            tracks: recordingTracks, volume: recordingVolume, clipTimeline: clipTimeline
+        )
         for clip in clips {
             guard let trackID = trackIDs[clip.id] else { continue }
             parameters.append(inputParameters(for: clip, trackID: trackID))

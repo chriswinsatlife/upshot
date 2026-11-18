@@ -25,7 +25,17 @@ nonisolated struct RecordingExportTiming: Sendable {
     }
 
     func screenSampleRects(at time: TimeInterval, frameRect: (TimeInterval) -> CGRect) -> [CGRect] {
-        sampleTimes(at: time, frameRect: frameRect).map(frameRect)
+        [frameRect(time)]
+    }
+
+    func screenMotionBlur(
+        at time: TimeInterval, stageSize: CGSize, frameRect: (TimeInterval) -> CGRect
+    ) -> StudioScreenMotionBlur {
+        let previousTime = max(0, time - frameInterval)
+        return StudioScreenMotionBlur.analyze(
+            previous: frameRect(previousTime), current: frameRect(time), deltaSeconds: min(time, frameInterval),
+            stageSize: stageSize, shutterFraction: motionBlurLevel.shutterFraction
+        )
     }
 
     func sampleTimes(at time: TimeInterval, frameRect: (TimeInterval) -> CGRect) -> [TimeInterval] {

@@ -14,8 +14,13 @@ nonisolated struct RecordingCameraBubbleSettings: Equatable {
 
     var beauty = StudioCameraBeauty()
 
-    static let defaultZoomShrinkAmount: CGFloat = 0.1
-    static let zoomShrinkAmountRange: ClosedRange<CGFloat> = 0.05...0.4
+    var pictureCrop = RecordingCameraCropGeometry.unit
+
+    var previewFrame = RecordingCameraPreviewFrame.softBlur
+    var zoomResponse = RecordingCameraZoomResponse.magnification
+
+    static let defaultZoomShrinkAmount: CGFloat = 0.7
+    static let zoomShrinkAmountRange: ClosedRange<CGFloat> = 0.05...0.7
 }
 
 nonisolated struct RecordingStudioStyle: Equatable {
@@ -27,18 +32,28 @@ nonisolated struct RecordingStudioStyle: Equatable {
     }
 
     var background: AnnotationBackgroundStyle = RecordingStudioStyle.defaultBackground
+    var authoredGradient: RecordingStudioGradient?
 
     var padding: CGFloat = 0.06
+    var paddingSides: RecordingStudioPadding?
+    var backgroundBlur: CGFloat = 0
 
     var cornerRadius: CGFloat = 0.02
 
     var shadow: CGFloat = 0.45
+    var usesLayeredShadow = false
 
     var cursorScale: CGFloat = RecordingStudioStyle.defaultCursorScale
     var hidesCursor = false
     var cursorStyle = RecordingCursorStyle.system
 
     var invertsCursor = false
+    var cursorSmoothing: Double? = nil
+    var cursorSpringStiffnessMultiplier: Double = 1
+    var cursorSpringDampingMultiplier: Double = 1
+    var cursorSpringMassMultiplier: Double = 1
+    var cursorClickBounce: Double? = nil
+    var cursorClickBounceDuration: TimeInterval = 0.230
     var camera = RecordingCameraBubbleSettings()
 }
 
@@ -56,6 +71,12 @@ nonisolated struct RecordingStudioLayout: Sendable, Equatable {
             width: sourceSize.width * crop.width,
             height: sourceSize.height * crop.height
         )
+        if let sides = style.paddingSides?.normalized {
+            return CGSize(
+                width: visibleSize.width / (1 - sides.leftFraction - sides.rightFraction),
+                height: visibleSize.height / (1 - sides.topFraction - sides.bottomFraction)
+            )
+        }
         let padding = min(max(style.padding, 0), 0.475)
         let inset = min(visibleSize.width, visibleSize.height) * padding / (1 - 2 * padding)
         return CGSize(width: visibleSize.width + 2 * inset, height: visibleSize.height + 2 * inset)
@@ -75,6 +96,8 @@ nonisolated struct RecordingStudioLayout: Sendable, Equatable {
     var cameraOpacity: CGFloat = 1
 
     var cameraCutout: CGFloat = 0
+    var cameraSquircle: CGFloat = 0
+    var cameraBubble: CGFloat = 0
 
     enum ContentMode: Sendable {
 
@@ -108,6 +131,13 @@ nonisolated struct RecordingStudioLayout: Sendable, Equatable {
             width: (canvasSize.width * cardScale).rounded(),
             height: (canvasSize.height * cardScale).rounded()
         )
+        let paddingSides = style.paddingSides?.normalized
+        if let sides = paddingSides {
+            cardSize = CGSize(
+                width: canvasSize.width * (1 - sides.leftFraction - sides.rightFraction),
+                height: canvasSize.height * (1 - sides.topFraction - sides.bottomFraction)
+            )
+        }
         let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
         let normalizedCrop = contentCropRect.standardized.intersection(unit)
         let crop = normalizedCrop.width > 0.0001 && normalizedCrop.height > 0.0001
@@ -133,7 +163,7 @@ nonisolated struct RecordingStudioLayout: Sendable, Equatable {
                 height: fitHeight.rounded()
             )
         }
-        let cardRect = CGRect(
+        var cardRect = CGRect(
             x: usesUniformPadding ? (canvasSize.width - cardSize.width) / 2
                 : ((canvasSize.width - cardSize.width) / 2).rounded(),
             y: usesUniformPadding ? (canvasSize.height - cardSize.height) / 2
@@ -141,6 +171,17 @@ nonisolated struct RecordingStudioLayout: Sendable, Equatable {
             width: cardSize.width,
             height: cardSize.height
         )
+        if let sides = paddingSides {
+            cardRect.origin.x = canvasSize.width * sides.leftFraction
+                + (canvasSize.width * (1 - sides.leftFraction - sides.rightFraction) - cardSize.width) / 2
+            if sides.linked {
+                cardRect.origin.y = canvasSize.height * sides.topFraction
+                    + (canvasSize.height * (1 - sides.topFraction - sides.bottomFraction) - cardSize.height) / 2
+            } else {
+                let travel = max(0, canvasSize.height - cardSize.height)
+                cardRect.origin.y = min(travel, max(0, travel / 2 * (1 + (sides.top - sides.bottom) / 250)))
+            }
+        }
         let cardCornerRadius = style.cornerRadius * minDimension
 
         var contentFillSize = cardRect.size

@@ -99,7 +99,11 @@ struct BackgroundSwatch: View {
                 endPoint: gradient.endPoint
             ))
         case .customWallpaper(let wallpaper):
-            AnnotationCustomWallpaperPreview(wallpaper: wallpaper, maxPixelSize: 320)
+            if wallpaper.isVideo {
+                StudioWallpaperVideoTile(url: wallpaper.url)
+            } else {
+                AnnotationCustomWallpaperPreview(wallpaper: wallpaper, maxPixelSize: 320)
+            }
         }
     }
 }
@@ -169,6 +173,7 @@ struct InspectorBackgroundRow: View {
     var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
     let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
     let onEndPreview: () -> Void
+    var showsStudioWallpapers = false
 
     @State private var isPickerPresented = false
     @State private var isHovering = false
@@ -226,7 +231,8 @@ struct InspectorBackgroundRow: View {
                 },
                 onSelectWallpaper: onSelectWallpaper,
                 onPreview: onPreview,
-                onEndPreview: onEndPreview
+                onEndPreview: onEndPreview,
+                showsStudioWallpapers: showsStudioWallpapers
             )
         }
     }
@@ -240,6 +246,7 @@ struct BackgroundPickerPopover: View {
     let onSelectWallpaper: (AnnotationCustomWallpaper) -> Void
     let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
     let onEndPreview: () -> Void
+    var showsStudioWallpapers = false
 
     static let size = CGSize(width: 320, height: 520)
 
@@ -273,7 +280,8 @@ struct BackgroundPickerPopover: View {
                     onEditorAction: {},
                     onPickWallpaper: onPickWallpaper,
                     onSelectWallpaper: onSelectWallpaper,
-                    onPreview: onPreview
+                    onPreview: onPreview,
+                    showsStudioWallpapers: showsStudioWallpapers
                 )
                 .padding(.horizontal, Space.xl)
                 .padding(.bottom, Space.xl)
@@ -295,6 +303,7 @@ struct InspectorBackgroundFillPicker: View {
     let onPickWallpaper: () -> Void
     var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
     var onPreview: ((AnnotationBackgroundStyle, Bool) -> Void)? = nil
+    var showsStudioWallpapers = false
 
     private let swatchColumns = Array(repeating: GridItem(.flexible(), spacing: Space.s), count: 8)
     private static let maxVisibleRecentWallpapers = 5
@@ -371,8 +380,16 @@ struct InspectorBackgroundFillPicker: View {
 
     private var unfoldedWallpaperGroup: some View {
         VStack(alignment: .leading, spacing: Space.xxl) {
-            group("Recent") {
-                recentWallpaperGrid
+            if showsStudioWallpapers {
+                StudioWallpaperPicker(
+                    style: $style, wallpaperStore: wallpaperStore,
+                    onPickWallpaper: onPickWallpaper,
+                    onSelectWallpaper: onSelectWallpaper, onPreview: onPreview
+                )
+            } else {
+                group("Recent") {
+                    recentWallpaperGrid
+                }
             }
 
             ForEach(AnnotationWallpaperPack.builtIn, id: \.id) { pack in

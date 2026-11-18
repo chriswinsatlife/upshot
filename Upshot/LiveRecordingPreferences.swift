@@ -4,7 +4,7 @@ extension UpshotPreferences {
     static let recordingDimOutsideAreaKey = "recordingDimOutsideArea"
 
     static var recordingDimOutsideArea: Bool {
-        UpshotStorage.defaults.object(forKey: recordingDimOutsideAreaKey) as? Bool ?? false
+        UpshotStorage.defaults.object(forKey: recordingDimOutsideAreaKey) as? Bool ?? true
     }
 }
 

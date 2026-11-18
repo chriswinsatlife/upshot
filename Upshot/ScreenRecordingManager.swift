@@ -111,6 +111,8 @@ final class ScreenRecordingManager {
     var elapsedTime: TimeInterval = 0
     var errorMessage: String?
     var onFinishRecording: ((RecordingSession, CGDirectDisplayID?) -> Void)?
+    var onBeginFinishingRecording: ((RecordingSession) -> Void)?
+    var onFailFinishingRecording: ((RecordingSession, String) -> Void)?
 
     private let capture = ScreenRecordingCapture()
     private let writer = ScreenRecordingWriter()
@@ -129,6 +131,8 @@ final class ScreenRecordingManager {
     private var currentSource: ScreenRecordingSource?
     private var activityToken: NSObjectProtocol?
     private var terminationCompletion: ((RecordingSession?) -> Void)?
+    private var startupTask: Task<Void, Never>?
+    private var windowTrackingTask: Task<Void, Never>?
 
     var isActive: Bool {
         state != .idle
@@ -152,8 +156,9 @@ final class ScreenRecordingManager {
 
     private init() {}
 
-    func startRecording(source: ScreenRecordingSource) {
+    func startRecording(source: ScreenRecordingSource, countdownSeconds: Int = 0) {
         guard state == .idle else { return }
+        guard !CaptureCountdownPresenter.shared.isRunning else { return }
         guard Self.ensureScreenCapturePermission() else { return }
 
         let targetDisplayID = source.displayID ?? ActiveDisplayResolver.activeDisplayID(preferPointer: true) ?? CGMainDisplayID()
@@ -171,7 +176,12 @@ final class ScreenRecordingManager {
         RecordingPenPresenter.shared.prepare(source: source)
         RecordingPenPresenter.shared.onChange = { [writer] in writer.refreshPenFrame() }
 
-        Task { [self] in
+        startupTask = Task { [self] in
+            defer {
+                if Task.isCancelled, state == .starting, !isStopping {
+                    deleteRecording()
+                }
+            }
             do {
                 let requestedOptions = ScreenRecordingCaptureOptions.fromPreferences()
                 let (options, inputWarnings) = await Self.resolveCaptureOptions(requestedOptions)
@@ -194,6 +204,7 @@ final class ScreenRecordingManager {
                 let content = try await ScreenRecordingCapture.availableContent()
                 guard isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)
+                displayID = target.displayID ?? targetDisplayID
 
                 try writer.setupWriter(
                     outputURL: session.screenURL,
@@ -203,6 +214,11 @@ final class ScreenRecordingManager {
                     includesSystemAudio: options.capturesSystemAudio,
                     includesMicrophone: options.microphoneDeviceID != nil
                 )
+                let warmsCapture = countdownSeconds > 0
+                if warmsCapture {
+                    writer.pause()
+                    TeleprompterController.shared.setPaused(true)
+                }
 
                 capture.onVideoFrame = { [writer, pointerActivityRecorder] sampleBuffer in
                     pointerActivityRecorder.recordFrameGeometry(sampleBuffer)
@@ -217,12 +233,31 @@ final class ScreenRecordingManager {
                 }
                 capture.onError = { [weak self] error in
                     Task { @MainActor in
-                        self?.handleCaptureError(error)
+                        guard let self, self.session == session else { return }
+                        self.handleCaptureError(error)
                     }
                 }
                 writer.onFailure = { [weak self] error in
                     Task { @MainActor in
-                        self?.handleWriterFailure(error)
+                        guard let self, self.session == session else { return }
+                        self.handleWriterFailure(error)
+                    }
+                }
+
+                if warmsCapture {
+                    try await capture.startCapture(filter: target.filter, configuration: target.configuration)
+                    guard isStarting(session: session) else { return }
+                    startWindowTracking(source: source, target: target, options: options, session: session)
+                    AppLog.event("recording", "recording_capture_warmed", fields: ["countdown_seconds": String(countdownSeconds)])
+                    let completed = await CaptureCountdownPresenter.shared.runIfNeeded(
+                        seconds: countdownSeconds,
+                        displayID: displayID
+                    )
+                    guard isStarting(session: session) else { return }
+                    guard completed else {
+                        AppLog.event("recording", "recording_warm_start_cancelled")
+                        deleteRecording()
+                        return
                     }
                 }
 
@@ -247,8 +282,14 @@ final class ScreenRecordingManager {
                 )
                 keystrokeRecorder.start()
 
-                try await capture.startCapture(filter: target.filter, configuration: target.configuration)
-                guard isStarting(session: session) else { return }
+                if warmsCapture {
+                    writer.resume()
+                    TeleprompterController.shared.setPaused(false)
+                } else {
+                    try await capture.startCapture(filter: target.filter, configuration: target.configuration)
+                    guard isStarting(session: session) else { return }
+                    startWindowTracking(source: source, target: target, options: options, session: session)
+                }
 
                 manifest = CaptureManifest()
                 manifest.pixelWidth = target.width
@@ -277,6 +318,16 @@ final class ScreenRecordingManager {
                 await finishFailedStart(error: error)
             }
         }
+    }
+
+    func waitForRecordingStart() async -> Bool {
+        guard let startupTask else { return false }
+        await withTaskCancellationHandler {
+            await startupTask.value
+        } onCancel: {
+            startupTask.cancel()
+        }
+        return !Task.isCancelled && state == .recording
     }
 
     func stopRecording() {
@@ -352,12 +403,24 @@ final class ScreenRecordingManager {
 
         isStopping = true
         state = .finishing
+        writer.pause()
+        RecordingAreaHighlightPresenter.shared.hide()
+        if finishAction == .preview, startedAt != nil, let session {
+            onBeginFinishingRecording?(session)
+        }
+        let startupTask = startupTask
+        startupTask?.cancel()
+        let windowTrackingTask = windowTrackingTask
+        windowTrackingTask?.cancel()
+        self.windowTrackingTask = nil
         RecordingPenPresenter.shared.setPaused(true)
         timer?.invalidate()
         pointerActivityRecorder.stop()
         keystrokeRecorder.stop()
 
         Task {
+            await startupTask?.value
+            await windowTrackingTask?.value
             do {
                 try await capture.stopCapture()
             } catch {
@@ -365,6 +428,23 @@ final class ScreenRecordingManager {
             }
             RecordingAreaHighlightPresenter.shared.hide()
 
+            if finishAction == .discard || startedAt == nil {
+                let completion = finishAction == .terminate ? terminationCompletion : nil
+                if let session, finishAction == .discard {
+                    onFailFinishingRecording?(session, "The recording was discarded.")
+                }
+                await CameraRecordingManager.shared.cancel()
+                await writer.cancel()
+                RecordingPenPresenter.shared.finish()
+                if let warning = await RecordingFocusController.shared.restore() {
+                    Self.presentInputWarnings([warning])
+                }
+                if let session { RecordingSessionStore.deleteSession(session) }
+                cleanupAfterRecording()
+                RecordingControlPresenter.shared.hide()
+                completion?(nil)
+                return
+            }
             let cameraResult = await CameraRecordingManager.shared.stop()
             let result = await writer.finishWriting()
             RecordingPenPresenter.shared.finish()
@@ -427,6 +507,9 @@ final class ScreenRecordingManager {
             }
             errorMessage = result.error?.localizedDescription
                 ?? "The recording file couldn\u{2019}t be finished."
+            if action == .preview, let session {
+                onFailFinishingRecording?(session, "The recording file couldn’t be finished.")
+            }
             RecordingControlPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             if action == .terminate {
@@ -460,6 +543,7 @@ final class ScreenRecordingManager {
             }
             onFinishRecording?(session, restartDisplayID)
         case .discard:
+            onFailFinishingRecording?(session, "The recording was discarded.")
             RecordingSessionStore.deleteSession(session)
             RecordingControlPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
@@ -489,6 +573,10 @@ final class ScreenRecordingManager {
     }
 
     private func handleWriterFailure(_ error: Error) {
+        if state == .starting {
+            handleCaptureError(error)
+            return
+        }
         guard state == .recording || state == .paused else { return }
 
         errorMessage = AppAlerts.recordingStoppedMessage(error: error)
@@ -519,7 +607,7 @@ final class ScreenRecordingManager {
     }
 
     private func isStarting(session: RecordingSession) -> Bool {
-        state == .starting && !isStopping && self.session == session
+        state == .starting && !isStopping && !Task.isCancelled && self.session == session
     }
 
     private static func resolveCaptureOptions(
@@ -605,14 +693,6 @@ final class ScreenRecordingManager {
         let timer = Timer(timeInterval: 0.25, repeats: true) { _ in
             Task { @MainActor in
                 ScreenRecordingManager.shared.updateElapsedTime()
-                guard RecordingAreaHighlightPresenter.shared.update() else {
-                    ScreenRecordingManager.shared.handleCaptureError(NSError(
-                        domain: "UpshotRecording",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "The display configuration changed."]
-                    ))
-                    return
-                }
                 RecordingPenPresenter.shared.updateGeometry()
             }
         }
@@ -637,6 +717,9 @@ final class ScreenRecordingManager {
     }
 
     private func cleanupAfterRecording() {
+        startupTask = nil
+        windowTrackingTask?.cancel()
+        windowTrackingTask = nil
         RecordingPenPresenter.shared.finish()
         RecordingAreaHighlightPresenter.shared.hide()
         timer?.invalidate()
@@ -659,6 +742,64 @@ final class ScreenRecordingManager {
         isStopping = false
         state = .idle
         AppLog.event("recording", "recording_timer_cleared")
+    }
+
+    private func startWindowTracking(
+        source: ScreenRecordingSource,
+        target: ScreenRecordingCaptureTarget,
+        options: ScreenRecordingCaptureOptions,
+        session: RecordingSession
+    ) {
+        guard case .window(let selectedWindow) = source.kind else { return }
+        windowTrackingTask?.cancel()
+        windowTrackingTask = Task { [weak self] in
+            var previousDisplayID = target.displayID
+            var previousSourceRect = target.configuration.sourceRect
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .milliseconds(500))
+                    let content = try await ScreenRecordingCapture.availableContent()
+                    guard let self, !Task.isCancelled, !self.isStopping, self.session == session else { return }
+                    guard let window = content.windows.first(where: { $0.windowID == selectedWindow.windowID }) else {
+                        AppLog.event("recording", "recording_window_unavailable", fields: ["window_id": String(selectedWindow.windowID)])
+                        if self.state == .starting {
+                            self.deleteRecording()
+                        } else {
+                            self.stopRecording()
+                        }
+                        return
+                    }
+                    let updated = try Self.captureTarget(
+                        for: ScreenRecordingSource(kind: .window(window)),
+                        content: content,
+                        options: options
+                    )
+                    let displayChanged = updated.displayID != previousDisplayID
+                    guard displayChanged || updated.configuration.sourceRect != previousSourceRect else { continue }
+                    updated.configuration.width = target.width
+                    updated.configuration.height = target.height
+                    try await self.capture.updateCapture(
+                        filter: displayChanged ? updated.filter : nil,
+                        configuration: updated.configuration
+                    )
+                    guard !Task.isCancelled, !self.isStopping, self.session == session else { return }
+                    previousDisplayID = updated.displayID
+                    previousSourceRect = updated.configuration.sourceRect
+                    self.displayID = updated.displayID
+                    AppLog.event("recording", "recording_window_crop_updated", fields: [
+                        "window_id": String(selectedWindow.windowID),
+                        "display_id": updated.displayID.map { String($0) } ?? "unavailable",
+                        "display_changed": String(displayChanged),
+                        "source_rect": NSStringFromRect(previousSourceRect)
+                    ])
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    AppLog.event("recording", "recording_window_tracking_failed", fields: ["error": AppLog.error(error)])
+                }
+            }
+        }
     }
 
     private static func captureTarget(
@@ -688,11 +829,28 @@ final class ScreenRecordingManager {
             displayID = freshDisplay.displayID
             tracksDynamicGeometry = false
         case .window(let window):
-            let freshWindow = content.windows.first(where: { $0.windowID == window.windowID }) ?? window
-            filter = SCContentFilter(desktopIndependentWindow: freshWindow)
-            sourceSize = freshWindow.frame.size
-            captureRect = freshWindow.frame
-            displayID = nil
+            guard let freshWindow = content.windows.first(where: { $0.windowID == window.windowID }),
+                  let display = Self.captureDisplay(for: freshWindow.frame, displays: content.displays) else {
+                throw NSError(domain: "UpshotRecording", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "The selected window is no longer available on a display."
+                ])
+            }
+            filter = ScreenRecordingCapture.displayFilter(
+                display: display,
+                content: content,
+                includesAppWindows: includesAppWindows
+            )
+            let visibleRect = freshWindow.frame.intersection(display.frame)
+            let mappedSourceRect = Self.sourceRect(
+                forAppKitSelectionRect: Self.quartzRect(fromAppKitRect: visibleRect),
+                screenFrame: ActiveDisplayResolver.screen(for: display.displayID)?.frame
+                    ?? Self.quartzRect(fromAppKitRect: display.frame),
+                contentRect: filter.contentRect
+            )
+            sourceRect = mappedSourceRect
+            sourceSize = mappedSourceRect.size
+            captureRect = visibleRect
+            displayID = display.displayID
             tracksDynamicGeometry = true
         case .area(let display, let rect):
             let freshDisplay = content.displays.first(where: { $0.displayID == display.displayID }) ?? display
@@ -714,8 +872,10 @@ final class ScreenRecordingManager {
         }
 
         let scaleFactor = max(1, CGFloat(filter.pointPixelScale))
-        let width = max(2, Int((sourceSize.width * scaleFactor).rounded(.toNearestOrAwayFromZero)))
-        let height = max(2, Int((sourceSize.height * scaleFactor).rounded(.toNearestOrAwayFromZero)))
+        let pixelWidth = max(2, Int((sourceSize.width * scaleFactor).rounded(.toNearestOrAwayFromZero)))
+        let pixelHeight = max(2, Int((sourceSize.height * scaleFactor).rounded(.toNearestOrAwayFromZero)))
+        let width = tracksDynamicGeometry ? pixelWidth & ~1 : pixelWidth
+        let height = tracksDynamicGeometry ? pixelHeight & ~1 : pixelHeight
         let configuration = ScreenRecordingCapture.buildConfiguration(
             width: width,
             height: height,
@@ -737,6 +897,17 @@ final class ScreenRecordingManager {
             tracksDynamicGeometry: tracksDynamicGeometry,
             inputMapping: inputMapping
         )
+    }
+
+    private static func captureDisplay(for frame: CGRect, displays: [SCDisplay]) -> SCDisplay? {
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        let midpoint = CGPoint(x: frame.midX, y: frame.midY)
+        return displays.first { $0.frame.contains(midpoint) }
+            ?? displays.filter { $0.frame.intersects(frame) }.max {
+                let lhs = $0.frame.intersection(frame)
+                let rhs = $1.frame.intersection(frame)
+                return lhs.width * lhs.height < rhs.width * rhs.height
+            }
     }
 
     private static func quartzRect(fromAppKitRect rect: CGRect) -> CGRect {
@@ -857,6 +1028,15 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
         try await stream.stopCapture()
     }
 
+    func updateCapture(filter: SCContentFilter?, configuration: SCStreamConfiguration) async throws {
+        guard let stream else { throw CancellationError() }
+        if let filter {
+            try await stream.updateContentFilter(filter)
+        }
+        try Task.checkCancellation()
+        try await stream.updateConfiguration(configuration)
+    }
+
     @MainActor static func displayFilter(
         display: SCDisplay,
         content: SCShareableContent,
@@ -869,7 +1049,9 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
             }
 
         if includesAppWindows {
-            let excludedWindowIDs = RecordingAreaHighlightPresenter.shared.windowIDs.union(RecordingPenPresenter.shared.windowIDs)
+            let excludedWindowIDs = RecordingAreaHighlightPresenter.shared.windowIDs
+                .union(RecordingPenPresenter.shared.windowIDs)
+                .union(RecordingBarPresenter.shared.recordingWindowIDs)
             return SCContentFilter(
                 display: display,
                 excludingWindows: content.windows.filter { excludedWindowIDs.contains($0.windowID) }
@@ -1085,7 +1267,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
             guard let self, isPaused else { return }
 
             isPaused = false
-            if let pauseStartTime {
+            if self.isSessionStarted, let pauseStartTime {
                 totalPauseDuration = CMTimeAdd(totalPauseDuration, CMTimeSubtract(requestedTime, pauseStartTime))
             }
             pauseStartTime = nil
@@ -1126,13 +1308,13 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                 self.latestScreenSample = sendableSampleBuffer
                 let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
+                guard !self.isPaused else { return }
+
                 if !self.isSessionStarted {
                     self.sessionStartTime = time
                     self.assetWriter?.startSession(atSourceTime: .zero)
                     self.isSessionStarted = true
                 }
-
-                guard !self.isPaused else { return }
 
                 let adjustedPTS = self.adjustedTime(time)
                 guard adjustedPTS >= .zero, adjustedPTS > self.latestAdjustedTime || self.latestAdjustedTime == .zero, self.checkWriterHealth() else { return }

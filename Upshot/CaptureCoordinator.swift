@@ -215,24 +215,17 @@ final class CaptureCoordinator {
     }
 
     func recordFullscreen(_ display: SCDisplay) {
-        Task {
-            guard await CaptureCountdownPresenter.shared.runIfNeeded(
-                seconds: UpshotPreferences.recordingStartDelaySeconds,
-                displayID: display.displayID
-            ) else { return }
-            ScreenRecordingManager.shared.startRecording(source: ScreenRecordingSource(kind: .fullscreen(display)))
-        }
+        ScreenRecordingManager.shared.startRecording(
+            source: ScreenRecordingSource(kind: .fullscreen(display)),
+            countdownSeconds: UpshotPreferences.recordingStartDelaySeconds
+        )
     }
 
     func recordWindow(_ window: SCWindow) {
-        Task {
-            let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
-            guard await CaptureCountdownPresenter.shared.runIfNeeded(
-                seconds: UpshotPreferences.recordingStartDelaySeconds,
-                displayID: displayID
-            ) else { return }
-            ScreenRecordingManager.shared.startRecording(source: ScreenRecordingSource(kind: .window(window)))
-        }
+        ScreenRecordingManager.shared.startRecording(
+            source: ScreenRecordingSource(kind: .window(window)),
+            countdownSeconds: UpshotPreferences.recordingStartDelaySeconds
+        )
     }
 
     private func recordAllInOneArea(_ rect: CGRect, output: RecordingOutputMode) async {
@@ -253,15 +246,10 @@ final class CaptureCoordinator {
     }
 
     func recordArea(_ display: SCDisplay, rect: CGRect) {
-        Task {
-            guard await CaptureCountdownPresenter.shared.runIfNeeded(
-                seconds: UpshotPreferences.recordingStartDelaySeconds,
-                displayID: display.displayID
-            ) else { return }
-            ScreenRecordingManager.shared.startRecording(
-                source: ScreenRecordingSource(kind: .area(display: display, rect: rect))
-            )
-        }
+        ScreenRecordingManager.shared.startRecording(
+            source: ScreenRecordingSource(kind: .area(display: display, rect: rect)),
+            countdownSeconds: UpshotPreferences.recordingStartDelaySeconds
+        )
     }
 
 

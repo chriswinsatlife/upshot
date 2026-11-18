@@ -31,6 +31,7 @@ enum RecordingExportPreferences {
 
 struct RecordingExportOptionsPopover: View {
     let initialSettings: VideoCompressionSettings
+    let canvasSize: CGSize?
     let onConfirm: (VideoCompressionSettings) -> Void
 
     @State private var settings: VideoCompressionSettings
@@ -40,9 +41,11 @@ struct RecordingExportOptionsPopover: View {
     init(
         initialSettings: VideoCompressionSettings,
         initialDeliveryOptions: RecordingExportDeliveryOptions? = nil,
+        canvasSize: CGSize? = nil,
         onConfirm: @escaping (VideoCompressionSettings) -> Void
     ) {
         self.initialSettings = initialSettings
+        self.canvasSize = canvasSize
         self.onConfirm = onConfirm
         _settings = State(initialValue: initialSettings)
         _delivery = State(initialValue: initialDeliveryOptions ?? UpshotPreferences.recordingExtendedExportDefaults)
@@ -51,6 +54,7 @@ struct RecordingExportOptionsPopover: View {
     var body: some View {
         ExportAndShareOptionsPopoverLayout(
             confirmTitle: delivery.format == .gif ? "Export GIF" : "Export Video",
+            isConfirmDisabled: delivery.format == .video && settings.resolution == .custom && !settings.hasValidCustomResolution,
             onCancel: { dismiss() },
             onConfirm: confirm
         ) {
@@ -68,12 +72,30 @@ struct RecordingExportOptionsPopover: View {
                 audioSection
             }
         }
+        .onChange(of: settings) { _, _ in
+            AppLog.event("recording", "export_settings_changed", fields: [
+                "resolution": settings.resolution.rawValue,
+                "frameRate": settings.effectiveFrameRate.rawValue,
+                "encoding": settings.encodingMode?.rawValue ?? "legacy"
+            ])
+        }
+        .onChange(of: delivery) { _, _ in
+            AppLog.event("recording", "export_delivery_changed", fields: [
+                "format": delivery.format.rawValue, "gifSize": delivery.gifSize?.rawValue ?? "legacy",
+                "gifLoops": String(delivery.effectiveGIFLoops), "gifFPS": String(delivery.gifFrameRate.rawValue)
+            ])
+        }
     }
 
     private var videoSection: some View {
         InterfaceSection(nil) {
             modeSwitchRow("Quality", selection: $settings.quality, options: VideoCompressionQuality.allCases)
             modeSwitchRow("Codec", selection: $settings.codec, options: VideoCompressionCodec.allCases)
+            modeSwitchRow(
+                "Encoding",
+                selection: Binding(get: { settings.effectiveEncodingMode }, set: { settings.encodingMode = $0 }),
+                options: VideoExportEncodingMode.allCases
+            )
             resolutionRow
             modeSwitchRow(
                 "Frame rate",
@@ -113,20 +135,26 @@ struct RecordingExportOptionsPopover: View {
                 }
             }
             modeSwitchRow("Quality", selection: $delivery.gifQuality, options: RecordingGIFQuality.allCases.reversed())
-            resolutionRow
+            InterfacePickerRow("Size", selection: $delivery.gifSize) {
+                if delivery.gifSize == nil {
+                    Text(settings.resolution.rawValue).tag(nil as RecordingGIFSize?)
+                }
+                ForEach(RecordingGIFSize.allCases, id: \.self) { size in
+                    Text(size.rawValue).tag(Optional(size))
+                }
+            }
+            InterfaceToggleRow("Loop", isOn: Binding(
+                get: { delivery.effectiveGIFLoops }, set: { delivery.gifLoops = $0 }
+            ))
             motionBlurRow
             InterfaceToggleRow("Scale Retina to 1x", isOn: $delivery.scalesRetinaToOne)
             InterfaceToggleRow("Optimize", isOn: $delivery.optimizesGIF)
-                .help("Combine identical frames. GIF exports loop continuously and contain no audio.")
+                .help("Combine identical frames. GIF exports contain no audio.")
         }
     }
 
     private var resolutionRow: some View {
-        InterfacePickerRow("Resolution", selection: $settings.resolution) {
-            ForEach(VideoCompressionResolution.allCases) { resolution in
-                Text(resolution.rawValue).tag(resolution)
-            }
-        }
+        RecordingExportResolutionControls(settings: $settings, canvasSize: canvasSize)
     }
 
     private var motionBlurRow: some View {
@@ -153,6 +181,7 @@ struct RecordingExportOptionsPopover: View {
     }
 
     private func confirm() {
+        guard delivery.format == .gif || settings.resolution != .custom || settings.hasValidCustomResolution else { return }
         let confirmed = settings
         RecordingExportPreferences.lastSettings = confirmed
         UpshotPreferences.recordingExtendedExportDefaults = delivery
@@ -172,6 +201,56 @@ struct RecordingExportOptionsPopover: View {
                 options: options.map { InterfaceModeSwitchOption(value: $0, title: $0.rawValue) }
             )
         }
+    }
+}
+
+struct RecordingExportResolutionControls: View {
+    @Binding var settings: VideoCompressionSettings
+    var canvasSize: CGSize?
+
+    var body: some View {
+        InterfacePickerRow("Resolution", selection: Binding(
+            get: { settings.resolution },
+            set: { resolution in
+                settings.resolution = resolution
+                settings.resolutionUsesLongestEdge = true
+                if let canvasSize { settings.refitCustomResolution(to: canvasSize) }
+            }
+        )) {
+            ForEach(VideoCompressionResolution.allCases) { resolution in
+                Text(resolution.rawValue).tag(resolution)
+            }
+        }
+        if settings.resolution == .custom {
+            InterfaceRow("Width") {
+                InterfaceValueWithUnitField("Width", value: dimensionBinding(width: true), unit: "px", range: 2...8192)
+            }
+            InterfaceRow("Height") {
+                InterfaceValueWithUnitField("Height", value: dimensionBinding(width: false), unit: "px", range: 2...8192)
+            }
+            if !settings.hasValidCustomResolution {
+                Text("Enter even dimensions between 2 and 8192 pixels.")
+            }
+        }
+    }
+
+    private func dimensionBinding(width: Bool) -> Binding<Int> {
+        Binding(
+            get: { width ? settings.effectiveCustomWidth : settings.effectiveCustomHeight },
+            set: { value in
+                if width { settings.customWidth = value } else { settings.customHeight = value }
+                if let canvasSize, canvasSize.width.isFinite, canvasSize.height.isFinite,
+                   canvasSize.width > 0, canvasSize.height > 0 {
+                    let ratio = canvasSize.width / canvasSize.height
+                    let other = width ? CGFloat(value) / ratio : CGFloat(value) * ratio
+                    let evenOther = max(2, Int((other / 2).rounded()) * 2)
+                    if width { settings.customHeight = evenOther } else { settings.customWidth = evenOther }
+                }
+                AppLog.event("recording", "export_custom_resolution_changed", fields: [
+                    "width": String(settings.effectiveCustomWidth), "height": String(settings.effectiveCustomHeight)
+                ])
+            }
+        )
     }
 }
 

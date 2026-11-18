@@ -372,6 +372,7 @@ struct SettingsSearchEntry: Identifiable, Equatable {
         SettingsSearchEntry(title: "Audio", tab: .screenRecording, keywords: "microphone system sound mono"),
         SettingsSearchEntry(title: "GIF", tab: .screenRecording, keywords: "animated frame rate quality"),
         SettingsSearchEntry(title: "After recording", tab: .screenRecording, keywords: "export reveal finder"),
+        SettingsSearchEntry(title: "Automatically add zooms", tab: .screenRecording, keywords: "studio recording clicks suggestions"),
         SettingsSearchEntry(title: "Keep editor above other windows", tab: .annotate, keywords: "always on top"),
         SettingsSearchEntry(title: "Draw shadows on new annotations", tab: .annotate, keywords: "shadow"),
         SettingsSearchEntry(title: "Expand canvas beyond the image edge", tab: .annotate, keywords: "canvas"),

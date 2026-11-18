@@ -30,6 +30,7 @@ nonisolated struct RecordingImageOverlay: Identifiable, Codable, Equatable, Hash
     var fileName: String
     /// The file's name as it was picked, for the timeline and inspector.
     var displayName: String
+    var coordinateSpace: RecordingOverlayCoordinateSpace = .canvas
     /// Recording (source) time.
     var start: TimeInterval
     var end: TimeInterval
@@ -46,6 +47,7 @@ nonisolated struct RecordingImageOverlay: Identifiable, Codable, Equatable, Hash
     var cornerRadius: Double = 0
     /// Drop shadow strength, 0...1.
     var shadow: Double = 0
+    var shadowScale: Double = 1
     var fadeIn: TimeInterval = 0
     var fadeOut: TimeInterval = 0
     var isAnimated = false
@@ -64,6 +66,7 @@ nonisolated struct RecordingImageOverlay: Identifiable, Codable, Equatable, Hash
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         fileName = try container.decode(String.self, forKey: .fileName)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? fileName
+        coordinateSpace = try container.decodeIfPresent(RecordingOverlayCoordinateSpace.self, forKey: .coordinateSpace) ?? .canvas
         start = try container.decode(TimeInterval.self, forKey: .start)
         end = try container.decode(TimeInterval.self, forKey: .end)
         center = try container.decodeIfPresent(CGPoint.self, forKey: .center) ?? CGPoint(x: 0.5, y: 0.5)
@@ -73,6 +76,7 @@ nonisolated struct RecordingImageOverlay: Identifiable, Codable, Equatable, Hash
         opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
         cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 0
         shadow = try container.decodeIfPresent(Double.self, forKey: .shadow) ?? 0
+        shadowScale = try container.decodeIfPresent(Double.self, forKey: .shadowScale) ?? 1
         fadeIn = try container.decodeIfPresent(TimeInterval.self, forKey: .fadeIn) ?? 0
         fadeOut = try container.decodeIfPresent(TimeInterval.self, forKey: .fadeOut) ?? 0
         isAnimated = try container.decodeIfPresent(Bool.self, forKey: .isAnimated) ?? false
@@ -237,8 +241,9 @@ nonisolated enum RecordingImageOverlayRenderer {
         // rotation keeps the look the same at the preview's size and the
         // export's, and keeps the shadow falling straight down whichever
         // way the image is turned or the context is flipped.
-        let shadowOffset = context.convertToDeviceSpace(CGSize(width: 0, height: 12 * unit * strength))
-        let shadowBlurVector = context.convertToDeviceSpace(CGSize(width: 40 * unit * strength, height: 0))
+        let shadowUnit = unit * CGFloat(max(overlay.shadowScale, 0))
+        let shadowOffset = context.convertToDeviceSpace(CGSize(width: 0, height: 12 * shadowUnit * strength))
+        let shadowBlurVector = context.convertToDeviceSpace(CGSize(width: 40 * shadowUnit * strength, height: 0))
         let shadowBlur = hypot(shadowBlurVector.width, shadowBlurVector.height)
 
         context.saveGState()

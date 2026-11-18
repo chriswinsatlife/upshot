@@ -56,6 +56,13 @@ final class RecordingStudioModel {
     private(set) var hasRecordedAudio = false
     private(set) var cameraOffset: TimeInterval = 0
     private(set) var cameraVideoAspect = RecordingCameraLayoutResolver.defaultCameraAspect
+    private(set) var cameraSource: RecordingCameraSource?
+    private(set) var cameraSourceError: String?
+    private(set) var cameraSourceNotice: String?
+    private(set) var isLoadingCameraSource = false
+    private var cameraSourceTask: Task<Void, Never>?
+    var resolvedCameraURL: URL? { RecordingCameraSource.resolvedURL(source: cameraSource, session: session) }
+    var cameraSourceDisplayName: String? { cameraSource?.displayName ?? resolvedCameraURL?.lastPathComponent }
     private(set) var isLoaded = false
     private(set) var loadError: String?
 
@@ -75,9 +82,23 @@ final class RecordingStudioModel {
             }
             var unchangedCamera = oldValue.camera
             unchangedCamera.beauty = style.camera.beauty
+            if RecordingCursorMotion(style: oldValue) != RecordingCursorMotion(style: style)
+                || oldValue.cursorClickBounce != style.cursorClickBounce
+                || oldValue.cursorClickBounceDuration != style.cursorClickBounceDuration {
+                rebuildPointerTimeline()
+                AppLog.event("recording", "cursor_motion_changed", fields: [
+                    "smoothing": style.cursorSmoothing.map { String($0) } ?? "legacy",
+                    "stiffness": String(style.cursorSpringStiffnessMultiplier),
+                    "damping": String(style.cursorSpringDampingMultiplier),
+                    "mass": String(style.cursorSpringMassMultiplier),
+                    "bounce": style.cursorClickBounce.map { String($0) } ?? "legacy",
+                    "bounce_seconds": String(style.cursorClickBounceDuration)
+                ])
+            }
             if oldValue.camera.layout != style.camera.layout {
                 rebuildCameraLayoutTimeline()
             } else if unchangedCamera != style.camera || oldValue.padding != style.padding
+                || oldValue.paddingSides != style.paddingSides
                 || oldValue.cornerRadius != style.cornerRadius {
                 rebuildMotionTimeline()
             }
@@ -104,6 +125,7 @@ final class RecordingStudioModel {
     var exportAppearance = RecordingExportAppearance() {
         didSet {
             guard exportAppearance != oldValue else { return }
+            observeAutomaticZoomBaseline()
             if isLoaded, let session {
                 do {
                     try RecordingExportAppearanceStore.save(exportAppearance, to: session.directoryURL)
@@ -112,7 +134,11 @@ final class RecordingStudioModel {
                     AppLog.event("recording", "export_appearance_save_failed", fields: ["error": AppLog.error(error)])
                 }
             }
-            rebuildMotionTimeline()
+            if exportAppearance.zoomMotion != oldValue.zoomMotion {
+                rebuildViewportTimeline()
+            } else {
+                rebuildMotionTimeline()
+            }
             keystrokeTimeline = KeystrokeCaptionTimeline(events: pointerCapture.keystrokes.filter(exportAppearance.keystrokes.filter.includes))
         }
     }
@@ -129,11 +155,60 @@ final class RecordingStudioModel {
             }
         }
     }
+
+    func applyMotionPreset(_ preset: RecordingMotionPreset) {
+        var appearance = exportAppearance
+        var updatedStyle = style
+        preset.apply(to: &appearance, style: &updatedStyle)
+        let previousAppearance = exportAppearance
+        let previousStyle = style
+        registerUndo("Apply Motion Preset") { target in
+            target.restoreMotionSettings(appearance: previousAppearance, style: previousStyle)
+        }
+        style = updatedStyle
+        exportAppearance = appearance
+        AppLog.event("recording", "motion_preset_applied", fields: ["preset": preset.rawValue])
+    }
+
+    private func restoreMotionSettings(appearance: RecordingExportAppearance, style: RecordingStudioStyle) {
+        let previousAppearance = exportAppearance
+        let previousStyle = self.style
+        registerUndo("Apply Motion Preset") { target in
+            target.restoreMotionSettings(appearance: previousAppearance, style: previousStyle)
+        }
+        self.style = style
+        exportAppearance = appearance
+    }
+
+    func updateZoomMotion(_ settings: RecordingZoomMotionSettings, action: String) {
+        exportAppearance.zoomMotion = settings
+        AppLog.event("recording", "zoom_motion_changed", fields: [
+            "control": action,
+            "zoom_in_seconds": String(settings.zoomInDuration),
+            "zoom_out_seconds": String(settings.zoomOutDuration),
+            "connect_zooms": String(settings.connectZooms),
+            "gap_seconds": String(settings.connectedZoomGap),
+            "pan_seconds": String(settings.connectedZoomDuration)
+        ])
+    }
     var exportSettings = VideoCompressionSettings() {
         didSet { scheduleProjectSave() }
     }
     var showsClickEffects = true {
         didSet { scheduleProjectSave() }
+    }
+    var clickEffectSettings = RecordingClickEffectSettings() {
+        didSet {
+            guard oldValue != clickEffectSettings else { return }
+            scheduleProjectSave()
+            AppLog.event("recording", "click_effect_changed", fields: [
+                "effect": clickEffectSettings.effect.rawValue,
+                "color": clickEffectSettings.normalized.color,
+                "scale": String(clickEffectSettings.normalized.scale),
+                "opacity": String(clickEffectSettings.normalized.opacity),
+                "duration_seconds": String(clickEffectSettings.normalized.duration)
+            ])
+        }
     }
     var showsKeystrokes = true {
         didSet { scheduleProjectSave() }
@@ -150,14 +225,51 @@ final class RecordingStudioModel {
     var showsSubtitles = true {
         didSet { scheduleProjectSave() }
     }
-    var subtitleStyle = SubtitleBarStyle() {
-        didSet { scheduleProjectSave() }
+    var subtitleStyle = SubtitleBarStyle(preset: .reveal) {
+        didSet {
+            if oldValue != subtitleStyle {
+                AppLog.event("recording", "studio_caption_style_changed", fields: [
+                    "preset": subtitleStyle.preset.rawValue,
+                    "animation": subtitleStyle.animation.rawValue,
+                    "font_size": String(subtitleStyle.fontSize),
+                    "rows": String(subtitleStyle.maximumRows),
+                    "bottom_offset": String(subtitleStyle.bottomOffset),
+                    "maximum_width": String(subtitleStyle.maximumWidth),
+                    "box_radius": String(subtitleStyle.boxRadius),
+                    "background_opacity": String(subtitleStyle.backgroundOpacity),
+                    "word_reveal": String(subtitleStyle.revealsWords),
+                    "word_highlight": String(subtitleStyle.highlightsSpokenWord)
+                ])
+            }
+            scheduleProjectSave()
+        }
     }
     var exportAspect: ExportAspectPreset = .original {
         didSet {
+            if !isApplyingDocument {
+                exportSettings.refitCustomResolution(to: basePreviewCanvasSize)
+                AppLog.event("recording", "export_aspect_changed", fields: ["aspect": exportAspect.rawValue])
+            }
             scheduleProjectSave()
             rebuildPreviewReframe()
         }
+    }
+    var exportCustomAspectWidth = 1920 {
+        didSet { exportCustomAspectChanged() }
+    }
+    var exportCustomAspectHeight = 1080 {
+        didSet { exportCustomAspectChanged() }
+    }
+
+    private func exportCustomAspectChanged() {
+        if !isApplyingDocument {
+            exportSettings.refitCustomResolution(to: basePreviewCanvasSize)
+            AppLog.event("recording", "export_custom_aspect_changed", fields: [
+                "width": String(exportCustomAspectWidth), "height": String(exportCustomAspectHeight)
+            ])
+        }
+        scheduleProjectSave()
+        rebuildPreviewReframe()
     }
     var exportAspectMode: ExportAspectContentMode = .fill {
         didSet {
@@ -185,7 +297,20 @@ final class RecordingStudioModel {
     private(set) var karaokeTimeline = KaraokeTimeline.empty
     private(set) var activeTranscriptWordIndex: Int?
     var transcriptionState = RecordingTranscriptionState.idle
+    var transcriptionLocaleIdentifier = UserDefaults.standard.string(forKey: "transcriptionLocaleIdentifier") ?? "" {
+        didSet {
+            guard oldValue != transcriptionLocaleIdentifier else { return }
+            UserDefaults.standard.set(transcriptionLocaleIdentifier, forKey: "transcriptionLocaleIdentifier")
+            AppLog.event("recording", "transcription_language_selected", fields: [
+                "locale": transcriptionLocaleIdentifier.isEmpty ? "system_default" : transcriptionLocaleIdentifier
+            ])
+        }
+    }
+    private(set) var transcriptionLocales: [Locale] = []
+    private(set) var transcriptionCompleted = false
     private(set) var zoomCues: [ZoomCue] = []
+    let automaticZoomState = RecordingAutomaticZoomState()
+    private var zoomTelemetrySampleCount = 0
     private(set) var viewportTimeline = ViewportTimeline.identity
     private(set) var pointerTimeline = PointerTimeline.empty
     private(set) var keystrokeTimeline = KeystrokeCaptionTimeline.empty
@@ -199,6 +324,9 @@ final class RecordingStudioModel {
     var selectedRedactionID: UUID?
     let redactionPreview = RecordingRedactionPreviewSource()
     let cameraBeautyPreview = StudioCameraBeautyPreviewSource()
+    private(set) var arrowOverlays: [RecordingArrowOverlay] = []
+    var selectedArrowID: UUID?
+    private var arrowEditSnapshot: [RecordingArrowOverlay]?
     private(set) var imageOverlays: [RecordingImageOverlay] = []
     var selectedImageID: UUID?
     private(set) var audioClips: [RecordingAudioClip] = []
@@ -252,7 +380,8 @@ final class RecordingStudioModel {
             recordingTracks: recordingTracks,
             recordingVolume: Double(audioVolume),
             clips: audioClips,
-            trackIDs: playbackClipTrackIDs
+            trackIDs: playbackClipTrackIDs,
+            clipTimeline: replacementAudio == nil ? clipTimeline : nil
         )
     }
 
@@ -277,6 +406,7 @@ final class RecordingStudioModel {
     private var screenVideoTrack: AVAssetTrack?
     private var screenTracks: [AVAssetTrack] = []
     private var shareTask: Task<Void, Never>?
+    private var cloudShareOperationID: UUID?
     private var transcriptionTask: Task<Void, Never>?
     private var projectSaveTask: Task<Void, Never>?
     private var screenAsset: AVURLAsset?
@@ -284,6 +414,12 @@ final class RecordingStudioModel {
     private var isLoading = false
     private var wallpaperCacheLease: BoundedCGImageCache.Lease?
     private let editUndoManager = UndoManager()
+    private var projectUndoEntries: [RecordingProjectHistory.Entry] = []
+    private var projectRedoEntries: [RecordingProjectHistory.Entry] = []
+    private var pendingUndoDocument: RecordingEditDocument?
+    private var pendingUndoActionName = "Edit"
+    private var undoGroupObserver: NSObjectProtocol?
+    private var isRestoringProjectHistory = false
     private(set) var undoRevision = 0
     private var zoomEditSnapshot: [ZoomCue]?
     private var viewportRebuildTask: Task<Void, Never>?
@@ -313,7 +449,8 @@ final class RecordingStudioModel {
         if RecordingSession.isSessionDirectory(url) {
             session = RecordingSession(directoryURL: url)
             exportDeliveryOptions = RecordingExportOptionStore.load(from: url) ?? UpshotPreferences.recordingExtendedExportDefaults
-            exportAppearance = RecordingExportAppearanceStore.load(from: url) ?? RecordingExportAppearance()
+            exportAppearance = RecordingExportAppearanceStore.load(from: url)
+                ?? (session?.effectiveEditDocument() == nil ? RecordingExportAppearance() : .legacy)
         } else {
             session = nil
         }
@@ -381,22 +518,7 @@ final class RecordingStudioModel {
             keystrokeTimeline = KeystrokeCaptionTimeline(events: pointerCapture.keystrokes.filter(exportAppearance.keystrokes.filter.includes))
         }
 
-        if let session, session.hasCamera {
-            hasCameraVideo = true
-            cameraOffset = manifest?.cameraLeadIn ?? 0
-            if let aspect = await RecordingCameraVideo.aspect(of: session.cameraURL) {
-                guard !isTornDown, !Task.isCancelled else { return }
-                cameraVideoAspect = aspect
-            }
-            StudioCameraMatteGenerator.prewarm()
-            cameraPlayer.replaceCurrentItem(with: AVPlayerItem(url: session.cameraURL))
-            cameraPlayer.actionAtItemEnd = .pause
-            cameraPlayer.isMuted = true
-            updateCameraBeautyPreview()
-        } else {
-            style.camera.isVisible = false
-        }
-
+        zoomTelemetrySampleCount = ZoomCueSynthesizer.usableSampleCount(in: pointerCapture)
         lastSavedDocument = session?.loadEditDocument()
         let document = session?.effectiveEditDocument()
         showsClickEffects = manifest?.pressEffectsEnabled ?? true
@@ -413,12 +535,20 @@ final class RecordingStudioModel {
             )
             zoomEnabled = false
         } else {
-            zoomCues = ZoomCueSynthesizer.cues(from: pointerCapture, duration: sourceDuration)
             if let defaultPreset = RecordingStudioStylePresetStore.shared.activePreset {
                 style = defaultPreset.value
                 appliedStylePresetID = defaultPreset.id
+            } else if exportAppearance.zoomMotion == RecordingZoomMotionSettings() {
+                var appearance = exportAppearance
+                var updatedStyle = style
+                RecordingMotionPreset.focused.apply(to: &appearance, style: &updatedStyle)
+                style = updatedStyle
+                exportAppearance = appearance
             }
         }
+
+        await loadCameraSource()
+        guard !isTornDown, !Task.isCancelled else { return }
 
         if let storedClips = document?.clips, !storedClips.isEmpty {
             clipTimeline = RecordingClipTimeline(segments: storedClips)
@@ -432,6 +562,20 @@ final class RecordingStudioModel {
         }
         duration = clipTimeline.duration
         selectedClipID = nil
+
+        if session != nil, automaticZoomState.beginAutomaticAttempt(source: screenURL),
+           document == nil, zoomCues.isEmpty,
+           clipTimeline.isUnedited(sourceDuration: sourceDuration),
+           RecordingStudioZoomPreferences.automaticallyAddsZooms,
+           zoomTelemetrySampleCount >= 2 {
+            let result = ZoomCueSynthesizer.suggestions(
+                from: pointerCapture,
+                duration: sourceDuration,
+                clipTimeline: clipTimeline
+            )
+            zoomCues = result.cues
+            logZoomSuggestions(result, trigger: "fresh_recording")
+        }
 
         if let session, let fileName = document?.replacementAudioFileName {
             let url = session.directoryURL.appendingPathComponent(fileName)
@@ -455,6 +599,7 @@ final class RecordingStudioModel {
         rebuildViewportTimeline()
         installObservers()
         isLoaded = true
+        observeAutomaticZoomBaseline()
         updateCameraMatteCache()
         rebuildPreviewReframe()
         loadTimelineThumbnails()
@@ -470,7 +615,132 @@ final class RecordingStudioModel {
             }
             session.updateProjectMetadata { $0.lastOpenedAt = Date() }
         }
+        restoreProjectHistory()
+        undoGroupObserver = NotificationCenter.default.addObserver(
+            forName: .NSUndoManagerDidCloseUndoGroup, object: editUndoManager, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.editUndoManager.groupingLevel == 0 else { return }
+                self.captureUndoGroup()
+            }
+        }
         StudioProjectRegistry.shared.register(self)
+    }
+
+    func importCameraFootage(from url: URL) async {
+        guard let session, !isLoadingCameraSource, !isTornDown else { return }
+        pause()
+        isLoadingCameraSource = true
+        cameraSourceError = nil
+        cameraSourceNotice = nil
+        defer { isLoadingCameraSource = false }
+        var copiedURL: URL?
+        do {
+            _ = try await RecordingCameraAsset.load(url: url)
+            guard !isTornDown, !Task.isCancelled else { return }
+            let directory = session.directoryURL.appendingPathComponent("media", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let fileName = "camera-\(UUID().uuidString).\(url.pathExtension.isEmpty ? "mov" : url.pathExtension)"
+            let destination = directory.appendingPathComponent(fileName)
+            try FileManager.default.copyItem(at: url, to: destination)
+            copiedURL = destination
+            let installedAsset = try await RecordingCameraAsset.load(url: destination, loopingTo: sourceDuration)
+            let aspect = await RecordingCameraVideo.aspect(of: destination)
+            guard !isTornDown, !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: destination)
+                return
+            }
+            let previous = currentDocument()
+            registerUndo("Change Camera Source") { $0.applyAgentDocument(previous, actionName: "Change Camera Source") }
+            cameraSource = RecordingCameraSource(kind: .uploaded, fileName: fileName, displayName: url.lastPathComponent)
+            cameraOffset = 0
+            installCameraAsset(installedAsset)
+            cameraVideoAspect = aspect ?? RecordingCameraLayoutResolver.defaultCameraAspect
+            style.camera.isVisible = true
+            cameraMatteTask?.cancel()
+            cameraMatteTask = nil
+            rebuildMotionTimeline()
+            movePlayers(to: currentTime)
+            scheduleProjectSave()
+            cameraSourceNotice = "Webcam footage linked"
+            AppLog.event("recording", "camera_source_imported", fields: ["looping": "true"])
+        } catch {
+            if let copiedURL { try? FileManager.default.removeItem(at: copiedURL) }
+            cameraSourceError = "Could not open the camera video. Choose a readable video file."
+            AppLog.event("recording", "camera_source_import_failed", fields: ["error": AppLog.error(error)])
+        }
+    }
+
+    func removeCameraFootage() {
+        guard !isLoadingCameraSource else { return }
+        let previous = currentDocument()
+        registerUndo("Remove Camera Source") { $0.applyAgentDocument(previous, actionName: "Remove Camera Source") }
+        cameraSourceTask?.cancel()
+        cameraMatteTask?.cancel()
+        cameraMatteTask = nil
+        cameraSource = .removed
+        cameraOffset = 0
+        cameraSourceError = nil
+        cameraSourceNotice = "Webcam footage removed"
+        hasCameraVideo = false
+        cameraPlayer.pause()
+        cameraPlayer.replaceCurrentItem(with: nil)
+        style.camera.isVisible = false
+        scheduleProjectSave()
+        AppLog.event("recording", "camera_source_removed")
+    }
+
+    private func reloadCameraSource() {
+        cameraSourceTask?.cancel()
+        cameraSourceTask = Task { [weak self] in
+            await self?.loadCameraSource()
+        }
+    }
+
+    func waitForCameraSource() async {
+        await cameraSourceTask?.value
+    }
+
+    private func loadCameraSource() async {
+        let requested = cameraSource
+        guard let url = resolvedCameraURL else {
+            hasCameraVideo = false
+            cameraOffset = 0
+            cameraPlayer.replaceCurrentItem(with: nil)
+            style.camera.isVisible = false
+            return
+        }
+        isLoadingCameraSource = true
+        cameraSourceError = nil
+        defer { if cameraSource == requested { isLoadingCameraSource = false } }
+        do {
+            let asset = try await RecordingCameraAsset.load(url: url, loopingTo: requested?.kind == .uploaded ? sourceDuration : nil)
+            let aspect = await RecordingCameraVideo.aspect(of: url)
+            guard !isTornDown, !Task.isCancelled, requested == cameraSource else { return }
+            cameraMatteTask?.cancel()
+            cameraMatteTask = nil
+            cameraOffset = requested?.kind == .uploaded ? 0 : manifest?.cameraLeadIn ?? 0
+            cameraVideoAspect = aspect ?? RecordingCameraLayoutResolver.defaultCameraAspect
+            installCameraAsset(asset)
+            rebuildMotionTimeline()
+            movePlayers(to: currentTime)
+            updateCameraMatteCache()
+        } catch {
+            guard !Task.isCancelled, requested == cameraSource else { return }
+            hasCameraVideo = false
+            cameraPlayer.replaceCurrentItem(with: nil)
+            cameraSourceError = "Could not open the camera video. Choose another source."
+            AppLog.event("recording", "camera_source_load_failed", fields: ["error": AppLog.error(error)])
+        }
+    }
+
+    private func installCameraAsset(_ asset: AVAsset) {
+        hasCameraVideo = true
+        StudioCameraMatteGenerator.prewarm()
+        cameraPlayer.replaceCurrentItem(with: AVPlayerItem(asset: asset))
+        cameraPlayer.actionAtItemEnd = .pause
+        cameraPlayer.isMuted = true
+        updateCameraBeautyPreview()
     }
 
     private func applyDocumentSettings(_ document: RecordingEditDocument) {
@@ -478,11 +748,16 @@ final class RecordingStudioModel {
         defer { isApplyingDocument = false }
 
         style = document.style.value
+        if cameraSource != document.cameraSource {
+            cameraSource = document.cameraSource
+            if isLoaded { reloadCameraSource() }
+        }
         zoomEnabled = document.zoomEnabled
         zoomCues = document.zoomCues
         cameraLayoutCues = (document.cameraLayoutCues ?? []).sorted { $0.start < $1.start }
         textOverlays = document.textOverlays ?? []
         redactions = document.redactions ?? []
+        arrowOverlays = document.arrowOverlays ?? []
         imageOverlays = document.imageOverlays ?? []
         audioClips = document.audioClips ?? []
         loadOverlayMedia()
@@ -491,8 +766,11 @@ final class RecordingStudioModel {
         if document.exportSettings == nil {
             exportSettings.frameRate = nil
             exportSettings.motionBlurEnabled = nil
+            exportSettings.encodingMode = nil
+            exportSettings.resolutionUsesLongestEdge = nil
         }
         showsClickEffects = document.showsClickEffects ?? showsClickEffects
+        clickEffectSettings = document.clickEffectSettings
         showsKeystrokes = document.showsKeystrokes ?? true
         keystrokePlacement = document.keystrokePlacement ?? .bottomCenter
         showsSpeedBadge = document.showsSpeedBadge ?? false
@@ -504,6 +782,8 @@ final class RecordingStudioModel {
         karaokeTimeline = KaraokeTimeline(cues: subtitleCues, words: transcriptWords)
         subtitleStyle = document.subtitleStyle
         exportAspect = document.exportAspectPreset
+        exportCustomAspectWidth = document.exportCustomAspectWidth ?? 1920
+        exportCustomAspectHeight = document.exportCustomAspectHeight ?? 1080
         exportAspectMode = document.exportAspectContentMode
         videoCropRect = document.normalizedVideoCropRect
         audioExportFormat = document.audioExportFormatValue
@@ -513,6 +793,7 @@ final class RecordingStudioModel {
     func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
+        cameraSourceTask?.cancel()
         if isLoaded { writeDraftNow() }
         isLoaded = false
         StudioProjectRegistry.shared.unregister(self)
@@ -547,6 +828,11 @@ final class RecordingStudioModel {
         screenVideoTrack = nil
         screenTracks = []
         replacementAudio = nil
+        if let undoGroupObserver { NotificationCenter.default.removeObserver(undoGroupObserver) }
+        undoGroupObserver = nil
+        projectUndoEntries.removeAll()
+        projectRedoEntries.removeAll()
+        pendingUndoDocument = nil
         editUndoManager.removeAllActions()
         zoomEditSnapshot = nil
         viewportRebuildTask?.cancel()
@@ -578,6 +864,8 @@ final class RecordingStudioModel {
         cameraLayoutCues.removeAll()
         textOverlays.removeAll()
         redactions.removeAll()
+        arrowOverlays.removeAll()
+        arrowEditSnapshot = nil
         imageOverlays.removeAll()
         audioClips.removeAll()
         audioTracksByFile.removeAll()
@@ -707,12 +995,12 @@ final class RecordingStudioModel {
 
     var canUndo: Bool {
         _ = undoRevision
-        return editUndoManager.canUndo
+        return editUndoManager.canUndo || !projectUndoEntries.isEmpty
     }
 
     var canRedo: Bool {
         _ = undoRevision
-        return editUndoManager.canRedo
+        return editUndoManager.canRedo || !projectRedoEntries.isEmpty
     }
 
     var selectedClip: RecordingClipSegment? {
@@ -725,7 +1013,11 @@ final class RecordingStudioModel {
     }
 
     var canDeleteSelectedClip: Bool {
-        selectedClipID != nil && clipTimeline.segments.count > 1
+        selectedClip != nil && clipTimeline.segments.count > 1
+    }
+
+    var canSplitClipAtPlayhead: Bool {
+        clipTimeline.canSplit(at: currentTime)
     }
 
     func selectClip(id: UUID) {
@@ -747,6 +1039,7 @@ final class RecordingStudioModel {
     }
 
     func clearTimelineSelection() {
+        selectedArrowID = nil
         selectedCueID = nil
         selectedClipID = nil
         selectedLayoutCueID = nil
@@ -757,27 +1050,68 @@ final class RecordingStudioModel {
     }
 
     func undo() {
-        guard editUndoManager.canUndo else { return }
+        closeOpenUndoGroups()
+        captureUndoGroup()
+        guard let entry = projectUndoEntries.last else { return }
         pause()
-        editUndoManager.undo()
+        if entry.usesNativeUndo {
+            guard editUndoManager.canUndo else { return }
+            editUndoManager.undo()
+        } else if !applyProjectHistory(entry, undo: true) { return }
+        projectUndoEntries.removeLast()
+        projectRedoEntries.append(entry)
         undoRevision &+= 1
+        persistProjectHistory()
+        AppLog.event("recording", "studio_edit_undone")
     }
 
     func redo() {
-        guard editUndoManager.canRedo else { return }
+        closeOpenUndoGroups()
+        captureUndoGroup()
+        guard let entry = projectRedoEntries.last else { return }
         pause()
-        editUndoManager.redo()
+        if entry.usesNativeUndo {
+            guard editUndoManager.canRedo else { return }
+            editUndoManager.redo()
+        } else if !applyProjectHistory(entry, undo: false) { return }
+        projectRedoEntries.removeLast()
+        projectUndoEntries.append(entry)
         undoRevision &+= 1
+        persistProjectHistory()
+        AppLog.event("recording", "studio_edit_redone")
     }
 
     func splitClip(at editorTime: TimeInterval) {
-        guard let result = clipTimeline.split(at: editorTime) else { return }
+        if let event = NSApp.currentEvent, event.type == .keyDown, event.isARepeat { return }
+        guard let result = clipTimeline.split(at: editorTime) else {
+            AppLog.event("recording", "clip_split_rejected", fields: ["reason": "minimum_duration_or_invalid_time"])
+            return
+        }
+        let sourceTime = clipTimeline.sourceTime(at: editorTime)
+        let previousZoomCount = zoomCues.count
+        let splitZooms = zoomCues.flatMap { cue -> [ZoomCue] in
+            guard cue.start < sourceTime, sourceTime < cue.end else { return [cue] }
+            var leading = cue
+            leading.end = sourceTime
+            var trailing = cue
+            trailing.id = UUID()
+            trailing.start = sourceTime
+            return [leading, trailing]
+        }
+        editUndoManager.beginUndoGrouping()
+        defer { editUndoManager.endUndoGrouping() }
+        applyZoomCues(splitZooms, actionName: "Split Clip")
         applyClipTimeline(
             result.timeline,
             selectedID: result.selectedID,
             playheadTime: min(max(editorTime, 0), duration),
             actionName: "Split Clip"
         )
+        AppLog.event("recording", "clip_split", fields: [
+            "source_time": String(sourceTime),
+            "clip_count": String(result.timeline.segments.count),
+            "zoom_split_count": String(splitZooms.count - previousZoomCount)
+        ])
     }
 
     func splitClipAtHover() {
@@ -789,6 +1123,7 @@ final class RecordingStudioModel {
         guard let selectedClipID,
               let deletedRange = clipTimeline.editorRange(for: selectedClipID),
               let next = clipTimeline.deleting(segmentID: selectedClipID) else {
+            AppLog.event("recording", "clip_delete_rejected", fields: ["reason": "missing_selection_or_final_clip"])
             return
         }
         let seekTime = min(deletedRange.lowerBound, next.duration)
@@ -800,10 +1135,22 @@ final class RecordingStudioModel {
             playheadTime: seekTime,
             actionName: "Delete Clip"
         )
+        AppLog.event("recording", "clip_deleted", fields: ["clip_count": String(next.segments.count)])
     }
 
     func trimClip(_ replacement: RecordingClipSegment) {
-        let next = clipTimeline.replacing(replacement)
+        guard replacement.sourceStart.isFinite, replacement.sourceEnd.isFinite,
+              var segment = clipTimeline.segments.first(where: { $0.id == replacement.id }) else {
+            AppLog.event("recording", "clip_trim_rejected", fields: ["reason": "invalid_bounds_or_missing_clip"])
+            return
+        }
+        segment.sourceStart = min(max(replacement.sourceStart, 0), sourceDuration)
+        segment.sourceEnd = min(max(replacement.sourceEnd, segment.sourceStart), sourceDuration)
+        guard segment.duration >= RecordingClipSegment.minimumDuration else {
+            AppLog.event("recording", "clip_trim_rejected", fields: ["reason": "minimum_duration"])
+            return
+        }
+        let next = clipTimeline.replacing(segment)
         guard next != clipTimeline else { return }
         let editorTime = next.editorRange(for: replacement.id)?.lowerBound ?? currentTime
         applyClipTimeline(
@@ -813,10 +1160,18 @@ final class RecordingStudioModel {
             actionName: "Trim Clip",
             hoverTime: editorTime
         )
+        AppLog.event("recording", "clip_trimmed", fields: [
+            "source_start": String(segment.sourceStart),
+            "source_end": String(segment.sourceEnd)
+        ])
     }
 
     func setClipSpeed(_ speed: Double, forClipID id: UUID) {
-        guard let segment = clipTimeline.segments.first(where: { $0.id == id }) else { return }
+        guard speed.isFinite, speed > 0,
+              let segment = clipTimeline.segments.first(where: { $0.id == id }) else {
+            AppLog.event("recording", "clip_speed_rejected", fields: ["reason": "invalid_rate_or_missing_clip"])
+            return
+        }
         let clamped = min(max(speed, RecordingClipSegment.minimumSpeed), RecordingClipSegment.maximumSpeed)
         guard abs(segment.speed - clamped) > 0.000_001 else { return }
         var replacement = segment
@@ -828,6 +1183,24 @@ final class RecordingStudioModel {
             playheadTime: min(currentTime, next.duration),
             actionName: "Change Clip Speed"
         )
+        AppLog.event("recording", "clip_speed_changed", fields: ["speed": String(clamped)])
+    }
+
+    func setClipMuted(_ muted: Bool, forClipID id: UUID) {
+        guard var clip = clipTimeline.segments.first(where: { $0.id == id }),
+              clip.muted != muted else { return }
+        let previousMuted = clip.muted
+        registerUndo(muted ? "Mute Clip" : "Unmute Clip") { target in
+            target.setClipMuted(previousMuted, forClipID: id)
+        }
+        clip.muted = muted
+        clipTimeline = clipTimeline.replacing(clip)
+        updatePlaybackVolume()
+        scheduleProjectSave()
+        AppLog.event("recording", "clip_mute_changed", fields: [
+            "clip_id": id.uuidString,
+            "muted": String(muted)
+        ])
     }
 
     func resetClips() {
@@ -841,12 +1214,28 @@ final class RecordingStudioModel {
         )
     }
 
+    func reorderClip(id: UUID, to sequenceIndex: Int) {
+        guard clipTimeline.segments.contains(where: { $0.id == id }) else {
+            AppLog.event("recording", "clip_reorder_rejected", fields: ["reason": "missing_clip"])
+            return
+        }
+        let next = clipTimeline.reordering(segmentID: id, to: sequenceIndex)
+        guard next != clipTimeline else { return }
+        let time = next.remappedEditorTime(currentTime, from: clipTimeline)
+        applyClipTimeline(next, selectedID: id, playheadTime: time, actionName: "Reorder Clip")
+        AppLog.event("recording", "clip_reordered", fields: [
+            "clip_id": id.uuidString,
+            "sequence_index": String(next.segments.firstIndex(where: { $0.id == id }) ?? 0)
+        ])
+    }
+
     private func applyClipTimeline(
         _ requestedTimeline: RecordingClipTimeline,
         selectedID: UUID?,
         playheadTime: TimeInterval,
         actionName: String,
-        hoverTime: TimeInterval? = nil
+        hoverTime: TimeInterval? = nil,
+        dependentRegions: RecordingClipSequenceRipple? = nil
     ) {
         let next = requestedTimeline.normalized(to: sourceDuration)
         guard !next.segments.isEmpty, next != clipTimeline else { return }
@@ -854,12 +1243,15 @@ final class RecordingStudioModel {
         let previousTimeline = clipTimeline
         let previousSelection = selectedClipID
         let previousTime = currentTime
+        let previousRegions = RecordingClipSequenceRipple(audioClips: audioClips, zoomCues: zoomCues)
+        let nextRegions = dependentRegions ?? previousRegions.applying(from: previousTimeline, to: next)
         registerUndo(actionName) { target in
             target.applyClipTimeline(
                 previousTimeline,
                 selectedID: previousSelection,
                 playheadTime: previousTime,
-                actionName: actionName
+                actionName: actionName,
+                dependentRegions: previousRegions
             )
         }
 
@@ -867,11 +1259,14 @@ final class RecordingStudioModel {
         hoverPreviewTime = nil
         timelineHoverTime = nil
         clipTimeline = next
+        audioClips = nextRegions.audioClips
+        zoomCues = nextRegions.zoomCues
         duration = next.duration
         selectedClipID = selectedID.flatMap { id in
             next.segments.contains(where: { $0.id == id }) ? id : nil
         } ?? next.segments.first?.id
         rebuildPointerTimeline()
+        rebuildCameraLayoutTimeline(rebuildsZoom: false)
         rebuildViewportTimeline()
 
         do {
@@ -880,6 +1275,7 @@ final class RecordingStudioModel {
                 hoverPreviewTime = min(max(hoverTime, 0), duration)
             }
         } catch {
+            AppLog.event("recording", "clip_sequence_playback_failed", fields: ["error": AppLog.error(error)])
             loadError = "Could not update the recording timeline: \(error.localizedDescription)"
         }
         updateActiveTranscriptWord()
@@ -923,8 +1319,15 @@ final class RecordingStudioModel {
 
     private func registerUndo(
         _ actionName: String,
+        undoDocument: RecordingEditDocument? = nil,
         operation: @escaping @MainActor (RecordingStudioModel) -> Void
     ) {
+        if !editUndoManager.isUndoing, !editUndoManager.isRedoing, !isRestoringProjectHistory {
+            if editUndoManager.groupingLevel == 0 { captureUndoGroup() }
+            if pendingUndoDocument == nil { pendingUndoDocument = undoDocument ?? currentDocument() }
+            pendingUndoActionName = actionName
+            projectRedoEntries.removeAll()
+        }
         editUndoManager.registerUndo(withTarget: self) { target in
             operation(target)
         }
@@ -1021,16 +1424,67 @@ final class RecordingStudioModel {
             rebuildViewportTimeline()
         }
         guard previous != zoomCues else { return }
-        registerUndo(actionName) { target in
+        var undoDocument = currentDocument()
+        undoDocument.zoomCues = previous.filter { !$0.isImplicit }
+        registerUndo(actionName, undoDocument: undoDocument) { target in
             target.applyZoomCues(previous, actionName: actionName)
         }
     }
 
     func resynthesizeZoomCues() {
-        applyZoomCues(
-            ZoomCueSynthesizer.cues(from: pointerCapture, duration: sourceDuration),
-            actionName: "Reset Zooms"
-        )
+        generateZoomSuggestions(replacingExisting: true)
+    }
+
+    func suggestZoomCues() {
+        generateZoomSuggestions(replacingExisting: false)
+    }
+
+    func setZoomAmountPreset(_ amount: Double, for cue: ZoomCue) {
+        guard RecordingZoomAmount.presets.contains(amount) else { return }
+        var updated = cue
+        updated.zoom = amount
+        beginZoomCueEdit()
+        updateZoomCue(updated)
+        endZoomCueEdit(actionName: "Change Zoom Amount")
+        AppLog.event("recording", "zoom_amount_preset_selected", fields: ["magnification": String(amount)])
+    }
+
+    var showsAutomaticZoomPrompt: Bool {
+        isLoaded && zoomEnabled && zoomCues.isEmpty && !automaticZoomState.dismissed
+            && zoomTelemetrySampleCount >= 2
+    }
+
+    private func generateZoomSuggestions(replacingExisting: Bool) {
+        let hasTelemetry = pointerCapture.travel.count + pointerCapture.presses.count >= 2
+        let result = hasTelemetry
+            ? ZoomCueSynthesizer.suggestions(
+                from: pointerCapture,
+                duration: sourceDuration,
+                clipTimeline: clipTimeline,
+                reservedCues: replacingExisting ? [] : zoomCues
+            )
+            : RecordingZoomSuggestionResult(status: .noTelemetry)
+        if result.status == .ok {
+            applyZoomCues(
+                replacingExisting ? result.cues : zoomCues + result.cues,
+                actionName: replacingExisting ? "Reset Zooms" : "Apply Auto Zooms"
+            )
+        }
+        automaticZoomState.feedback = RecordingZoomSuggestionFeedback(result: result, hasTelemetry: hasTelemetry)
+        logZoomSuggestions(result, trigger: replacingExisting ? "manual_rebuild" : "lane_suggestions")
+    }
+
+    private func logZoomSuggestions(_ result: RecordingZoomSuggestionResult, trigger: String) {
+        var fields = ["status": result.status.rawValue, "count": String(result.cues.count), "trigger": trigger]
+        for (classification, count) in result.classifications {
+            fields[classification] = String(count)
+        }
+        AppLog.event("recording", "zoom_suggestions_generated", fields: fields)
+    }
+
+    private func observeAutomaticZoomBaseline() {
+        guard isLoaded else { return }
+        automaticZoomState.observe(source: screenURL, document: currentDocument(), appearance: exportAppearance)
     }
 
     func addZoomCue(at time: TimeInterval) {
@@ -1090,7 +1544,7 @@ final class RecordingStudioModel {
         let cue = ZoomCue(
             start: span.lowerBound,
             end: span.upperBound,
-            zoom: 1.5,
+            zoom: RecordingZoomAmount.defaultValue,
             anchorMode: hasPointerTrack ? .pointerAnchor : .pinnedAnchor,
             pinnedPoint: target,
             boundsBias: hasPointerTrack ? 0.25 : 0
@@ -1143,7 +1597,7 @@ final class RecordingStudioModel {
         var cue = cue
         cue.start = min(max(0, cue.start), sourceDuration)
         cue.end = min(max(cue.start, cue.end), sourceDuration)
-        cue.zoom = min(max(cue.zoom, 1), 4)
+        cue.zoom = min(max(cue.zoom, 1), RecordingZoomAmount.maximum)
         cue.boundsBias = min(max(cue.boundsBias, 0), 1)
         cue.pinnedPoint = CGPoint(
             x: min(max(cue.pinnedPoint.x, 0), 1),
@@ -1195,8 +1649,9 @@ final class RecordingStudioModel {
     private func updateCameraMatteCache() {
         let isRendering = exportState.isExporting || shareState.isBusy
         guard isLoaded, !isTornDown, !isRendering, showsCameraLayer,
-              cameraLayoutTimeline.usesCutout, let session,
-              !StudioCameraMatteCache.isComplete(forCamera: session.cameraURL)
+              cameraLayoutTimeline.usesCutout, let cameraURL = resolvedCameraURL,
+              cameraSource?.kind != .uploaded,
+              !StudioCameraMatteCache.isComplete(forCamera: cameraURL)
         else {
             if isRendering || isTornDown {
                 cameraMatteTask?.cancel()
@@ -1205,7 +1660,6 @@ final class RecordingStudioModel {
             return
         }
         guard cameraMatteTask == nil else { return }
-        let cameraURL = session.cameraURL
         cameraMatteTask = Task(priority: .utility) { [weak self] in
             await StudioCameraMatteCache.generate(cameraURL: cameraURL)
             guard !Task.isCancelled else { return }
@@ -1239,7 +1693,9 @@ final class RecordingStudioModel {
         guard let previous = layoutEditSnapshot else { return }
         layoutEditSnapshot = nil
         guard previous != cameraLayoutCues else { return }
-        registerUndo(actionName) { target in
+        var undoDocument = currentDocument()
+        undoDocument.cameraLayoutCues = previous
+        registerUndo(actionName, undoDocument: undoDocument) { target in
             target.applyLayoutCues(previous, actionName: actionName)
         }
     }
@@ -1392,7 +1848,9 @@ final class RecordingStudioModel {
         guard let previous = textEditSnapshot else { return }
         textEditSnapshot = nil
         guard previous != textOverlays else { return }
-        registerUndo(actionName) { target in
+        var undoDocument = currentDocument()
+        undoDocument.textOverlays = previous
+        registerUndo(actionName, undoDocument: undoDocument) { target in
             target.applyTexts(previous, actionName: actionName)
         }
     }
@@ -1404,9 +1862,13 @@ final class RecordingStudioModel {
         let range = clampedSourceRange(start: overlay.start, end: overlay.end, minimum: RecordingTextOverlay.minimumDuration)
         updated.start = range.lowerBound
         updated.end = range.upperBound
-        updated.fontSize = min(max(updated.fontSize, RecordingTextOverlay.fontSizeRange.lowerBound),
-                               RecordingTextOverlay.fontSizeRange.upperBound)
-        updated.center = CGPoint(x: min(max(updated.center.x, 0), 1), y: min(max(updated.center.y, 0), 1))
+        if updated.fontSize != textOverlays[index].fontSize {
+            updated.fontSize = min(max(updated.fontSize, RecordingTextOverlay.fontSizeRange.lowerBound),
+                                   RecordingTextOverlay.fontSizeRange.upperBound)
+        }
+        if updated.center != textOverlays[index].center {
+            updated.center = CGPoint(x: min(max(updated.center.x, 0), 1), y: min(max(updated.center.y, 0), 1))
+        }
         texts[index] = updated
         replaceTexts(texts)
     }
@@ -1489,7 +1951,9 @@ final class RecordingStudioModel {
         guard let previous = redactionEditSnapshot else { return }
         redactionEditSnapshot = nil
         guard previous != redactions else { return }
-        registerUndo(actionName) { target in
+        var undoDocument = currentDocument()
+        undoDocument.redactions = previous
+        registerUndo(actionName, undoDocument: undoDocument) { target in
             target.applyRedactions(previous, actionName: actionName)
         }
     }
@@ -1502,6 +1966,13 @@ final class RecordingStudioModel {
         updated.end = range.upperBound
         updated.rect = RecordingRedaction.clamped(redaction.rect)
         updated.amount = min(max(updated.amount, 0), 1)
+        if updated.fillColor != redactions[index].fillColor {
+            AppLog.event("recording", "redaction_fill_changed", fields: [
+                "enabled": String(updated.fillColor != nil),
+                "alpha": String(updated.fillColor?.alpha ?? 0)
+            ])
+        }
+
         var all = redactions
         all[index] = updated
         replaceRedactions(all)
@@ -1805,7 +2276,9 @@ final class RecordingStudioModel {
         guard let previous = imageEditSnapshot else { return }
         imageEditSnapshot = nil
         guard previous != imageOverlays else { return }
-        registerUndo(actionName) { target in
+        var undoDocument = currentDocument()
+        undoDocument.imageOverlays = previous
+        registerUndo(actionName, undoDocument: undoDocument) { target in
             target.applyImages(previous, actionName: actionName)
         }
     }
@@ -1816,9 +2289,13 @@ final class RecordingStudioModel {
         let range = clampedSourceRange(start: overlay.start, end: overlay.end, minimum: RecordingImageOverlay.minimumDuration)
         updated.start = range.lowerBound
         updated.end = range.upperBound
-        updated.width = min(max(updated.width, RecordingImageOverlay.widthRange.lowerBound),
-                            RecordingImageOverlay.widthRange.upperBound)
-        updated.center = CGPoint(x: min(max(updated.center.x, 0), 1), y: min(max(updated.center.y, 0), 1))
+        if updated.width != imageOverlays[index].width {
+            updated.width = min(max(updated.width, RecordingImageOverlay.widthRange.lowerBound),
+                                RecordingImageOverlay.widthRange.upperBound)
+        }
+        if updated.center != imageOverlays[index].center {
+            updated.center = CGPoint(x: min(max(updated.center.x, 0), 1), y: min(max(updated.center.y, 0), 1))
+        }
         updated.opacity = min(max(updated.opacity, 0), 1)
         var all = imageOverlays
         all[index] = updated
@@ -1873,7 +2350,9 @@ final class RecordingStudioModel {
         guard let previous = audioEditSnapshot else { return }
         audioEditSnapshot = nil
         guard previous != audioClips else { return }
-        registerUndo(actionName) { target in
+        var undoDocument = currentDocument()
+        undoDocument.audioClips = previous
+        registerUndo(actionName, undoDocument: undoDocument) { target in
             target.applyAudioClips(previous, actionName: actionName)
         }
     }
@@ -1985,20 +2464,22 @@ final class RecordingStudioModel {
     }
 
     var visibleRecordedPressTimes: [TimeInterval] {
-        recordedPressTimes.compactMap { clipTimeline.editorTime(forSourceTime: $0) }
+        recordedPressTimes.flatMap { clipTimeline.editorTimes(forSourceEventTime: $0) }.sorted()
     }
 
     var zoomTimelineBlocks: [RecordingZoomTimelineBlock] {
         zoomCues
             .filter { !$0.isImplicit }
-            .compactMap { cue in
-                let slices = clipTimeline.slices(overlapping: cue.start, sourceEnd: cue.end)
-                guard let first = slices.first, let last = slices.last else { return nil }
-                return RecordingZoomTimelineBlock(
-                    cue: cue,
-                    editorStart: first.editorStart,
-                    editorEnd: last.editorEnd
-                )
+            .flatMap { cue in
+                clipTimeline.editorRegions(overlapping: cue.start, sourceEnd: cue.end)
+                    .enumerated().map { index, region in
+                        RecordingZoomTimelineBlock(
+                            cue: cue,
+                            editorStart: region.start,
+                            editorEnd: region.end,
+                            fragmentID: index == 0 ? nil : region.fragmentID(for: cue.id)
+                        )
+                    }
             }
     }
 
@@ -2022,7 +2503,8 @@ final class RecordingStudioModel {
             duration: sourceDuration,
             recordingSizeInPoints: recordingPointSize,
             fallbackArtwork: PointerArtworkCapture.defaultArtwork(),
-            clipTimeline: clipTimeline
+            clipTimeline: clipTimeline,
+            cursorStyle: style
         )
     }
 
@@ -2045,13 +2527,15 @@ final class RecordingStudioModel {
         viewportTimeline = ViewportTimeline.build(
             cues: zoomCues,
             capture: pointerCapture,
-            clipTimeline: clipTimeline
+            clipTimeline: clipTimeline,
+            zoomMotion: exportAppearance.zoomMotion
         )
         rebuildPreviewReframe()
     }
 
     private func scheduleProjectSave() {
         guard isLoaded, !isApplyingDocument, session != nil else { return }
+        observeAutomaticZoomBaseline()
         hasUnsavedChanges = true
         projectSaveTask?.cancel()
         projectSaveTask = Task { [weak self] in
@@ -2069,11 +2553,13 @@ final class RecordingStudioModel {
             cameraLayoutCues: cameraLayoutCues.isEmpty ? nil : cameraLayoutCues,
             textOverlays: textOverlays.isEmpty ? nil : textOverlays,
             redactions: redactions.isEmpty ? nil : redactions,
+            arrowOverlays: arrowOverlays.isEmpty ? nil : arrowOverlays,
             imageOverlays: imageOverlays.isEmpty ? nil : imageOverlays,
             audioClips: audioClips.isEmpty ? nil : audioClips,
             clipTimeline: clipTimeline,
             exportSettings: exportSettings,
             showsClickEffects: showsClickEffects,
+            clickEffectSettings: clickEffectSettings,
             showsKeystrokes: showsKeystrokes,
             keystrokePlacement: keystrokePlacement,
             showsSpeedBadge: showsSpeedBadge ? true : nil,
@@ -2083,12 +2569,15 @@ final class RecordingStudioModel {
             subtitleWords: transcriptWords.isEmpty ? nil : transcriptWords,
             subtitleStyle: subtitleStyle,
             exportAspect: exportAspect,
+            exportCustomAspectWidth: exportCustomAspectWidth,
+            exportCustomAspectHeight: exportCustomAspectHeight,
             exportAspectMode: exportAspectMode,
             videoCropRect: isVideoCropped ? videoCropRect : nil,
             replacementAudioFileName: replacementAudio?.url.lastPathComponent,
             replacementAudioDisplayName: replacementAudio?.displayName,
             audioExportFormat: audioExportFormat,
-            audioVolume: Double(audioVolume)
+            audioVolume: Double(audioVolume),
+            cameraSource: cameraSource
         )
     }
 
@@ -2099,15 +2588,25 @@ final class RecordingStudioModel {
 
     private func writeDraftNow() {
         guard isLoaded, let session else { return }
+        closeOpenUndoGroups()
+        captureUndoGroup()
         let document = currentDocument()
         if document == lastSavedDocument {
             session.removeDraftDocument()
+            RecordingProjectHistory.removeDraft(from: session)
             hasUnsavedChanges = false
         } else {
-            try? session.writeDraftDocument(document)
+            do { try session.writeDraftDocument(document) }
+            catch {
+                hasUnsavedChanges = true
+                AppLog.event("recording", "project_draft_save_failed", fields: ["error": AppLog.error(error)])
+                return
+            }
             hasUnsavedChanges = true
         }
+        persistProjectHistory()
         dropStaleRender(for: document, in: session)
+        RecordingProjectStore.refreshPoster(for: session)
     }
 
     private func dropStaleRender(for document: RecordingEditDocument, in session: RecordingSession) {
@@ -2143,7 +2642,7 @@ final class RecordingStudioModel {
         }
     }
 
-    func applyAgentDocument(_ requested: RecordingEditDocument, actionName: String) {
+    func applyAgentDocument(_ requested: RecordingEditDocument, actionName: String, ripplesClipEdits: Bool = true) {
         guard isLoaded else { return }
         var document = requested
         let previous = currentDocument()
@@ -2151,8 +2650,16 @@ final class RecordingStudioModel {
         document.replacementAudioDisplayName = previous.replacementAudioDisplayName
         guard document != previous else { return }
 
+        if ripplesClipEdits, let clips = document.clips, clips != previous.clips {
+            let next = RecordingClipTimeline(segments: clips).normalized(to: sourceDuration)
+            let regions = RecordingClipSequenceRipple(audioClips: audioClips, zoomCues: document.zoomCues)
+                .applying(from: clipTimeline, to: next)
+            if document.audioClips == previous.audioClips { document.audioClips = regions.audioClips }
+            if document.zoomCues == previous.zoomCues { document.zoomCues = regions.zoomCues }
+        }
+
         registerUndo(actionName) { target in
-            target.applyAgentDocument(previous, actionName: actionName)
+            target.applyAgentDocument(previous, actionName: actionName, ripplesClipEdits: false)
         }
         pause()
         clearTimelineSelection()
@@ -2181,15 +2688,20 @@ final class RecordingStudioModel {
     @discardableResult
     func saveProject() -> Bool {
         guard isLoaded, let session else { return false }
+        closeOpenUndoGroups()
+        captureUndoGroup()
         projectSaveTask?.cancel()
         let document = currentDocument()
         do {
             try session.writeEditDocument(document)
+            try RecordingProjectHistory(document: document, undo: projectUndoEntries, redo: projectRedoEntries).save(to: session)
             session.removeDraftDocument()
+            RecordingProjectHistory.removeDraft(from: session)
             lastSavedDocument = document
             hasUnsavedChanges = false
             session.updateProjectMetadata { $0.savedAt = Date() }
             dropStaleRender(for: document, in: session)
+            RecordingProjectStore.refreshPoster(for: session)
             RecordingProjectStore.shared.reload()
             flashSaveConfirmation()
             return true
@@ -2203,9 +2715,11 @@ final class RecordingStudioModel {
         guard isLoaded, let session else { return }
         projectSaveTask?.cancel()
         session.removeDraftDocument()
+        RecordingProjectHistory.removeDraft(from: session)
         guard let document = lastSavedDocument else { return }
         applyDocumentSettings(document)
         await applyDocumentTimeline(document)
+        restoreProjectHistory()
         flushDraft()
     }
 
@@ -2262,6 +2776,9 @@ final class RecordingStudioModel {
         rebuildViewportTimeline()
         rebuildPreviewReframe()
         editUndoManager.removeAllActions()
+        projectUndoEntries.removeAll()
+        projectRedoEntries.removeAll()
+        pendingUndoDocument = nil
         undoRevision += 1
     }
 
@@ -2306,7 +2823,7 @@ final class RecordingStudioModel {
     }
 
     var canTranscribe: Bool {
-        manifest?.includesMicrophone == true
+        hasRecordedAudio
     }
 
     var hasSubtitles: Bool {
@@ -2323,19 +2840,55 @@ final class RecordingStudioModel {
               !karaokeTimeline.isEmpty else {
             return nil
         }
-        return karaokeTimeline.line(at: clipTimeline.sourceTime(at: time))
+        let sourceTime = clipTimeline.sourceTime(at: time)
+        guard StudioCaptionTimeline(cues: subtitleCues, words: transcriptWords)
+            .cue(at: sourceTime)?.hasRecognizedTiming == true else { return nil }
+        return karaokeTimeline.line(at: sourceTime)
     }
 
-    func transcribe() {
+    func loadTranscriptionLocales() async {
+        let locales = await RecordingTranscriptionService.supportedLocales()
+        guard !Task.isCancelled else { return }
+        transcriptionLocales = locales
+        if locales.isEmpty {
+            AppLog.event("recording", "transcription_languages_unavailable")
+        }
+    }
+
+    func transcribe(localeIdentifier: String? = nil) {
         guard !transcriptionState.isTranscribing, isLoaded else { return }
         transcriptionState = .transcribing
+        transcriptionCompleted = false
         let movieURL = screenURL
+        let selectedLocale = localeIdentifier ?? transcriptionLocaleIdentifier
+        let operationID = UUID().uuidString
+        let started = Date()
+        AppLog.event("recording", "transcription_started", fields: [
+            "operation_id": operationID,
+            "locale": selectedLocale.isEmpty ? "system_default" : selectedLocale
+        ])
         transcriptionTask = Task { [weak self] in
             do {
-                let transcript = try await RecordingTranscriptionService.transcribe(screenMovieURL: movieURL)
+                let transcript = try await RecordingTranscriptionService.transcribe(
+                    screenMovieURL: movieURL,
+                    localeIdentifier: selectedLocale
+                )
                 guard !Task.isCancelled else { return }
                 self?.applyTranscription(transcript)
+                AppLog.event("recording", "transcription_completed", fields: [
+                    "operation_id": operationID,
+                    "duration": String(Date().timeIntervalSince(started)),
+                    "cue_count": String(transcript.cues.count),
+                    "word_count": String(transcript.words.count),
+                    "outcome": "success"
+                ])
             } catch {
+                AppLog.event("recording", Task.isCancelled ? "transcription_cancelled" : "transcription_failed", fields: [
+                    "operation_id": operationID,
+                    "duration": String(Date().timeIntervalSince(started)),
+                    "error": AppLog.error(error),
+                    "outcome": Task.isCancelled ? "cancelled" : "failure"
+                ])
                 guard !Task.isCancelled else { return }
                 self?.transcriptionState = .failed(error.localizedDescription)
             }
@@ -2347,13 +2900,15 @@ final class RecordingStudioModel {
         subtitleTimeline = SubtitleTimeline(cues: transcript.cues)
         transcriptWords = transcript.words
         karaokeTimeline = KaraokeTimeline(cues: transcript.cues, words: transcript.words)
-        showsSubtitles = true
+        showsSubtitles = !transcript.cues.isEmpty
+        transcriptionCompleted = true
         transcriptionState = .idle
         updateActiveTranscriptWord()
         scheduleProjectSave()
     }
 
     func removeTranscription() {
+        transcriptionCompleted = false
         subtitleCues = []
         subtitleTimeline = .empty
         transcriptWords = []
@@ -2747,7 +3302,7 @@ final class RecordingStudioModel {
                 : nil
         var configuration = RecordingStudioExporter.Configuration(
             screenURL: screenURL,
-            cameraURL: showsCameraLayer && cameraLayoutTimeline.usesCamera ? session?.cameraURL : nil,
+            cameraURL: showsCameraLayer && cameraLayoutTimeline.usesCamera ? resolvedCameraURL : nil,
             cameraOffset: cameraOffset,
             cameraAspect: cameraVideoAspect,
             style: style,
@@ -2759,12 +3314,16 @@ final class RecordingStudioModel {
                 }
                 : nil,
             showsPressEffects: showsPressEffects,
+            clickEffectSettings: clickEffectSettings,
             keystrokeTimeline: showsKeystrokes && hasKeystrokes ? keystrokeTimeline : nil,
             keystrokePlacement: keystrokePlacement,
             speedBadgeTimeline: showsSpeedBadge && !speedBadgeTimeline.isEmpty ? speedBadgeTimeline : nil,
             speedBadgePlacement: speedBadgePlacement,
             subtitleTimeline: showsSubtitles && hasSubtitles ? subtitleTimeline : nil,
             subtitleStyle: subtitleStyle,
+            captionTimeline: showsSubtitles && hasSubtitles
+                ? StudioCaptionTimeline(cues: subtitleCues, words: transcriptWords)
+                : nil,
             karaokeTimeline: showsSubtitles && hasSubtitles && !karaokeTimeline.isEmpty
                 ? karaokeTimeline
                 : nil,
@@ -2780,10 +3339,12 @@ final class RecordingStudioModel {
             motionTimeline: makeMotionTimeline(reframe: reframe),
             textOverlays: textOverlays,
             redactions: redactions,
+            arrowOverlays: arrowOverlays,
             imageOverlays: imageOverlays,
             audioClips: audioClips,
             mediaDirectory: mediaDirectoryURL
         )
+        configuration.cameraLoops = cameraSource?.kind == .uploaded
         configuration.appearance = exportAppearance
         configuration.deliveryOptions = exportDeliveryOptions
         if !includesGIF { configuration.deliveryOptions.format = .video }
@@ -2815,6 +3376,7 @@ final class RecordingStudioModel {
             capture: pointerCapture,
             clipTimeline: clipTimeline,
             zoomAnimationStyle: exportAppearance.zoomAnimationStyle,
+            zoomMotion: exportAppearance.zoomMotion,
             reframe: reframe
         )
     }
@@ -2830,6 +3392,8 @@ final class RecordingStudioModel {
         let effectiveViewport = zoomEnabled ? viewportTimeline : .identity
         return ReframeTrack.build(
             preset: exportAspect,
+            customAspectWidth: exportCustomAspectWidth,
+            customAspectHeight: exportCustomAspectHeight,
             sourceSize: videoSize,
             viewportTimeline: effectiveViewport,
             duration: duration
@@ -2866,7 +3430,9 @@ final class RecordingStudioModel {
             ? RecordingStudioLayout.originalCanvasSize(
                 sourceSize: videoSize, style: style, contentCropRect: videoCropRect
             )
-            : exportAspect.canvasSize(for: videoSize)
+            : exportAspect.canvasSize(
+                for: videoSize, customWidth: exportCustomAspectWidth, customHeight: exportCustomAspectHeight
+            )
     }
 
     var previewCanvasSize: CGSize {
@@ -3161,91 +3727,64 @@ final class RecordingStudioModel {
     }
 
     func shareToCloud(options: CloudUploadOptions) {
-        guard !shareState.isBusy, !exportState.isExporting, isLoaded,
-              canShareToCloud else {
-            return
-        }
+        guard !shareState.isBusy, !exportState.isExporting, isLoaded, canShareToCloud else { return }
         pause()
         projectSaveTask?.cancel()
         writeDraftNow()
-
         let cachedDeliverable = freshDeliverableURL
         let configuration = cachedDeliverable == nil ? makeExportConfiguration() : nil
-        let session = session
-        let renderedDocument = session == nil ? nil : currentDocument()
-        shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
-
+        let sharingSession = session
+        let sharingDocument = configuration == nil ? nil : currentDocument()
+        let uploadURL = cachedDeliverable ?? screenURL
+        let itemID = historyItemID(for: sharingSession) ?? UUID()
+        shareItemID = itemID
+        let operationID = UUID()
+        cloudShareOperationID = operationID
+        shareState = configuration == nil ? .uploading : .rendering(progress: 0)
+        AppLog.event("recording", "studio_cloud_share_requested", fields: ["renders": String(configuration != nil)])
         shareTask = Task { [weak self] in
-            var temporaryUploadURL: URL?
-            defer {
-                if let temporaryUploadURL {
-                    try? FileManager.default.removeItem(at: temporaryUploadURL)
-                }
-            }
             do {
-                let uploadURL: URL
-                if let cachedDeliverable {
-                    uploadURL = cachedDeliverable
-                } else if let configuration {
-                    let dockProgressID = DockExportProgressCoordinator.shared.start()
-                    let temporaryURL: URL
-                    do {
-                        temporaryURL = try await RecordingStudioExporter().export(configuration) { [weak self] progress in
-                            Task { @MainActor [weak self] in
-                                DockExportProgressCoordinator.shared.update(dockProgressID, progress: progress)
-                                if case .rendering = self?.shareState {
-                                    self?.shareState = .rendering(progress: progress)
-                                }
-                            }
-                        }
-                        DockExportProgressCoordinator.shared.finish(dockProgressID)
-                    } catch {
-                        DockExportProgressCoordinator.shared.finish(dockProgressID)
-                        throw error
-                    }
-                    temporaryUploadURL = temporaryURL
-
-                    if let session {
-                        uploadURL = try session.installFinalVideo(
-                            movingFrom: temporaryURL,
-                            renderedFrom: renderedDocument
-                        )
-                    } else {
-                        uploadURL = temporaryURL
-                    }
-                } else {
-                    return
-                }
-
-                guard let self, !Task.isCancelled else { return }
-                self.shareState = .uploading
-                let itemID = self.historyItemID(for: session) ?? UUID()
-                self.shareItemID = itemID
                 let result = try await CloudUploader.shared.upload(
-                    itemID: itemID,
-                    fileURL: uploadURL,
-                    title: options.trimmedTitleOrNil,
-                    socialEnabled: options.socialEnabled
+                    itemID: itemID, fileURL: uploadURL, title: options.trimmedTitleOrNil,
+                    socialEnabled: options.socialEnabled, notes: options.trimmedNotesOrNil,
+                    exportConfiguration: configuration, renderedDocument: sharingDocument,
+                    onExportProgress: { [weak self] progress in
+                        Task { @MainActor [weak self] in
+                            guard self?.cloudShareOperationID == operationID, self?.shareState.isBusy == true else { return }
+                            self?.shareState = progress >= 1 ? .uploading : .rendering(progress: progress)
+                        }
+                    }
                 )
-
+                try Task.checkCancellation()
+                guard let self, !self.isTornDown, self.cloudShareOperationID == operationID else { return }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(result.url, forType: .string)
-                if session != nil {
-                    ScreenshotHistoryStore.shared.setCloudURL(for: uploadURL, cloudURL: result.url)
+                if let sharingSession {
+                    ScreenshotHistoryStore.shared.setCloudURL(
+                        for: sharingSession.deliverableURL, cloudURL: result.url
+                    )
                 }
                 CaptureShelf.shared.dismissVideo(for: self.sessionURL)
                 self.shareState = .finished(result.url)
+                if result.notesWereSaved == false {
+                    let alert = NSAlert()
+                    alert.messageText = "Share link created"
+                    alert.informativeText = "The notes could not be saved. The share link has been copied."
+                    alert.runModal()
+                }
             } catch is CancellationError {
-                self?.shareState = .idle
+                if self?.cloudShareOperationID == operationID { self?.shareState = .idle }
             } catch RecordingStudioExporter.ExportError.cancelled {
-                self?.shareState = .idle
+                if self?.cloudShareOperationID == operationID { self?.shareState = .idle }
             } catch {
-                self?.shareState = .failed(error.localizedDescription)
+                AppLog.event("recording", "studio_cloud_share_failed", fields: ["error": AppLog.error(error)])
+                if self?.cloudShareOperationID == operationID { self?.shareState = .failed(error.localizedDescription) }
             }
         }
     }
 
     func cancelShare() {
+        cloudShareOperationID = nil
         shareTask?.cancel()
         shareTask = nil
         if let shareItemID {
@@ -3270,9 +3809,9 @@ struct RecordingZoomTimelineBlock: Identifiable, Equatable, Sendable {
     let editorStart: TimeInterval
     let editorEnd: TimeInterval
 
-    var id: UUID {
-        cue.id
-    }
+    var fragmentID: UUID? = nil
+
+    var id: UUID { fragmentID ?? cue.id }
 }
 
 extension RecordingStudioModel {
@@ -3299,5 +3838,270 @@ extension RecordingStudioModel {
         selectedRedactionID = nil
         selectedImageID = nil
         selectedAudioClipID = nil
+    }
+}
+
+extension RecordingStudioModel {
+    var selectedArrow: RecordingArrowOverlay? {
+        arrowOverlays.first { $0.id == selectedArrowID }
+    }
+
+    var arrowTimelineBlocks: [RecordingOverlayTimelineBlock<RecordingArrowOverlay>] {
+        RecordingOverlayTimelineBlock.blocks(for: arrowOverlays, clipTimeline: clipTimeline) { ($0.start, $0.end) }
+    }
+
+    func arrows(atEditorTime time: TimeInterval) -> [RecordingArrowOverlay] {
+        guard clipTimeline.location(at: time) != nil else { return [] }
+        let source = sourceTime(atEditorTime: time)
+        return arrowOverlays.filter { $0.isActive(atSourceTime: source) }
+    }
+
+    func addArrow(atEditorTime time: TimeInterval) {
+        guard let range = sourceRange(startingAt: time, length: RecordingArrowOverlay.defaultDuration,
+                                      minimum: RecordingArrowOverlay.minimumDuration) else {
+            AppLog.event("recording", "arrow_overlay_add_failed", fields: ["reason": "insufficient_source_duration"])
+            return
+        }
+        let overlay = RecordingArrowOverlay(start: range.lowerBound, end: range.upperBound)
+        applyArrows(arrowOverlays + [overlay], actionName: "Add Arrow")
+        selectArrow(id: overlay.id)
+    }
+
+    func selectArrow(id: UUID) {
+        guard arrowOverlays.contains(where: { $0.id == id }) else { return }
+        clearTimelineSelection()
+        selectedArrowID = id
+    }
+
+    func removeArrow(id: UUID) {
+        applyArrows(arrowOverlays.filter { $0.id != id }, actionName: "Remove Arrow")
+    }
+
+    func beginArrowEdit() {
+        if arrowEditSnapshot == nil { arrowEditSnapshot = arrowOverlays }
+    }
+
+    func setArrow(_ overlay: RecordingArrowOverlay) {
+        guard let index = arrowOverlays.firstIndex(where: { $0.id == overlay.id }) else { return }
+        var edited = overlay
+        let range = clampedSourceRange(start: edited.start, end: edited.end, minimum: RecordingArrowOverlay.minimumDuration)
+        edited.start = range.lowerBound
+        edited.end = range.upperBound
+        edited.rect = RecordingRedaction.clamped(edited.rect)
+        edited.strokeWidth = min(max(edited.strokeWidth.rounded(), 1), 6)
+        arrowOverlays[index] = edited
+        scheduleProjectSave()
+    }
+
+    func endArrowEdit(actionName: String = "Edit Arrow") {
+        guard let previous = arrowEditSnapshot else { return }
+        arrowEditSnapshot = nil
+        guard previous != arrowOverlays else { return }
+        var undoDocument = currentDocument()
+        undoDocument.arrowOverlays = previous
+        registerUndo(actionName, undoDocument: undoDocument) { $0.applyArrows(previous, actionName: actionName) }
+        AppLog.event("recording", "arrow_overlay_edited", fields: ["action": actionName, "count": String(arrowOverlays.count)])
+    }
+
+    func updateArrow(_ overlay: RecordingArrowOverlay, actionName: String) {
+        beginArrowEdit()
+        setArrow(overlay)
+        endArrowEdit(actionName: actionName)
+    }
+
+    private func applyArrows(_ overlays: [RecordingArrowOverlay], actionName: String) {
+        guard overlays != arrowOverlays else { return }
+        let previous = arrowOverlays
+        registerUndo(actionName) { $0.applyArrows(previous, actionName: actionName) }
+        arrowOverlays = overlays
+        if !overlays.contains(where: { $0.id == selectedArrowID }) { selectedArrowID = nil }
+        scheduleProjectSave()
+        AppLog.event("recording", "arrow_overlays_changed", fields: ["action": actionName, "count": String(overlays.count)])
+    }
+
+    var overlayPlacement: RecordingOverlayPlacement {
+        let size = basePreviewCanvasSize
+        let base = RecordingStudioLayout.make(
+            canvasSize: size, style: style, usesUniformPadding: exportAspect == .original,
+            contentAspect: previewContentAspect, contentMode: previewContentMode, contentCropRect: videoCropRect
+        )
+        let resolver = RecordingCameraLayoutResolver(base: base, style: style, showsCamera: showsCameraLayer, cameraAspect: cameraVideoAspect)
+        let frame = motionTimeline.layoutFrame(at: displayTime, canvasSize: size)
+            ?? resolver.frame(for: cameraLayoutTimeline.state(at: displayTime), zoomProgress: zoomProgress(at: displayTime), magnification: previewViewportFrame(at: displayTime).magnification)
+        return RecordingOverlayPlacement(layout: base.applying(frame), viewport: previewViewportFrame(at: displayTime))
+    }
+
+    func setTextCoordinateSpace(_ space: RecordingOverlayCoordinateSpace, id: UUID) {
+        guard let index = textOverlays.firstIndex(where: { $0.id == id }), textOverlays[index].coordinateSpace != space else { return }
+        textCoalesceTask?.cancel()
+        endTextEdit()
+        var overlays = textOverlays
+        let placement = overlayPlacement
+        let source = placement.referenceRect(for: overlays[index].coordinateSpace, canvasSize: basePreviewCanvasSize)
+        let destination = placement.referenceRect(for: space, canvasSize: basePreviewCanvasSize)
+        guard source.width > 0, source.height > 0, destination.width > 0, destination.height > 0 else {
+            AppLog.event("recording", "overlay_coordinate_space_failed", fields: ["kind": "text"])
+            return
+        }
+        overlays[index].center = RecordingOverlayPlacement.convert(overlays[index].center, from: source, to: destination)
+        overlays[index].fontSize *= Double(source.height / destination.height)
+        overlays[index].coordinateSpace = space
+        applyTexts(overlays, actionName: "Change Text Placement")
+        AppLog.event("recording", "overlay_coordinate_space_changed", fields: ["kind": "text", "space": space.rawValue])
+    }
+
+    func setImageCoordinateSpace(_ space: RecordingOverlayCoordinateSpace, id: UUID) {
+        guard let index = imageOverlays.firstIndex(where: { $0.id == id }), imageOverlays[index].coordinateSpace != space else { return }
+        imageCoalesceTask?.cancel()
+        endImageEdit()
+        var overlays = imageOverlays
+        let placement = overlayPlacement
+        let source = placement.referenceRect(for: overlays[index].coordinateSpace, canvasSize: basePreviewCanvasSize)
+        let destination = placement.referenceRect(for: space, canvasSize: basePreviewCanvasSize)
+        guard source.width > 0, source.height > 0, destination.width > 0, destination.height > 0 else {
+            AppLog.event("recording", "overlay_coordinate_space_failed", fields: ["kind": "image"])
+            return
+        }
+        overlays[index].center = RecordingOverlayPlacement.convert(overlays[index].center, from: source, to: destination)
+        overlays[index].width *= Double(source.width / destination.width)
+        overlays[index].cornerRadius *= Double(min(source.width, source.height) / min(destination.width, destination.height))
+        overlays[index].shadowScale *= Double(min(source.width, source.height) / min(destination.width, destination.height))
+        overlays[index].coordinateSpace = space
+        applyImages(overlays, actionName: "Change Image Placement")
+        AppLog.event("recording", "overlay_coordinate_space_changed", fields: ["kind": "image", "space": space.rawValue])
+    }
+}
+
+extension RecordingStudioModel {
+    private func captureUndoGroup() {
+        guard !editUndoManager.isUndoing, !editUndoManager.isRedoing, !isRestoringProjectHistory,
+              let before = pendingUndoDocument else { return }
+        pendingUndoDocument = nil
+        var entry = RecordingProjectHistory.Entry(
+            actionName: pendingUndoActionName, before: before, after: currentDocument()
+        )
+        entry.usesNativeUndo = true
+        projectUndoEntries.append(entry)
+        undoRevision &+= 1
+    }
+
+    private func restoreProjectHistory() {
+        guard let session else { return }
+        do {
+            guard let history = try RecordingProjectHistory.load(from: session) else { return }
+            projectUndoEntries = history.undo
+            projectRedoEntries = history.redo
+            undoRevision &+= 1
+            AppLog.event("recording", "project_undo_history_restored", fields: [
+                "undo_count": String(history.undo.count), "redo_count": String(history.redo.count)
+            ])
+        } catch {
+            AppLog.event("recording", "project_undo_history_load_failed", fields: ["error": AppLog.error(error)])
+        }
+    }
+
+    private func persistProjectHistory() {
+        guard isLoaded, let session else { return }
+        let document = currentDocument()
+        do {
+            try RecordingProjectHistory(
+                document: document, undo: projectUndoEntries, redo: projectRedoEntries
+            ).save(to: session, asDraft: document != lastSavedDocument)
+        } catch {
+            AppLog.event("recording", "project_undo_history_save_failed", fields: ["error": AppLog.error(error)])
+        }
+    }
+
+    private func applyProjectHistory(_ entry: RecordingProjectHistory.Entry, undo: Bool) -> Bool {
+        do {
+            let document = try entry.applying(to: currentDocument(), undo: undo)
+            isRestoringProjectHistory = true
+            defer { isRestoringProjectHistory = false }
+            clearTimelineSelection()
+            hoverPreviewTime = nil
+            timelineHoverTime = nil
+            let implicitZoomCues = zoomCues.filter(\.isImplicit)
+            applyDocumentSettings(document)
+            isApplyingDocument = true
+            zoomCues = document.zoomCues + implicitZoomCues
+            if let clips = document.clips, !clips.isEmpty {
+                clipTimeline = RecordingClipTimeline(segments: clips).normalized(to: sourceDuration)
+            }
+            duration = clipTimeline.duration
+            isApplyingDocument = false
+            try rebuildScreenPlayerItem(preserving: min(currentTime, duration))
+            rebuildCameraLayoutTimeline()
+            rebuildPointerTimeline()
+            rebuildViewportTimeline()
+            rebuildPreviewReframe()
+            updateActiveTranscriptWord()
+            scheduleProjectSave()
+            return true
+        } catch {
+            AppLog.event("recording", "project_undo_history_apply_failed", fields: ["error": AppLog.error(error)])
+            return false
+        }
+    }
+}
+
+extension RecordingStudioModel {
+    func saveProjectAs() {
+        guard isLoaded, let session, !exportState.isExporting, !shareState.isBusy else { return }
+        AppLog.event("recording", "project_save_as_requested")
+        let panel = NSSavePanel()
+        panel.title = "Save As"
+        panel.nameFieldStringValue = projectDisplayName + "." + RecordingSession.directoryExtension
+        panel.directoryURL = session.directoryURL.deletingLastPathComponent()
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, var destination = panel.url else {
+            AppLog.event("recording", "project_save_as_cancelled")
+            return
+        }
+        let fileName = destination.lastPathComponent
+        let suffix = "." + RecordingSession.directoryExtension
+        let name = (fileName.hasSuffix(suffix) ? String(fileName.dropLast(suffix.count)) : fileName)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "Project name is required"
+            alert.runModal()
+            return
+        }
+        if destination.pathExtension != RecordingSession.directoryExtension {
+            destination.appendPathExtension(RecordingSession.directoryExtension)
+        }
+        var created = false
+        do {
+            guard !FileManager.default.fileExists(atPath: destination.path) else {
+                throw CocoaError(.fileWriteFileExists)
+            }
+            flushDraft()
+            try FileManager.default.copyItem(at: session.directoryURL, to: destination)
+            created = true
+            let copy = RecordingSession(directoryURL: destination)
+            for container in VideoExportContainer.allCases {
+                let previous = copy.directoryURL.appendingPathComponent(session.finalURL(for: container).lastPathComponent)
+                let renamed = copy.finalURL(for: container)
+                if previous != renamed, FileManager.default.fileExists(atPath: previous.path) {
+                    try FileManager.default.moveItem(at: previous, to: renamed)
+                }
+            }
+            let document = currentDocument()
+            try copy.writeEditDocument(document)
+            copy.removeDraftDocument()
+            RecordingProjectHistory.removeDraft(from: copy)
+            try RecordingProjectHistory(document: document, undo: projectUndoEntries, redo: projectRedoEntries).save(to: copy)
+            var metadata = copy.loadProjectMetadata() ?? RecordingProjectMetadata()
+            metadata.displayName = name
+            metadata.savedAt = Date()
+            metadata.lastOpenedAt = Date()
+            try CaptureManifest.encoder.encode(metadata).write(to: copy.projectMetadataURL, options: .atomic)
+            RecordingProjectOpener.shared.open(copy)
+            AppLog.event("recording", "project_save_as_completed")
+        } catch {
+            if created { try? FileManager.default.removeItem(at: destination) }
+            AppLog.event("recording", "project_save_as_failed", fields: ["error": AppLog.error(error)])
+            FailureAlert.present(.saveRecordingProject, error: error)
+        }
     }
 }

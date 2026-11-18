@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum VideoCompressionQuality: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum VideoCompressionQuality: String, CaseIterable, Identifiable, Codable, Sendable {
     case high = "High"
     case medium = "Medium"
     case low = "Low"
@@ -31,6 +31,14 @@ enum VideoCompressionQuality: String, CaseIterable, Identifiable, Codable, Senda
             "128k"
         case .low:
             "96k"
+        }
+    }
+
+    var audioBitsPerSecond: Int {
+        switch self {
+        case .high: 192_000
+        case .medium: 128_000
+        case .low: 96_000
         }
     }
 }
@@ -64,24 +72,58 @@ enum VideoCompressionCodec: String, CaseIterable, Identifiable, Codable, Sendabl
     }
 }
 
-enum VideoCompressionResolution: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum VideoCompressionResolution: String, CaseIterable, Identifiable, Codable, Sendable {
     case original = "Original"
+    case p2160 = "4K"
+    case p1440 = "1440p"
     case p1080 = "1080p"
     case p720 = "720p"
     case p480 = "480p"
+    case custom = "Custom"
 
     var id: String { rawValue }
 
     var scaleFilter: String? {
         switch self {
-        case .original:
+        case .original, .custom:
             nil
+        case .p2160:
+            "-2:2160"
+        case .p1440:
+            "-2:1440"
         case .p1080:
             "-2:1080"
         case .p720:
             "-2:720"
         case .p480:
             "-2:480"
+        }
+    }
+
+    var longestEdge: CGFloat? {
+        switch self {
+        case .original, .custom: nil
+        case .p2160: 3840
+        case .p1440: 2560
+        case .p1080: 1920
+        case .p720: 1280
+        case .p480: 854
+        }
+    }
+}
+
+nonisolated enum VideoExportEncodingMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case fast = "Fast"
+    case balanced = "Balanced"
+    case quality = "Quality"
+
+    var id: String { rawValue }
+
+    var bitrateMultiplier: Double {
+        switch self {
+        case .fast: 0.5
+        case .balanced: 0.8
+        case .quality: 1
         }
     }
 }
@@ -111,11 +153,18 @@ nonisolated enum VideoExportContainer: String, CaseIterable, Identifiable, Codab
 }
 
 nonisolated enum VideoExportFrameRate: String, CaseIterable, Identifiable, Codable, Sendable {
+    case fps24 = "24 fps"
     case fps30 = "30 fps"
     case fps60 = "60 fps"
 
     var id: String { rawValue }
-    var framesPerSecond: Double { self == .fps30 ? 30 : 60 }
+    var framesPerSecond: Double {
+        switch self {
+        case .fps24: 24
+        case .fps30: 30
+        case .fps60: 60
+        }
+    }
 }
 
 nonisolated struct VideoCompressionSettings: Codable, Equatable, Sendable {
@@ -135,10 +184,32 @@ nonisolated struct VideoCompressionSettings: Codable, Equatable, Sendable {
     /// for existing projects, preferences, and cached-deliverable stamps.
     var frameRate: VideoExportFrameRate?
     var motionBlurEnabled: Bool?
+    var encodingMode: VideoExportEncodingMode? = .balanced
+    var customWidth: Int?
+    var customHeight: Int?
+    var resolutionUsesLongestEdge: Bool? = true
 
     var effectiveContainer: VideoExportContainer { container ?? .default }
     var effectiveFrameRate: VideoExportFrameRate { frameRate ?? .fps60 }
     var effectiveMotionBlurEnabled: Bool { motionBlurEnabled ?? true }
+    var effectiveEncodingMode: VideoExportEncodingMode { encodingMode ?? .balanced }
+    var effectiveCustomWidth: Int { customWidth ?? 1920 }
+    var effectiveCustomHeight: Int { customHeight ?? 1080 }
+    var hasValidCustomResolution: Bool {
+        [effectiveCustomWidth, effectiveCustomHeight].allSatisfy {
+            (2...8192).contains($0) && $0.isMultiple(of: 2)
+        }
+    }
+
+    mutating func refitCustomResolution(to canvas: CGSize) {
+        guard resolution == .custom, hasValidCustomResolution,
+              canvas.width.isFinite, canvas.height.isFinite,
+              canvas.width > 0, canvas.height > 0 else { return }
+        let edge = CGFloat(max(effectiveCustomWidth, effectiveCustomHeight))
+        let scale = edge / max(canvas.width, canvas.height)
+        customWidth = max(2, Int((canvas.width * scale).rounded(.down)) & ~1)
+        customHeight = max(2, Int((canvas.height * scale).rounded(.down)) & ~1)
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.quality == rhs.quality && lhs.speed == rhs.speed && lhs.codec == rhs.codec
@@ -146,6 +217,9 @@ nonisolated struct VideoCompressionSettings: Codable, Equatable, Sendable {
             && lhs.container == rhs.container
             && lhs.effectiveFrameRate == rhs.effectiveFrameRate
             && lhs.effectiveMotionBlurEnabled == rhs.effectiveMotionBlurEnabled
+            && lhs.encodingMode == rhs.encodingMode
+            && lhs.customWidth == rhs.customWidth && lhs.customHeight == rhs.customHeight
+            && lhs.resolutionUsesLongestEdge == rhs.resolutionUsesLongestEdge
     }
 }
 

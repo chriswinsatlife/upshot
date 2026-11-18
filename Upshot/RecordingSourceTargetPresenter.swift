@@ -17,6 +17,7 @@ final class RecordingSourceTargetPresenter {
         enum Source: Equatable {
             case display(CGDirectDisplayID)
             case window(CGWindowID)
+            case area(CGDirectDisplayID)
         }
 
         let source: Source
@@ -32,6 +33,7 @@ final class RecordingSourceTargetPresenter {
     @ObservationIgnored private var panels: [NSPanel] = []
     @ObservationIgnored private var windowStack: [(id: CGWindowID, frame: CGRect)] = []
     @ObservationIgnored private var keyMonitors: [Any] = []
+    @ObservationIgnored private var isDrawingArea = false
 
     private init() {}
 
@@ -47,6 +49,8 @@ final class RecordingSourceTargetPresenter {
     func begin(_ mode: Mode) {
         RecordingAreaSelectionPresenter.shared.cancel()
         self.mode = mode
+        isDrawingArea = false
+        AppLog.event("recording", "recording_source_picker_opened", fields: ["mode": mode == .display ? "display" : "window"])
         if mode == .window {
             snapshotWindowStack()
         }
@@ -64,8 +68,10 @@ final class RecordingSourceTargetPresenter {
     }
 
     func cancel() {
+        if isActive { AppLog.event("recording", "recording_source_picker_closed") }
         mode = nil
         target = nil
+        isDrawingArea = false
         windowStack = []
         removeKeyMonitors()
         for panel in panels {
@@ -75,6 +81,7 @@ final class RecordingSourceTargetPresenter {
     }
 
     fileprivate func updateTarget(at point: CGPoint) {
+        guard !isDrawingArea else { return }
         let next: Target? = switch mode {
         case .display: displayTarget(at: point)
         case .window: windowTarget(at: point)
@@ -94,15 +101,62 @@ final class RecordingSourceTargetPresenter {
         switch target.source {
         case let .display(displayID):
             guard let display = sources.displays.first(where: { $0.displayID == displayID }) else { return }
+            AppLog.event("recording", "recording_source_selected", fields: ["source": "display", "display": String(displayID)])
             cancel()
             RecordingBarPresenter.shared.closeTeleprompter()
             CaptureCoordinator.shared.recordFullscreen(display)
         case let .window(windowID):
             guard let window = sources.windows.first(where: { $0.windowID == windowID }) else { return }
+            AppLog.event("recording", "recording_source_selected", fields: ["source": "window", "window_id": String(windowID)])
             cancel()
             RecordingBarPresenter.shared.closeTeleprompter()
             CaptureCoordinator.shared.recordWindow(window)
+        case .area:
+            finishAreaSelection()
         }
+    }
+
+    fileprivate func drawArea(from anchor: CGPoint, to point: CGPoint, flags: NSEvent.ModifierFlags) {
+        guard isActive,
+              let screen = NSScreen.screens.first(where: { NSMouseInRect(anchor, $0.frame, false) }),
+              let displayID = ActiveDisplayResolver.displayID(for: screen) else { return }
+        isDrawingArea = true
+        let ratio = RecordingAreaSelectionPresenter.shared.ratio ?? (flags.contains(.shift) ? 1 : nil)
+        let rect = RecordingAreaGeometry.drawn(
+            from: anchor, to: point, ratio: ratio,
+            fromCenter: flags.contains(.option), in: screen.frame
+        )
+        target = Target(
+            source: .area(displayID), frame: rect, title: "Area",
+            detail: "\(Int((rect.width * screen.backingScaleFactor).rounded())) × \(Int((rect.height * screen.backingScaleFactor).rounded()))",
+            icon: nil
+        )
+    }
+
+    fileprivate func finishAreaSelection() {
+        guard isActive, let target, case .area(let displayID) = target.source,
+              let screen = ActiveDisplayResolver.screen(for: displayID) else { return }
+        guard RecordingAreaGeometry.isLargeEnough(target.frame) else {
+            isDrawingArea = false
+            updateTarget(at: NSEvent.mouseLocation)
+            AppLog.event("recording", "recording_source_area_rejected", fields: ["reason": "area_too_small"])
+            return
+        }
+        let selection = RecordingAreaSelectionPresenter.Selection(
+            displayID: displayID, screenFrame: screen.frame, scale: screen.backingScaleFactor,
+            rect: RecordingAreaGeometry.snapped(
+                target.frame, scale: screen.backingScaleFactor,
+                ratio: RecordingAreaSelectionPresenter.shared.ratio, in: screen.frame
+            )
+        )
+        cancel()
+        RecordingAreaSelectionPresenter.shared.begin()
+        RecordingAreaSelectionPresenter.shared.restore(selection)
+        RecordingAreaSelectionPresenter.shared.focusSheet()
+        AppLog.event("recording", "recording_source_area_selected", fields: [
+            "display": String(displayID),
+            "width": String(selection.pixelSize.width), "height": String(selection.pixelSize.height)
+        ])
     }
 
     private func displayTarget(at point: CGPoint) -> Target? {
@@ -239,6 +293,9 @@ private final class RecordingSourceTargetPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 private final class RecordingSourceTargetSheetView: NSView {
+    private var dragAnchor: CGPoint?
+    private var hasDraggedArea = false
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         frame.contains(point) ? self : nil
     }
@@ -268,10 +325,32 @@ private final class RecordingSourceTargetSheetView: NSView {
         RecordingSourceTargetPresenter.shared.updateTarget(at: NSEvent.mouseLocation)
     }
 
-    override func mouseDown(with event: NSEvent) {}
+    override func mouseDown(with event: NSEvent) {
+        dragAnchor = NSEvent.mouseLocation
+        hasDraggedArea = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragAnchor else { return }
+        let point = NSEvent.mouseLocation
+        guard hasDraggedArea || hypot(point.x - dragAnchor.x, point.y - dragAnchor.y) >= 4 else { return }
+        hasDraggedArea = true
+        NSCursor.crosshair.set()
+        RecordingSourceTargetPresenter.shared.drawArea(from: dragAnchor, to: point, flags: event.modifierFlags)
+    }
 
     override func mouseUp(with event: NSEvent) {
-        RecordingSourceTargetPresenter.shared.commit(at: NSEvent.mouseLocation)
+        guard let dragAnchor else { return }
+        self.dragAnchor = nil
+        if hasDraggedArea {
+            hasDraggedArea = false
+            RecordingSourceTargetPresenter.shared.drawArea(
+                from: dragAnchor, to: NSEvent.mouseLocation, flags: event.modifierFlags
+            )
+            RecordingSourceTargetPresenter.shared.finishAreaSelection()
+        } else {
+            RecordingSourceTargetPresenter.shared.commit(at: NSEvent.mouseLocation)
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -324,8 +403,8 @@ private struct RecordingSourceTargetOverlay: View {
     }
 
     private func highlightRadius(for target: RecordingSourceTargetPresenter.Target) -> CGFloat {
-        if case .display = target.source { return 0 }
-        return Radius.panel
+        if case .window = target.source { return Radius.panel }
+        return 0
     }
 
     private func localRect(for frame: CGRect) -> CGRect? {
@@ -391,7 +470,7 @@ private struct RecordingSourceTargetCard: View {
                 .resizable()
                 .frame(width: Self.iconSide, height: Self.iconSide)
         } else {
-            Image(systemName: target.isDisplay ? "display" : "macwindow")
+            Image(systemName: target.systemImage)
                 .font(.system(size: IconSize.toolbar, weight: .regular))
                 .foregroundStyle(Palette.label)
                 .frame(width: Self.iconSide, height: Self.iconSide)
@@ -400,9 +479,12 @@ private struct RecordingSourceTargetCard: View {
 }
 
 private extension RecordingSourceTargetPresenter.Target {
-    var isDisplay: Bool {
-        if case .display = source { return true }
-        return false
+    var systemImage: String {
+        switch source {
+        case .display: "display"
+        case .window: "macwindow"
+        case .area: "rectangle.dashed"
+        }
     }
 }
 

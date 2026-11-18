@@ -2,8 +2,29 @@ import Foundation
 
 nonisolated struct RecordingExportAppearance: Codable, Equatable, Sendable {
     var zoomAnimationStyle: RecordingZoomAnimationStyle = .smooth
+    var zoomMotion: RecordingZoomMotionSettings? = RecordingZoomMotionSettings()
     var keystrokes = RecordingKeystrokeAppearance()
     var shot: RecordingExportShot = .flat
+
+    init() {}
+
+    static var legacy: Self {
+        var appearance = Self()
+        appearance.zoomMotion = nil
+        return appearance
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case zoomAnimationStyle, zoomMotion, keystrokes, shot
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        zoomAnimationStyle = try values.decodeIfPresent(RecordingZoomAnimationStyle.self, forKey: .zoomAnimationStyle) ?? .smooth
+        zoomMotion = try values.decodeIfPresent(RecordingZoomMotionSettings.self, forKey: .zoomMotion)
+        keystrokes = try values.decodeIfPresent(RecordingKeystrokeAppearance.self, forKey: .keystrokes) ?? RecordingKeystrokeAppearance()
+        shot = try values.decodeIfPresent(RecordingExportShot.self, forKey: .shot) ?? .flat
+    }
 }
 
 nonisolated enum RecordingExportAppearanceStore {

@@ -17,7 +17,8 @@ actor CaptureLibraryThumbnails {
     }
 
     func image(for item: CaptureLibraryItem) async -> CGImage? {
-        let key = item.thumbnailKey as NSString
+        let revision = item.session.map { RecordingProjectPosterRevision.value(for: $0) } ?? ""
+        let key = "\(item.thumbnailKey):\(revision)" as NSString
         if let image = cache.object(forKey: key) { return image }
         guard await acquire() else { return nil }
         defer { release() }
@@ -64,6 +65,9 @@ actor CaptureLibraryThumbnails {
 
     private nonisolated static func decode(_ item: CaptureLibraryItem) async -> CGImage? {
         guard !Task.isCancelled else { return nil }
+        if let session = item.session {
+            return await RecordingProjectStore.posterImage(for: session)
+        }
         if item.isVideo {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: item.fileURL))
             generator.appliesPreferredTrackTransform = true

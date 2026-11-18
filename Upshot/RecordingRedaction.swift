@@ -56,6 +56,7 @@ nonisolated struct RecordingRedaction: Identifiable, Codable, Equatable, Hashabl
     /// origin.
     var rect = CGRect(x: 0.35, y: 0.4, width: 0.3, height: 0.2)
     var style: Style = .pixelate
+    var fillColor: RecordingOverlayColor?
     /// Strength, 0...1.
     var amount: Double = 0.6
     /// Corner radius in pixels of a 1080p picture.
@@ -77,6 +78,7 @@ nonisolated struct RecordingRedaction: Identifiable, Codable, Equatable, Hashabl
         end = try container.decode(TimeInterval.self, forKey: .end)
         rect = try container.decodeIfPresent(CGRect.self, forKey: .rect) ?? rect
         style = try container.decodeIfPresent(Style.self, forKey: .style) ?? .pixelate
+        fillColor = try container.decodeIfPresent(RecordingOverlayColor.self, forKey: .fillColor)
         amount = try container.decodeIfPresent(Double.self, forKey: .amount) ?? 0.6
         cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 12
         fadeIn = try container.decodeIfPresent(TimeInterval.self, forKey: .fadeIn) ?? 0
@@ -155,20 +157,24 @@ nonisolated enum RecordingRedactionRenderer {
             let strength = CGFloat(min(max(redaction.amount, 0), 1))
 
             let filtered: CIImage
-            switch redaction.style {
-            case .pixelate:
-                let pixellate = CIFilter.pixellate()
-                pixellate.inputImage = clamped
-                pixellate.center = CGPoint(x: region.minX, y: region.minY)
-                pixellate.scale = Float(max(2, (4 + 56 * strength) * unit))
-                guard let result = pixellate.outputImage else { continue }
-                filtered = result
-            case .blur:
-                let blur = CIFilter.gaussianBlur()
-                blur.inputImage = clamped
-                blur.radius = Float((4 + 46 * strength) * unit)
-                guard let result = blur.outputImage else { continue }
-                filtered = result
+            if let color = redaction.fillColor, color.alpha >= 1 {
+                filtered = CIImage(color: CIColor(cgColor: color.cgColor))
+            } else {
+                switch redaction.style {
+                case .pixelate:
+                    let pixellate = CIFilter.pixellate()
+                    pixellate.inputImage = clamped
+                    pixellate.center = CGPoint(x: region.minX, y: region.minY)
+                    pixellate.scale = Float(max(2, (4 + 56 * strength) * unit))
+                    guard let result = pixellate.outputImage else { continue }
+                    filtered = result
+                case .blur:
+                    let blur = CIFilter.gaussianBlur()
+                    blur.inputImage = clamped
+                    blur.radius = Float((4 + 46 * strength) * unit)
+                    guard let result = blur.outputImage else { continue }
+                    filtered = result
+                }
             }
 
             let mask = CIFilter.roundedRectangleGenerator()
@@ -183,6 +189,16 @@ nonisolated enum RecordingRedactionRenderer {
             blend.backgroundImage = output
             blend.maskImage = maskImage
             output = blend.outputImage?.cropped(to: extent) ?? output
+            if let color = redaction.fillColor, color.alpha > 0, color.alpha < 1 {
+                let tintLevel = level * CGFloat(color.alpha)
+                mask.color = CIColor(red: tintLevel, green: tintLevel, blue: tintLevel, alpha: 1)
+                guard let tintMask = mask.outputImage else { continue }
+                let tint = CIFilter.blendWithMask()
+                tint.inputImage = CIImage(color: CIColor(red: color.red, green: color.green, blue: color.blue)).cropped(to: region)
+                tint.backgroundImage = output
+                tint.maskImage = tintMask
+                output = tint.outputImage?.cropped(to: extent) ?? output
+            }
         }
         return output
     }

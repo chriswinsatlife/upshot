@@ -1,28 +1,36 @@
-//
-//  RecordingTranscription.swift
-//  Upshot
-//
-//  Narration subtitles for the recording studio: SpeechAnalyzer (the
-//  macOS 26 on-device transcription engine) turns the recorded microphone
-//  track into timed subtitle cues on the source timeline. The timeline and
-//  bar metrics are shared verbatim by the live preview and the offline
-//  exporter, exactly like the keystroke caption.
-//
-
 import AVFoundation
 import CoreGraphics
 import Foundation
 import Speech
 
-/// One transcribed word on the source (unedited) timeline, in seconds.
-/// `text` keeps the transcript's original trailing punctuation/spacing so
-/// concatenating words reconstructs the transcript exactly.
 nonisolated struct RecordingTranscriptWord: Codable, Sendable, Equatable {
     var text: String
     var start: TimeInterval
     var end: TimeInterval
+    var source: RecordingTranscriptSource? = nil
 
-    /// Word as shown in the transcript editor, without the glued spacing.
+    init(text: String, start: TimeInterval, end: TimeInterval, source: RecordingTranscriptSource? = nil) {
+        self.text = text
+        self.start = start
+        self.end = end
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case start
+        case end
+        case source
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        start = try container.decode(TimeInterval.self, forKey: .start)
+        end = try container.decode(TimeInterval.self, forKey: .end)
+        source = try container.decodeIfPresent(RecordingTranscriptSource.self, forKey: .source)
+    }
+
     var displayText: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -32,9 +40,11 @@ nonisolated struct RecordingTranscriptWord: Codable, Sendable, Equatable {
     }
 }
 
-/// A full transcription: the word-level timing (drives transcript-based
-/// video editing) plus the readable cues derived from it (drive the
-/// subtitle bar).
+nonisolated enum RecordingTranscriptSource: String, Codable, Sendable {
+    case microphone
+    case system
+}
+
 nonisolated struct RecordingTranscript: Sendable {
     var words: [RecordingTranscriptWord]
     var cues: [RecordingSubtitleCue]
@@ -68,31 +78,6 @@ nonisolated struct RecordingSubtitleCue: Codable, Sendable, Equatable, Identifia
         start = try container.decode(TimeInterval.self, forKey: .start)
         end = try container.decode(TimeInterval.self, forKey: .end)
         text = try container.decode(String.self, forKey: .text)
-    }
-}
-
-/// User-adjustable subtitle appearance. The bar is always center-locked
-/// horizontally; only its height position and text size are editable.
-nonisolated struct SubtitleBarStyle: Sendable, Equatable {
-    static let verticalRange: ClosedRange<Double> = 0.1...0.95
-    static let fontScaleRange: ClosedRange<Double> = 0.6...1.8
-
-    /// Normalized (0...1, top-left origin) center of the bar along the
-    /// card's height.
-    var verticalPosition: Double = 0.92
-    /// Multiplier on the default font size (which the paddings and corner
-    /// radius derive from, so the whole bar scales together).
-    var fontScale: Double = 1
-    /// Karaoke mode: the word being spoken renders in the accent color.
-    /// Needs word-level timings; the bar falls back to plain cues without.
-    var highlightsSpokenWord: Bool = false
-
-    var clampedVerticalPosition: Double {
-        min(max(verticalPosition, Self.verticalRange.lowerBound), Self.verticalRange.upperBound)
-    }
-
-    var clampedFontScale: Double {
-        min(max(fontScale, Self.fontScaleRange.lowerBound), Self.fontScaleRange.upperBound)
     }
 }
 
@@ -313,34 +298,89 @@ nonisolated enum RecordingTranscriptionService {
         case noNarrationTrack
         case unsupportedLocale
         case narrationUnreadable
-        case noSpeechDetected
 
         var errorDescription: String? {
             switch self {
             case .noNarrationTrack:
-                "This recording has no microphone audio to transcribe."
+                "This recording has no audio to transcribe."
             case .unsupportedLocale:
                 "On-device transcription isn't available for your language yet."
             case .narrationUnreadable:
-                "The narration audio could not be read."
-            case .noSpeechDetected:
-                "No speech was detected in the narration."
+                "The recording audio could not be read."
             }
         }
     }
 
-    /// A subtitle should stay readable at a glance, so speech is chunked
-    /// into short cues at natural pauses rather than whole sentences.
-    private static let maximumCueCharacters = 42
-    private static let maximumCueDuration: TimeInterval = 4
-    private static let cueGapThreshold: TimeInterval = 0.9
-    private static let minimumCueDuration: TimeInterval = 0.8
+    private struct AudioSource {
+        var track: AVAssetTrack
+        var source: RecordingTranscriptSource?
+    }
 
-    static func transcribe(screenMovieURL: URL) async throws -> RecordingTranscript {
-        let narrationURL = try await extractNarrationAudio(from: screenMovieURL)
-        defer { try? FileManager.default.removeItem(at: narrationURL) }
+    private struct SourceTranscript: Sendable {
+        var segments: [RecordingTranscriptSegmentation.Segment]
+        var silences: [RecordingTranscriptSegmentation.Silence]
+    }
 
-        let locale = try await resolveLocale()
+    @concurrent
+    static func transcribe(screenMovieURL: URL, localeIdentifier: String? = nil) async throws -> RecordingTranscript {
+        let sources = try await audioSources(in: screenMovieURL)
+        let locale = try await resolveLocale(identifier: localeIdentifier)
+        var results: [SourceTranscript] = []
+        for source in sources {
+            try Task.checkCancellation()
+            results.append(try await transcribe(source, locale: locale))
+        }
+        let segments = results.count == 2
+            ? RecordingTranscriptSegmentation.merge(microphone: results[0].segments, system: results[1].segments)
+            : results.flatMap(\.segments)
+        var words = segments.flatMap(\.words).sorted {
+            $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start
+        }
+        for index in words.indices where index > 0 {
+            if words[index].source != words[index - 1].source,
+               words[index - 1].text.last?.isWhitespace != true,
+               words[index].text.first?.isWhitespace != true {
+                words[index].text = " " + words[index].text
+            }
+        }
+        let cues: [RecordingSubtitleCue]
+        if results.count == 2 {
+            let silences = RecordingTranscriptionSilence.commonIntervals(results[0].silences, results[1].silences)
+            cues = RecordingTranscriptSegmentation.segments(from: words, silences: silences).map(\.cue)
+        } else {
+            cues = segments.map(\.cue)
+        }
+        AppLog.event("recording", "transcription_sources_merged", fields: [
+            "source_count": String(sources.count),
+            "word_count": String(words.count),
+            "cue_count": String(cues.count)
+        ])
+        return RecordingTranscript(words: words, cues: cues)
+    }
+
+    private static func transcribe(
+        _ source: AudioSource,
+        locale: Locale
+    ) async throws -> SourceTranscript {
+        let extracted = try await extractAudio(from: source.track)
+        defer {
+            do {
+                try FileManager.default.removeItem(at: extracted.url)
+            } catch {
+                AppLog.event("recording", "transcription_audio_cleanup_failed", fields: ["error": AppLog.error(error)])
+            }
+        }
+        let silences: [RecordingTranscriptSegmentation.Silence]
+        do {
+            silences = try await RecordingTranscriptionSilence.detect(
+                in: extracted.url,
+                sourceTimeOffset: extracted.sourceTimeOffset
+            )
+        } catch {
+            try Task.checkCancellation()
+            AppLog.event("recording", "transcription_silence_detection_failed", fields: ["error": AppLog.error(error)])
+            silences = []
+        }
         let transcriber = SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
@@ -348,32 +388,46 @@ nonisolated enum RecordingTranscriptionService {
             attributeOptions: [.audioTimeRange]
         )
         if let installation = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            AppLog.event("recording", "transcription_assets_installing", fields: ["locale": locale.identifier(.bcp47)])
             try await installation.downloadAndInstall()
         }
-
-        let audioFile = try AVAudioFile(forReading: narrationURL)
+        try Task.checkCancellation()
+        let audioFile = try AVAudioFile(forReading: extracted.url)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
-
-        // Result collection must be consuming before audio is fed in, or the
-        // analyzer's early results are dropped on the floor.
-        async let collectedWords = collectWords(from: transcriber)
-        if let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile) {
-            try await analyzer.finalizeAndFinish(through: lastSampleTime)
-        } else {
-            await analyzer.cancelAndFinishNow()
+        return try await withTaskCancellationHandler {
+            async let collectedWords = collectWords(
+                from: transcriber,
+                source: source.source,
+                sourceTimeOffset: extracted.sourceTimeOffset
+            )
+            do {
+                if let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile) {
+                    try await analyzer.finalizeAndFinish(through: lastSampleTime)
+                } else {
+                    await analyzer.cancelAndFinishNow()
+                }
+                let words = try await collectedWords
+                try Task.checkCancellation()
+                return SourceTranscript(
+                    segments: RecordingTranscriptSegmentation.segments(from: words, silences: silences),
+                    silences: silences
+                )
+            } catch {
+                await analyzer.cancelAndFinishNow()
+                throw error
+            }
+        } onCancel: {
+            Task { await analyzer.cancelAndFinishNow() }
         }
-
-        let words = try await collectedWords
-        let cues = makeCues(from: words)
-        guard !cues.isEmpty else { throw TranscriptionError.noSpeechDetected }
-        return RecordingTranscript(words: words, cues: cues)
     }
 
-    /// Best transcription locale for the user's language; on-device models
-    /// are per-locale, so an unsupported language has to fail loudly rather
-    /// than produce gibberish English cues. Also used by the live
-    /// teleprompter, which tracks the same narration as it is spoken.
-    static func resolveLocale() async throws -> Locale {
+    static func resolveLocale(identifier: String? = nil) async throws -> Locale {
+        if let identifier, !identifier.isEmpty {
+            guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: identifier)) else {
+                throw TranscriptionError.unsupportedLocale
+            }
+            return locale
+        }
         let supported = await SpeechTranscriber.supportedLocales
         let current = Locale.current
         if let exact = supported.first(where: {
@@ -392,30 +446,38 @@ nonisolated enum RecordingTranscriptionService {
         throw TranscriptionError.unsupportedLocale
     }
 
-    /// Pulls the narration out of the screen movie into a standalone audio
-    /// file. The recorder writes system audio as stereo and the microphone
-    /// as mono, so the mono track is the narration whenever both exist.
-    /// Track timing is preserved so cue timestamps stay on the movie's
-    /// timeline.
-    private static func extractNarrationAudio(from movieURL: URL) async throws -> URL {
+    static func supportedLocales() async -> [Locale] {
+        await SpeechTranscriber.supportedLocales.sorted {
+            localeTitle($0).localizedStandardCompare(localeTitle($1)) == .orderedAscending
+        }
+    }
+
+    static func localeTitle(_ locale: Locale) -> String {
+        Locale.current.localizedString(forIdentifier: locale.identifier(.bcp47)) ?? locale.identifier(.bcp47)
+    }
+
+    private static func audioSources(in movieURL: URL) async throws -> [AudioSource] {
         let asset = AVURLAsset(url: movieURL)
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        guard var narrationTrack = audioTracks.last else {
+        guard let fallback = audioTracks.last else {
             throw TranscriptionError.noNarrationTrack
         }
-        if audioTracks.count > 1 {
-            for track in audioTracks {
-                let descriptions = try await track.load(.formatDescriptions)
-                let channels = descriptions
-                    .compactMap { $0.audioStreamBasicDescription?.mChannelsPerFrame }
-                    .max() ?? 0
-                if channels == 1 {
-                    narrationTrack = track
-                    break
-                }
-            }
+        var microphone: AVAssetTrack?
+        var system: AVAssetTrack?
+        for track in audioTracks {
+            let descriptions = try await track.load(.formatDescriptions)
+            let channels = descriptions.compactMap { $0.audioStreamBasicDescription?.mChannelsPerFrame }.max() ?? 0
+            if channels == 1, microphone == nil { microphone = track }
+            if channels > 1, system == nil { system = track }
         }
+        if let microphone, let system {
+            return [AudioSource(track: microphone, source: .microphone), AudioSource(track: system, source: .system)]
+        }
+        if let microphone { return [AudioSource(track: microphone, source: .microphone)] }
+        return [AudioSource(track: system ?? fallback, source: system == nil ? nil : .system)]
+    }
 
+    private static func extractAudio(from track: AVAssetTrack) async throws -> (url: URL, sourceTimeOffset: TimeInterval) {
         let composition = AVMutableComposition()
         guard let compositionTrack = composition.addMutableTrack(
             withMediaType: .audio,
@@ -423,8 +485,11 @@ nonisolated enum RecordingTranscriptionService {
         ) else {
             throw TranscriptionError.narrationUnreadable
         }
-        let timeRange = try await narrationTrack.load(.timeRange)
-        try compositionTrack.insertTimeRange(timeRange, of: narrationTrack, at: timeRange.start)
+        let timeRange = try await track.load(.timeRange)
+        guard timeRange.start.seconds.isFinite, timeRange.duration.seconds > 0 else {
+            throw TranscriptionError.narrationUnreadable
+        }
+        try compositionTrack.insertTimeRange(timeRange, of: track, at: .zero)
 
         guard let exportSession = AVAssetExportSession(
             asset: composition,
@@ -433,71 +498,56 @@ nonisolated enum RecordingTranscriptionService {
             throw TranscriptionError.narrationUnreadable
         }
         let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("upshot-narration-\(UUID().uuidString)")
+            .appendingPathComponent("upshot-transcription-\(UUID().uuidString)")
             .appendingPathExtension("m4a")
-        try await exportSession.export(to: outputURL, as: .m4a)
-        return outputURL
+        do {
+            try await exportSession.export(to: outputURL, as: .m4a)
+            AppLog.event("recording", "transcription_audio_extracted", fields: [
+                "source_time_offset": String(timeRange.start.seconds),
+                "duration": String(timeRange.duration.seconds)
+            ])
+            return (outputURL, timeRange.start.seconds)
+        } catch {
+            if FileManager.default.fileExists(atPath: outputURL.path) {
+                do {
+                    try FileManager.default.removeItem(at: outputURL)
+                } catch {
+                    AppLog.event("recording", "transcription_audio_cleanup_failed", fields: ["error": AppLog.error(error)])
+                }
+            }
+            throw error
+        }
     }
 
-    private static func collectWords(from transcriber: SpeechTranscriber) async throws -> [RecordingTranscriptWord] {
+    private static func collectWords(
+        from transcriber: SpeechTranscriber,
+        source: RecordingTranscriptSource?,
+        sourceTimeOffset: TimeInterval
+    ) async throws -> [RecordingTranscriptWord] {
         var words: [RecordingTranscriptWord] = []
         for try await result in transcriber.results where result.isFinal {
             for run in result.text.runs {
                 let runText = String(result.text[run.range].characters)
+                if runText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !words.isEmpty { words[words.count - 1].text += runText }
+                    continue
+                }
                 guard let timeRange = run.audioTimeRange else {
-                    // Punctuation and whitespace runs carry no audio range;
-                    // glue them onto the previous word so cues keep them.
                     if !words.isEmpty {
                         words[words.count - 1].text += runText
                     }
                     continue
                 }
-                let start = timeRange.start.seconds
-                let end = timeRange.end.seconds
+                let start = sourceTimeOffset + timeRange.start.seconds
+                let end = sourceTimeOffset + timeRange.end.seconds
                 guard start.isFinite, end.isFinite else { continue }
-                words.append(RecordingTranscriptWord(text: runText, start: start, end: max(start, end)))
+                words.append(RecordingTranscriptWord(text: runText, start: start, end: max(start, end), source: source))
             }
         }
         return words
     }
 
     static func makeCues(from words: [RecordingTranscriptWord]) -> [RecordingSubtitleCue] {
-        var cues: [RecordingSubtitleCue] = []
-        var text = ""
-        var start: TimeInterval = 0
-        var end: TimeInterval = 0
-
-        func flush() {
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            text = ""
-            guard !trimmed.isEmpty else { return }
-            cues.append(RecordingSubtitleCue(
-                start: start,
-                end: max(end, start + minimumCueDuration),
-                text: trimmed
-            ))
-        }
-
-        for word in words {
-            let wordLength = word.text.trimmingCharacters(in: .whitespaces).count
-            if !text.isEmpty {
-                let breaksOnLength = text.count + wordLength > maximumCueCharacters
-                let breaksOnSilence = word.start - end > cueGapThreshold
-                let breaksOnDuration = word.end - start > maximumCueDuration
-                if breaksOnLength || breaksOnSilence || breaksOnDuration {
-                    flush()
-                }
-            }
-            if text.isEmpty {
-                start = word.start
-                end = word.end
-            }
-            // Runs keep the transcript's original spacing, so plain
-            // concatenation reconstructs the text exactly.
-            text += word.text
-            end = max(end, word.end)
-        }
-        flush()
-        return cues
+        RecordingTranscriptSegmentation.segments(from: words).map(\.cue)
     }
 }

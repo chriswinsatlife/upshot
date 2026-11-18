@@ -14,6 +14,8 @@ struct SettingsScreenRecordingPane: View {
             AfterCaptureActionsSection(type: .recording, title: "After Recording")
 
             InterfaceSection("Studio") {
+                RecordingAutomaticallyAddsZoomsRow()
+
                 InterfaceToggleRow("Reveal exports in Finder", isOn: $revealExportInFinder)
 
                 InterfaceRow("Recording projects") {

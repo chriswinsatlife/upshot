@@ -13,6 +13,18 @@ extension InspectorValueFormat {
 }
 
 private enum StudioOverlaySwatches {
+    static let censorship: [RecordingOverlayColor] = [
+        0xFF0000, 0xFFD700, 0x00FF00, 0xFFFFFF, 0x0000FF, 0xFF6B00,
+        0x9B59B6, 0xE91E63, 0x00BCD4, 0xFF5722, 0x8BC34A, 0xFFC107,
+        0x2563EB, 0x000000, 0x607D8B, 0x795548
+    ].map { value in
+        RecordingOverlayColor(
+            red: Double((value >> 16) & 255) / 255,
+            green: Double((value >> 8) & 255) / 255,
+            blue: Double(value & 255) / 255
+        )
+    }
+
     static let text: [RecordingOverlayColor] = [
         .white,
         .black,
@@ -35,6 +47,8 @@ private enum StudioOverlaySwatches {
 private struct StudioOverlayColorRow: View {
     let presets: [RecordingOverlayColor]
     let selection: RecordingOverlayColor
+    var showsCustom = true
+    var customIsSelected: Bool? = nil
     let onPick: (RecordingOverlayColor) -> Void
 
     var body: some View {
@@ -46,18 +60,20 @@ private struct StudioOverlayColorRow: View {
                     swatch(color)
                 }
             }
-            InspectorTile(title: "Custom color", isSelected: !presets.contains(selection)) {
-                AnnotationColorPanelBridge.shared.present(current: selection.nsColor) { color in
-                    onPick(RecordingOverlayColor(color))
-                }
-            } content: {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.05))
-                    .overlay {
-                        Image(systemName: "eyedropper")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.primary)
+            if showsCustom {
+                InspectorTile(title: "Custom color", isSelected: customIsSelected ?? !presets.contains(selection)) {
+                    AnnotationColorPanelBridge.shared.present(current: selection.nsColor) { color in
+                        onPick(RecordingOverlayColor(color))
                     }
+                } content: {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.05))
+                        .overlay {
+                            Image(systemName: "eyedropper")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.primary)
+                        }
+                }
             }
         }
     }
@@ -95,6 +111,10 @@ struct StudioTextInspectorControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.xxl) {
+            InterfaceToggleRow("Follow Camera", isOn: Binding(
+                get: { text.coordinateSpace == .recording },
+                set: { model.setTextCoordinateSpace($0 ? .recording : .canvas, id: text.id) }
+            ))
             TextField("Type something…", text: binding(\.text, action: "Edit Text"), axis: .vertical)
                 .lineLimit(1...6)
                 .font(.dsBody)
@@ -363,6 +383,25 @@ struct StudioRedactionInspectorControls: View {
                 }
             )
 
+            StudioInspectorGroup("Solid Color (Censorship)") {
+                InterfaceToggleRow("Use Color", isOn: Binding(
+                    get: { redaction.fillColor != nil },
+                    set: { enabled in edit("Change Redaction Fill") { $0.fillColor = enabled ? .black : nil } }
+                ))
+                if let color = redaction.fillColor {
+                    ForEach(0..<4, id: \.self) { row in
+                        StudioOverlayColorRow(
+                            presets: Array(StudioOverlaySwatches.censorship[(row * 4)..<(row * 4 + 4)]),
+                            selection: color,
+                            showsCustom: row == 3,
+                            customIsSelected: !StudioOverlaySwatches.censorship.contains(color)
+                        ) { selected in
+                            edit("Change Redaction Fill") { $0.fillColor = selected }
+                        }
+                    }
+                }
+            }
+
             InspectorFieldPair {
                 InspectorSlider(
                     "Strength",
@@ -425,6 +464,10 @@ struct StudioImageInspectorControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.xxl) {
+            InterfaceToggleRow("Follow Camera", isOn: Binding(
+                get: { image.coordinateSpace == .recording },
+                set: { model.setImageCoordinateSpace($0 ? .recording : .canvas, id: image.id) }
+            ))
             StudioInspectorGroup("Appearance") {
                 InspectorFieldPair {
                     InspectorSlider(
@@ -540,5 +583,45 @@ struct StudioAudioClipInspectorControls: View {
                 model.editAudioClip(edited, actionName: action)
             }
         )
+    }
+}
+
+struct StudioArrowInspectorControls: View {
+    @Bindable var model: RecordingStudioModel
+    let arrow: RecordingArrowOverlay
+
+    var body: some View {
+        StudioInspectorGroup("Arrow") {
+            StudioInspectorPickerRow("Direction", selection: Binding(
+                get: { arrow.direction },
+                set: { value in edit("Change Arrow Direction") { $0.direction = value } }
+            )) {
+                ForEach(RecordingArrowOverlay.Direction.allCases) { direction in
+                    Text(direction.title).tag(direction)
+                }
+            }
+            InspectorSlider("Stroke Width", value: Binding(
+                get: { CGFloat(arrow.strokeWidth) },
+                set: { value in edit("Change Arrow Stroke") { $0.strokeWidth = Double(value.rounded()) } }
+            ), range: 1...6, format: .pixels)
+            StudioInspectorGroup("Arrow Color") {
+                ForEach(0..<4, id: \.self) { row in
+                    StudioOverlayColorRow(
+                        presets: Array(StudioOverlaySwatches.censorship[(row * 4)..<(row * 4 + 4)]),
+                        selection: arrow.color,
+                        showsCustom: row == 3,
+                        customIsSelected: !StudioOverlaySwatches.censorship.contains(arrow.color)
+                    ) { color in
+                        edit("Change Arrow Color") { $0.color = color }
+                    }
+                }
+            }
+        }
+    }
+
+    private func edit(_ action: String, _ change: (inout RecordingArrowOverlay) -> Void) {
+        var edited = arrow
+        change(&edited)
+        model.updateArrow(edited, actionName: action)
     }
 }

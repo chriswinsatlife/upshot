@@ -21,6 +21,7 @@ struct RecordingClipTimelineView: NSViewRepresentable {
     var title: String?
     var onScrubbing: ((Bool) -> Void)?
     var onResetAll: (() -> Void)?
+    var onReorder: ((UUID, Int) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -58,6 +59,7 @@ struct RecordingClipTimelineView: NSViewRepresentable {
         )
         nsView.scrubbingDidChange = onScrubbing
         nsView.resetRequested = onResetAll
+        nsView.reorderDidCommit = onReorder
         nsView.update(
             title: title,
             timeline: timeline,
@@ -171,6 +173,7 @@ final class RecordingClipTimelineControl: NSView {
     var splitRequested: ((TimeInterval) -> Void)?
     var deleteRequested: (() -> Void)?
     var trimDidCommit: ((RecordingClipSegment) -> Void)?
+    var reorderDidCommit: ((UUID, Int) -> Void)?
     var zoomRequested: ((Double, TimeInterval) -> Void)?
     var stepRequested: ((TimeInterval) -> Void)?
     var speedRequested: ((UUID, Double) -> Void)?
@@ -183,7 +186,7 @@ final class RecordingClipTimelineControl: NSView {
     }
 
     private enum DragTarget {
-        case scrub
+        case reorder(clipID: UUID)
         case trim(clipID: UUID, edge: Edge)
     }
 
@@ -219,6 +222,8 @@ final class RecordingClipTimelineControl: NSView {
     private var dragStartPoint: CGPoint?
     private var dragStartTimeline: RecordingClipTimeline?
     private var dragStartClip: RecordingClipSegment?
+    private var dragSequenceIndex: Int?
+    private var reorderActivated = false
     private var contextTime: TimeInterval?
     private var contextClipID: UUID?
     private var lastHoverCallbackTimestamp: TimeInterval = 0
@@ -324,13 +329,14 @@ final class RecordingClipTimelineControl: NSView {
 
         dragStartPoint = point
         dragStartTimeline = timeline
+        dragSequenceIndex = nil
+        reorderActivated = false
         if let hit = edgeHit,
            let clip = timeline.segments.first(where: { $0.id == hit.clipID }) {
             dragTarget = .trim(clipID: hit.clipID, edge: hit.edge)
             dragStartClip = clip
         } else {
-            dragTarget = .scrub
-            scrubbingDidChange?(true)
+            dragTarget = .reorder(clipID: targetClipID)
             playheadTime = time
             playheadDidChange?(time)
         }
@@ -342,10 +348,8 @@ final class RecordingClipTimelineControl: NSView {
         let point = convert(event.locationInWindow, from: nil)
 
         switch dragTarget {
-        case .scrub:
-            let time = editorTime(forX: point.x)
-            playheadTime = time
-            playheadDidChange?(time)
+        case .reorder(let clipID):
+            updateReorder(clipID: clipID, point: point)
         case .trim(let clipID, let edge):
             updateTrim(clipID: clipID, edge: edge, point: point)
         }
@@ -353,22 +357,54 @@ final class RecordingClipTimelineControl: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let target = dragTarget
+        let sequenceIndex = dragSequenceIndex
+        let reordered = dragStartTimeline.map { $0 != timeline } ?? false
+        let replacement: RecordingClipSegment?
         if case .trim(let clipID, _) = dragTarget,
            let original = dragStartClip,
-           let replacement = timeline.segments.first(where: { $0.id == clipID }),
-           replacement != original {
-            trimDidCommit?(replacement)
+           let updated = timeline.segments.first(where: { $0.id == clipID }),
+           updated != original {
+            replacement = updated
+        } else {
+            replacement = nil
         }
-        if case .scrub = dragTarget {
-            scrubbingDidChange?(false)
+        clearDrag()
+        if let replacement { trimDidCommit?(replacement) }
+        if case .reorder(let clipID) = target, let sequenceIndex, reordered {
+            reorderDidCommit?(clipID, sequenceIndex)
         }
+        updateHover(with: event, forceCallback: true)
+        needsDisplay = true
+    }
 
+    override func cancelOperation(_ sender: Any?) {
+        guard dragTarget != nil else { return }
+        if let dragStartTimeline { timeline = dragStartTimeline }
+        clearDrag()
+        clearHover()
+        needsDisplay = true
+        AppLog.event("recording", "clip_drag_cancelled")
+    }
+
+    private func clearDrag() {
         dragTarget = nil
         dragStartPoint = nil
         dragStartTimeline = nil
         dragStartClip = nil
-        updateHover(with: event, forceCallback: true)
-        needsDisplay = true
+        dragSequenceIndex = nil
+        reorderActivated = false
+    }
+
+    private func updateReorder(clipID: UUID, point: CGPoint) {
+        guard let dragStartPoint, let startTimeline = dragStartTimeline else { return }
+        let delta = point.x - dragStartPoint.x
+        guard reorderActivated || hypot(delta, point.y - dragStartPoint.y) > 4 else { return }
+        reorderActivated = true
+        let editorDelta = Double(delta / max(timelineRect.width, 1)) * startTimeline.duration
+        guard let index = startTimeline.sequenceIndex(for: clipID, editorDelta: editorDelta) else { return }
+        dragSequenceIndex = index
+        timeline = startTimeline.reordering(segmentID: clipID, to: index)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -394,15 +430,19 @@ final class RecordingClipTimelineControl: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if dragTarget != nil {
+            if event.keyCode == 53 { cancelOperation(nil) }
+            return
+        }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let characters = event.charactersIgnoringModifiers?.lowercased()
 
         if modifiers.isEmpty, characters == "c", let hoverTime, hoveredClipID != nil {
-            splitRequested?(hoverTime)
+            if !event.isARepeat { splitRequested?(hoverTime) }
             return
         }
         if modifiers.isEmpty, characters == "s" {
-            splitRequested?(playheadTime)
+            if !event.isARepeat { splitRequested?(playheadTime) }
             return
         }
         if modifiers.subtracting([.shift, .numericPad, .function]).isEmpty,
@@ -411,7 +451,8 @@ final class RecordingClipTimelineControl: NSView {
             stepRequested?(event.keyCode == 123 ? -magnitude : magnitude)
             return
         }
-        if modifiers.isEmpty, event.keyCode == 51 || event.keyCode == 117 {
+        if modifiers.subtracting([.function, .numericPad]).isEmpty,
+           event.keyCode == 51 || event.keyCode == 117 {
             deleteRequested?()
             return
         }
@@ -436,6 +477,7 @@ final class RecordingClipTimelineControl: NSView {
             keyEquivalent: ""
         )
         split.target = self
+        split.isEnabled = timeline.canSplit(at: time)
         split.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: nil)
         menu.addItem(split)
 
@@ -553,29 +595,25 @@ final class RecordingClipTimelineControl: NSView {
         guard let dragStartPoint,
               let startTimeline = dragStartTimeline,
               let original = dragStartClip,
-              let index = startTimeline.segments.firstIndex(where: { $0.id == clipID }) else {
+              startTimeline.segments.contains(where: { $0.id == clipID }) else {
             return
         }
 
         let editorDelta = Double((point.x - dragStartPoint.x) / max(timelineRect.width, 1))
             * startTimeline.duration
         let delta = editorDelta * original.speed
-        let previousEnd = index > 0 ? startTimeline.segments[index - 1].sourceEnd : 0
-        let nextStart = index + 1 < startTimeline.segments.count
-            ? startTimeline.segments[index + 1].sourceStart
-            : sourceDuration
         var replacement = original
 
         switch edge {
         case .leading:
             replacement.sourceStart = min(
-                max(original.sourceStart + delta, previousEnd),
+                max(original.sourceStart + delta, 0),
                 original.sourceEnd - RecordingClipSegment.minimumDuration
             )
         case .trailing:
             replacement.sourceEnd = max(
                 original.sourceStart + RecordingClipSegment.minimumDuration,
-                min(original.sourceEnd + delta, nextStart)
+                min(original.sourceEnd + delta, sourceDuration)
             )
         }
         timeline = startTimeline.replacing(replacement)

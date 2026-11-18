@@ -14,13 +14,14 @@ nonisolated final class RecordingAudioTrackExport: @unchecked Sendable {
         volume: Double,
         mono: Bool,
         title: String,
-        writer: AVAssetWriter
+        writer: AVAssetWriter,
+        clipTimeline: RecordingClipTimeline? = nil
     ) throws {
         self.title = title
         reader = try AVAssetReader(asset: asset)
         reader.timeRange = timeRange
         output = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: RecordingAudioChannels.decodedSettings(mono: mono))
-        output.audioMix = RecordingAudioGain.makeMix(tracks: [track], volume: volume)
+        output.audioMix = RecordingAudioGain.makeMix(tracks: [track], volume: volume, clipTimeline: clipTimeline)
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else { throw RecordingStudioExporter.ExportError.writerFailed(nil) }
         reader.add(output)

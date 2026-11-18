@@ -158,6 +158,18 @@ final class LibraryCollectionView: NSCollectionView {
     var command: ((CaptureLibraryAction) -> Void)?
     var contextMenuProvider: ((NSEvent) -> NSMenu?)?
 
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { NotificationCenter.default.post(name: CaptureLibraryHoverPreviewView.keyboardFocusChangedNotification, object: self) }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { NotificationCenter.default.post(name: CaptureLibraryHoverPreviewView.keyboardFocusChangedNotification, object: self) }
+        return accepted
+    }
+
     func configureLayout(_ displayLayout: CaptureLibraryLayout) {
         let flow = LibraryCollectionLayout()
         flow.displayLayout = displayLayout
@@ -469,6 +481,16 @@ struct LibraryCellContent: View {
 
     private func thumbnail(_ item: CaptureLibraryItem) -> some View {
         CaptureLibraryThumbnail(item: item)
+            .overlay {
+                if let session = item.session {
+                    CaptureLibraryHoverPreview(
+                        session: session, revision: item.thumbnailKey,
+                        hovering: isHovering, selected: selected, reduceMotion: reduceMotion
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
             .clipShape(.rect(cornerRadius: Radius.thumbnail, style: .continuous))
             .hairline(radius: Radius.thumbnail, opacity: 0.08)
             .overlay(alignment: .bottomTrailing) {

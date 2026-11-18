@@ -13,8 +13,6 @@ import CoreImage
 import Foundation
 import ImageIO
 
-/// The arrow drawn for a synthesized pointer. `.system` keeps the arrow macOS
-/// handed over during the recording.
 nonisolated enum RecordingCursorStyle: String, Codable, CaseIterable, Sendable {
     case system
     case pointer
@@ -23,12 +21,19 @@ nonisolated enum RecordingCursorStyle: String, Codable, CaseIterable, Sendable {
     case triangle
     case transparent
     case frosted
+    case macos
+    case tahoe
+    case tahoeInverted = "tahoe-inverted"
+    case boldOutline = "bold-outline"
+    case dot
+    case windows11
+    case figma
+    case pixelHand = "pixel-hand"
+    case breezex
 
-    /// Projects saved with a style this build no longer has open on the
-    /// macOS arrow instead of failing to load.
     init(from decoder: Decoder) throws {
         let rawValue = try decoder.singleValueContainer().decode(String.self)
-        self = RecordingCursorStyle(rawValue: rawValue) ?? .system
+        self = rawValue == "mono" ? .tahoeInverted : RecordingCursorStyle(rawValue: rawValue) ?? .system
     }
 
     var title: String {
@@ -40,18 +45,64 @@ nonisolated enum RecordingCursorStyle: String, Codable, CaseIterable, Sendable {
         case .triangle: "Triangle"
         case .transparent: "Transparent"
         case .frosted: "Frosted"
+        case .macos: "macOS"
+        case .tahoe: "Golden Gate"
+        case .tahoeInverted: "Golden Gate Inverted"
+        case .boldOutline: "Bold Outline"
+        case .dot: "Touch"
+        case .windows11: "Windows 11"
+        case .figma: "Minimal"
+        case .pixelHand: "Pixel Glove"
+        case .breezex: "Linux (BreezeX)"
         }
     }
 
     var shape: PointerShape? {
         switch self {
-        case .system: nil
+        case .system, .macos, .tahoe, .tahoeInverted, .boldOutline, .dot,
+             .windows11, .figma, .pixelHand, .breezex: nil
         case .pointer: .pointer
         case .rounded: .rounded
         case .sharp: .sharp
         case .triangle: .triangle
         case .transparent: .transparent
         case .frosted: .frosted
+        }
+    }
+
+    static var selectableStyles: [Self] {
+        allCases.filter { $0 != .tahoeInverted }
+    }
+
+    var usesArtworkCatalog: Bool {
+        switch self {
+        case .macos, .tahoe, .tahoeInverted, .boldOutline, .dot,
+             .windows11, .figma, .pixelHand, .breezex: true
+        default: false
+        }
+    }
+
+    var replacesEveryCursor: Bool {
+        self == .dot || self == .figma
+    }
+
+    var supportsInversion: Bool {
+        self == .tahoe || self == .tahoeInverted || (shape != nil && shape?.isCircle == false)
+    }
+
+    var usesNearestNeighborSampling: Bool { self == .pixelHand }
+
+    var visibleBodySizeMultiplier: CGFloat {
+        switch self {
+        case .macos: 463.0 / 387.0
+        case .tahoe, .tahoeInverted: 958.0 / 859.0
+        case .windows11: 512.0 / 304.0
+        case .dot: 512.0 / 384.0
+        case .figma: 430.0 / 353.0
+        case .boldOutline: 512.0 / 491.0
+        case .pixelHand: 48.0 / 29.0
+        case .breezex: 394.0 / 368.0
+        default: 1
         }
     }
 }

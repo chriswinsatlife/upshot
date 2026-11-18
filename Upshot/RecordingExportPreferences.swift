@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 extension UpshotPreferences {
@@ -43,6 +44,30 @@ nonisolated enum RecordingGIFQuality: String, Codable, CaseIterable, Sendable {
     }
 }
 
+nonisolated enum RecordingGIFSize: String, Codable, CaseIterable, Sendable {
+    case p720 = "Up to 720p"
+    case p1080 = "Up to 1080p"
+    case original = "Original"
+
+    func outputSize(for source: CGSize) -> CGSize {
+        guard source.width.isFinite, source.height.isFinite,
+              source.width > 0, source.height > 0 else {
+            return CGSize(width: 1280, height: 720)
+        }
+        let heightLimit: CGFloat = switch self {
+        case .p720: 720
+        case .p1080: 1080
+        case .original: 8192
+        }
+        let scale = min(1, heightLimit / source.height, 8192 / max(source.width, source.height))
+        guard scale < 1 else { return source }
+        return CGSize(
+            width: min(8192, max(2, (Int((source.width * scale).rounded()) + 1) & ~1)),
+            height: min(8192, max(2, (Int((source.height * scale).rounded()) + 1) & ~1))
+        )
+    }
+}
+
 nonisolated enum RecordingMotionBlurLevel: String, Codable, CaseIterable, Sendable {
     case off = "Off"
     case low = "Low"
@@ -63,11 +88,15 @@ nonisolated struct RecordingExportDeliveryOptions: Codable, Equatable, Sendable 
     var format: RecordingExportFormat = .video
     var gifFrameRate: RecordingGIFFrameRate = .fps15
     var gifQuality: RecordingGIFQuality = .high
+    var gifSize: RecordingGIFSize? = .p720
+    var gifLoops: Bool?
     var optimizesGIF = true
     var scalesRetinaToOne = false
     var monoAudio = false
     var separateAudioTracks = false
     var motionBlurLevel: RecordingMotionBlurLevel?
+
+    var effectiveGIFLoops: Bool { gifLoops ?? true }
 }
 
 nonisolated enum RecordingExportOptionStore {

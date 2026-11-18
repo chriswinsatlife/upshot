@@ -13,10 +13,26 @@ struct RecordingExportSettingsSection: View {
                 }
             }
 
-            InterfacePickerRow("Maximum resolution", selection: compressionBinding(\.resolution, name: "resolution")) {
-                ForEach(VideoCompressionResolution.allCases) { resolution in
-                    Text(resolution.rawValue).tag(resolution)
+            RecordingExportResolutionControls(settings: Binding(
+                get: { compression },
+                set: { settings in
+                    compression = settings
+                    RecordingExportPreferences.lastSettings = settings
+                    AppLog.event("settings", "recording_export_default_changed", fields: ["option": "resolution", "value": settings.resolution.rawValue])
                 }
+            ))
+
+            InterfacePickerRow("Encoding", selection: Binding(
+                get: { compression.effectiveEncodingMode },
+                set: { mode in
+                    var stored = RecordingExportPreferences.lastSettings
+                    stored.encodingMode = mode
+                    compression = stored
+                    RecordingExportPreferences.lastSettings = stored
+                    AppLog.event("settings", "recording_export_default_changed", fields: ["option": "encodingMode", "value": mode.rawValue])
+                }
+            )) {
+                ForEach(VideoExportEncodingMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
             }
 
             InterfaceToggleRow("Scale Retina videos to 1x", isOn: deliveryBinding(\.scalesRetinaToOne, name: "scalesRetinaToOne"))
@@ -34,6 +50,19 @@ struct RecordingExportSettingsSection: View {
         }
 
         InterfaceSection("GIF") {
+            InterfacePickerRow("Size", selection: Binding(
+                get: { delivery.gifSize },
+                set: { deliveryBinding(\.gifSize, name: "gifSize").wrappedValue = $0 }
+            )) {
+                if delivery.gifSize == nil {
+                    Text(compression.resolution.rawValue).tag(nil as RecordingGIFSize?)
+                }
+                ForEach(RecordingGIFSize.allCases, id: \.self) { size in Text(size.rawValue).tag(Optional(size)) }
+            }
+            InterfaceToggleRow("Loop", isOn: Binding(
+                get: { delivery.effectiveGIFLoops },
+                set: { deliveryBinding(\.gifLoops, name: "gifLoops").wrappedValue = $0 }
+            ))
             InterfacePickerRow("Frame rate", selection: deliveryBinding(\.gifFrameRate, name: "gifFrameRate")) {
                 ForEach(RecordingGIFFrameRate.allCases, id: \.self) { rate in
                     Text("\(rate.rawValue) fps").tag(rate)

@@ -259,6 +259,9 @@ nonisolated struct AnnotationCustomWallpaper: Identifiable, Equatable, Hashable 
     }
 
     var title: String {
-        url.deletingPathExtension().lastPathComponent
+        if url.deletingLastPathComponent().lastPathComponent == "Desktop Snapshots" {
+            return "Desktop wallpaper"
+        }
+        return url.deletingPathExtension().lastPathComponent
     }
 }

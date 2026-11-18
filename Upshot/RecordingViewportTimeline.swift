@@ -15,6 +15,7 @@ import CoreGraphics
 import Foundation
 
 nonisolated enum ZoomAnchorMode: String, Codable, CaseIterable, Sendable {
+    case safeZone
     /// Track the latest recorded pointer sample directly.
     case pointerAnchor
     /// Hold on stable regions of pointer activity instead of chasing every
@@ -53,7 +54,7 @@ nonisolated struct ZoomCue: Identifiable, Codable, Equatable, Sendable {
         id: UUID = UUID(),
         start: TimeInterval,
         end: TimeInterval,
-        zoom: Double = 1.5,
+        zoom: Double = RecordingZoomAmount.defaultValue,
         anchorMode: ZoomAnchorMode = .pointerAnchor,
         pinnedPoint: CGPoint = CGPoint(x: 0.5, y: 0.5),
         boundsBias: Double = 0.25,
@@ -168,55 +169,8 @@ nonisolated struct ViewportTarget: Sendable {
 // MARK: - Auto-generation from recorded input
 
 nonisolated enum ZoomCueSynthesizer {
-    private static let preRoll: TimeInterval = 0.3
-    private static let postRoll: TimeInterval = 2.5
-    private static let joinTolerance: TimeInterval = 2.5
-    private static let tailExclusion: TimeInterval = 1.0
-    private static let trailingGuard: TimeInterval = 0.8
-    private static let earliestStart: TimeInterval = 0.001
-    private static let defaultMagnification = 1.5
-
-    /// Builds editable Pointer cues around press events. A sorted one-pass merge
-    /// is transitive, so cues connected by the allowed gap naturally become
-    /// one continuous zoom.
     static func cues(from capture: PointerCaptureFile, duration: TimeInterval) -> [ZoomCue] {
-        guard duration.isFinite, duration > 0 else { return [] }
-
-        let latestEligiblePress = duration - tailExclusion
-        let candidates = capture.presses
-            .filter {
-                $0.phase == .down
-                    && $0.time.isFinite
-                    && $0.time < latestEligiblePress
-                    && (0...1).contains($0.x)
-                    && (0...1).contains($0.y)
-            }
-            .sorted { $0.time < $1.time }
-            .compactMap { press -> ZoomCue? in
-                let start = max(press.time - preRoll, earliestStart)
-                let end = min(press.time + postRoll, duration - trailingGuard)
-                guard end > start else { return nil }
-                return ZoomCue(
-                    start: start,
-                    end: end,
-                    zoom: defaultMagnification,
-                    anchorMode: .pointerAnchor,
-                    pinnedPoint: CGPoint(x: press.x, y: press.y),
-                    boundsBias: 0.25
-                )
-            }
-
-        var merged: [ZoomCue] = []
-        merged.reserveCapacity(candidates.count)
-        for candidate in candidates {
-            if var previous = merged.last, candidate.start <= previous.end + joinTolerance {
-                previous.end = max(previous.end, candidate.end)
-                merged[merged.count - 1] = previous
-            } else {
-                merged.append(candidate)
-            }
-        }
-        return merged
+        suggestions(from: capture, duration: duration).cues
     }
 }
 
@@ -319,6 +273,7 @@ nonisolated struct ViewportTimeline: Sendable {
         visibleFraction: CGSize = CGSize(width: 1, height: 1),
         sourceBounds: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
         smoothsMotion: Bool = true,
+        zoomMotion: RecordingZoomMotionSettings? = nil,
         visibleFractionAtTime: ((TimeInterval, Double) -> CGSize)? = nil
     ) -> ViewportTimeline {
         let visible = VisibleFraction(visibleFraction)
@@ -326,6 +281,7 @@ nonisolated struct ViewportTimeline: Sendable {
         guard duration.isFinite, duration > 0 else { return .identity }
 
         let pointerSamples = mergedPointerSamples(from: capture)
+        let envelopePlan = zoomMotion.map { RecordingZoomEnvelopePlan(cues: cues, timeline: clipTimeline, settings: $0) }
         let activitySamples = pointerSamples.filter {
             isRetainedSourceEvent($0.time, in: clipTimeline)
         }
@@ -347,9 +303,10 @@ nonisolated struct ViewportTimeline: Sendable {
         }
         // Anticipation is in playback seconds, so speeding or cutting footage
         // cannot desynchronize the camera's lead-in from the displayed cursor.
-        let pressEvents = activitySamples.filter { $0.kind == .press }.compactMap { sample -> PointerSample? in
-            guard let time = clipTimeline.editorTime(forSourceTime: sample.time) else { return nil }
-            return PointerSample(time: time, point: sample.point, kind: sample.kind)
+        let pressEvents = activitySamples.filter { $0.kind == .press }.flatMap { sample in
+            clipTimeline.editorTimes(forSourceEventTime: sample.time).map {
+                PointerSample(time: $0, point: sample.point, kind: sample.kind)
+            }
         }.sorted { $0.time < $1.time }
         let frameCount = max(2, Int((duration * stepRate).rounded(.up)) + 1)
         let dt = 1.0 / stepRate
@@ -361,6 +318,11 @@ nonisolated struct ViewportTimeline: Sendable {
         var translationXSpring = DampedSpring(position: 0.5 - sourceBounds.midX)
         var translationYSpring = DampedSpring(position: 0.5 - sourceBounds.midY)
         var previousActive: ZoomCue?
+        var safeZoneFocus: [UUID: CGPoint] = [:]
+        var connectionStarts: [UUID: CGPoint] = [:]
+        var connectionDestinations: [UUID: CGPoint] = [:]
+        var resolvedFocusByCue: [UUID: CGPoint] = [:]
+        var connectedScale = DampedSpring(position: 1)
         var latestPressIndex = -1
 
         var frames: [ViewportFrame] = []
@@ -381,8 +343,18 @@ nonisolated struct ViewportTimeline: Sendable {
                   pressEvents[latestPressIndex + 1].time <= editorTime {
                 latestPressIndex += 1
             }
-            let active = activeCue(at: time, cues: cues)
-            let targetMagnification = max(1, active?.zoom ?? 1)
+            let envelope = envelopePlan?.sample(at: editorTime)
+            let active = envelopePlan == nil ? activeCue(at: time, cues: cues) : envelope?.cue
+            let fullMagnification = max(1, envelope?.magnification ?? active?.zoom ?? 1)
+            let strength = envelope?.strength ?? (active == nil ? 0 : 1)
+            if envelope?.connected == true, frameIndex > 0 {
+                connectedScale.step(toward: fullMagnification, using: zoomMotion?.cameraSpring ?? motionProfile, dt: dt)
+            } else {
+                connectedScale.snap(to: fullMagnification)
+            }
+            let resolvedMagnification = envelopePlan == nil ? fullMagnification : max(1, connectedScale.position)
+            let targetMagnification = envelopePlan == nil ? fullMagnification
+                : 1 + (resolvedMagnification - 1) * strength
             let visible = visibleFractionAtTime.map {
                 VisibleFraction($0(editorTime, targetMagnification))
             } ?? visible
@@ -406,21 +378,71 @@ nonisolated struct ViewportTimeline: Sendable {
                pressEvents[upcomingIndex].time - editorTime <= anticipationWindow {
                 rawTarget = pressEvents[upcomingIndex].point
             }
+            if active == nil {
+                safeZoneFocus.removeAll(keepingCapacity: true)
+                connectionStarts.removeAll(keepingCapacity: true)
+                connectionDestinations.removeAll(keepingCapacity: true)
+                resolvedFocusByCue.removeAll(keepingCapacity: true)
+            }
+            if let active, active.anchorMode == .safeZone {
+                let trackingMagnification = max(1, active.zoom)
+                var focus = safeZoneFocus[active.id] ?? clampToFrame(
+                    active.pinnedPoint, magnification: trackingMagnification, visible: visible, bounds: sourceBounds
+                )
+                if strength > 0, envelope?.zoomingOut != true, envelope?.holdsIncoming != true,
+                   let pointer = trackedPointerPosition(at: time, samples: pointerSamples),
+                   pointer.x >= sourceBounds.minX, pointer.x <= sourceBounds.maxX,
+                   pointer.y >= sourceBounds.minY, pointer.y <= sourceBounds.maxY {
+                    let extent = visible.halfExtents(magnification: trackingMagnification)
+                    if abs(pointer.x - focus.x) > extent.x * 0.5 { focus.x = pointer.x }
+                    if abs(pointer.y - focus.y) > extent.y * 0.5 { focus.y = pointer.y }
+                    focus = clampToFrame(focus, magnification: trackingMagnification, visible: visible, bounds: sourceBounds)
+                    safeZoneFocus[active.id] = focus
+                }
+                rawTarget = focus
+            }
+            if let envelope, let outgoing = envelope.outgoing {
+                connectionDestinations[envelope.cue.id] = rawTarget
+                let start: CGPoint
+                if let saved = connectionStarts[envelope.cue.id] {
+                    start = saved
+                } else {
+                    start = resolvedFocusByCue[outgoing.id] ?? safeZoneFocus[outgoing.id] ?? anchorPoint(
+                        for: outgoing, at: outgoing.end, samples: pointerSamples,
+                        activityTargets: activityTargetsByCueID[outgoing.id] ?? []
+                    )
+                    connectionStarts[envelope.cue.id] = start
+                }
+                rawTarget = CGPoint(x: start.x + (rawTarget.x - start.x) * envelope.panProgress,
+                                    y: start.y + (rawTarget.y - start.y) * envelope.panProgress)
+            } else if envelope?.holdsIncoming == true, let active,
+                      let held = connectionDestinations[active.id] {
+                rawTarget = held
+            }
+            if let active { resolvedFocusByCue[active.id] = rawTarget }
             if !smoothsMotion {
                 targets.append(ViewportTarget(
                     magnification: targetMagnification,
                     point: normalized(rawTarget),
-                    boundsBias: active?.anchorMode == .pinnedAnchor ? 0 : active?.boundsBias ?? 0
+                    boundsBias: active?.anchorMode == .pinnedAnchor || active?.anchorMode == .safeZone ? 0 : active?.boundsBias ?? 0
                 ))
             }
-            let targetAnchor = boundedAnchor(
+            var targetAnchor = boundedAnchor(
                 rawTarget,
-                magnification: targetMagnification,
+                magnification: envelopePlan == nil ? targetMagnification : resolvedMagnification,
                 anchorMode: active?.anchorMode ?? (isCropped ? .pointerAnchor : .pinnedAnchor),
                 boundsBias: active?.boundsBias ?? 0,
                 visible: visible,
                 bounds: sourceBounds
             )
+            if envelopePlan != nil, active != nil {
+                targetAnchor = CGPoint(
+                    x: 0.5 - (((0.5 - targetAnchor.x) * resolvedMagnification) * strength
+                        + (0.5 - sourceBounds.midX) * (1 - strength)) / targetMagnification,
+                    y: 0.5 - (((0.5 - targetAnchor.y) * resolvedMagnification) * strength
+                        + (0.5 - sourceBounds.midY) * (1 - strength)) / targetMagnification
+                )
+            }
             let targetX = (0.5 - targetAnchor.x) * targetMagnification
             let targetY = (0.5 - targetAnchor.y) * targetMagnification
 
@@ -434,9 +456,11 @@ nonisolated struct ViewportTimeline: Sendable {
                 translationXSpring.snap(to: targetX)
                 translationYSpring.snap(to: targetY)
             } else if frameIndex > 0 {
-                scaleSpring.step(toward: targetMagnification, using: motionProfile, dt: dt)
-                translationXSpring.step(toward: targetX, using: motionProfile, dt: dt)
-                translationYSpring.step(toward: targetY, using: motionProfile, dt: dt)
+                if envelopePlan != nil { scaleSpring.snap(to: targetMagnification) }
+                else { scaleSpring.step(toward: targetMagnification, using: motionProfile, dt: dt) }
+                let profile = zoomMotion?.cameraSpring ?? motionProfile
+                translationXSpring.step(toward: targetX, using: profile, dt: dt)
+                translationYSpring.step(toward: targetY, using: profile, dt: dt)
             }
 
             let magnification = max(1, scaleSpring.position)
@@ -450,6 +474,14 @@ nonisolated struct ViewportTimeline: Sendable {
                 bounds: sourceBounds
             )
             frames.append(ViewportFrame(magnification: magnification, anchor: anchor))
+            if envelopePlan != nil {
+                let target = ViewportTarget(
+                    magnification: magnification, point: anchor,
+                    boundsBias: active?.anchorMode == .pinnedAnchor || active?.anchorMode == .safeZone ? 0 : active?.boundsBias ?? 0
+                )
+                if smoothsMotion { targets.append(target) }
+                else { targets[targets.count - 1] = target }
+            }
             snapFrames.append(shouldSnap)
             if targetMagnification > 1 {
                 progressReference = targetMagnification
@@ -460,7 +492,7 @@ nonisolated struct ViewportTimeline: Sendable {
             // The spring only approaches its target; within half a percent
             // the zoom has landed, and reacting layers can hold still.
             if progress > 0.995 { progress = 1 } else if progress < 0.005 { progress = 0 }
-            zoomProgress.append(progress)
+            zoomProgress.append(envelopePlan == nil ? progress : strength)
             previousActive = active
         }
 
@@ -498,7 +530,7 @@ nonisolated struct ViewportTimeline: Sendable {
     private static func cuePriority(_ cue: ZoomCue) -> Int {
         if cue.isImplicit { return 0 }
         switch cue.anchorMode {
-        case .pointerAnchor: return 1
+        case .pointerAnchor, .safeZone: return 1
         case .smartAnchor: return 2
         case .pinnedAnchor: return 3
         }
@@ -513,7 +545,7 @@ nonisolated struct ViewportTimeline: Sendable {
         activityTargets: [ActivityTarget]
     ) -> CGPoint {
         switch cue.anchorMode {
-        case .pinnedAnchor:
+        case .pinnedAnchor, .safeZone:
             return normalized(cue.pinnedPoint)
         case .pointerAnchor:
             return trackedPointerPosition(at: time, samples: samples) ?? normalized(cue.pinnedPoint)
@@ -691,7 +723,7 @@ nonisolated struct ViewportTimeline: Sendable {
         bounds: CGRect
     ) -> CGPoint {
         let rawCenteredTarget = normalized(point)
-        guard anchorMode != .pinnedAnchor else {
+        guard anchorMode != .pinnedAnchor, anchorMode != .safeZone else {
             return clampToFrame(rawCenteredTarget, magnification: magnification, visible: visible, bounds: bounds)
         }
 

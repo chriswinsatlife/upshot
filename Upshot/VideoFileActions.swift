@@ -106,6 +106,7 @@ enum VideoFileActions {
             in: destinationDirectory
         )
         try await save(from: url, to: destinationURL)
+        DevelopmentCaptureMarker.mark(destinationURL)
         return destinationURL
     }
 

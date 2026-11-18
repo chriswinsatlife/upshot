@@ -103,10 +103,23 @@ struct UpshotApp: App {
             }
         }
 
+        ScreenRecordingManager.shared.onBeginFinishingRecording = { [openWindow] session in
+            guard AfterCaptureActions.isEnabled(.openVideoEditor, for: .recording) else { return }
+            RecordingStudioFinalization.shared.begin(session)
+            RecordingControlPresenter.shared.hide()
+            openWindow(id: "VIDEO_EDITOR", value: session.directoryURL)
+        }
+        ScreenRecordingManager.shared.onFailFinishingRecording = { session, message in
+            RecordingStudioFinalization.shared.fail(session, message: message)
+        }
         ScreenRecordingManager.shared.onFinishRecording = { session, displayID in
             Task { @MainActor in
                 let historyURL = await ScreenshotHistoryStore.shared.importRecordingSession(session)
                 RecordingProjectStore.shared.reload()
+                RecordingStudioFinalization.shared.complete(
+                    session,
+                    editorURL: ScreenshotHistoryStore.shared.editorURL(for: historyURL)
+                )
                 CaptureShelf.shared.addVideo(url: historyURL)
                 if AfterCaptureActions.isEnabled(.showOverlay, for: .recording) {
                     CaptureShelfPresenter.shared.show(displayID: displayID)

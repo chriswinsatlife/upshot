@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct LiveRecordingSettingsSection: View {
-    @AppStorage(UpshotPreferences.recordingDimOutsideAreaKey) private var dimOutsideArea = false
+    @AppStorage(UpshotPreferences.recordingDimOutsideAreaKey) private var dimOutsideArea = true
     @AppStorage(UpshotPreferences.recordingStartDelaySecondsKey) private var countdownSeconds = 0
     @AppStorage(UpshotPreferences.recordingDoNotDisturbKey) private var doNotDisturb = false
     @AppStorage(UpshotPreferences.recordingFocusShortcutNameKey) private var focusShortcutName = "Upshot Recording Focus"
     @AppStorage("recordingCapturesTypedKeys") private var capturesTypedKeys = false
 
-    private static let countdownOptions = [0, 1, 3, 5]
+    private static let countdownOptions = [0, 1, 3, 5, 10]
 
     var body: some View {
         InterfaceSection("General") {

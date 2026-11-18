@@ -71,11 +71,12 @@ enum AutomationActions {
             guard let display = content.displays.first(where: { $0.displayID == displayID }) ?? content.displays.first else {
                 throw AutomationError.message("No display is available to record.")
             }
-            guard await CaptureCountdownPresenter.shared.runIfNeeded(seconds: UpshotPreferences.recordingStartDelaySeconds, displayID: display.displayID) else {
-                throw CancellationError()
-            }
             guard !manager.isActive else { throw AutomationError.message("A recording is already active.") }
-            manager.startRecording(source: ScreenRecordingSource(kind: .fullscreen(display)))
+            manager.startRecording(
+                source: ScreenRecordingSource(kind: .fullscreen(display)),
+                countdownSeconds: UpshotPreferences.recordingStartDelaySeconds
+            )
+            guard await manager.waitForRecordingStart() else { throw CancellationError() }
         case .recordingStart:
             throw AutomationError.message("A recording is already active.")
         case .recordingStop, .recordingToggle:

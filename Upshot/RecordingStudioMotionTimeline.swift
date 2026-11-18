@@ -30,9 +30,11 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
         capture: PointerCaptureFile,
         clipTimeline: RecordingClipTimeline,
         zoomAnimationStyle: RecordingZoomAnimationStyle = .smooth,
+        zoomMotion: RecordingZoomMotionSettings? = nil,
         reframe: ReframeTrack? = nil
     ) -> RecordingStudioMotionTimeline {
         let duration = clipTimeline.duration
+        let usesZoomMotion = zoomMotion != nil && reframe == nil
         guard duration.isFinite, duration > 0, canvasSize.width > 0, canvasSize.height > 0 else { return .none }
         let base = RecordingStudioLayout.make(
             canvasSize: canvasSize,
@@ -51,11 +53,13 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
             capture: capture,
             clipTimeline: clipTimeline,
             sourceBounds: crop,
-            smoothsMotion: false
+            smoothsMotion: usesZoomMotion,
+            zoomMotion: zoomMotion
         ) { time, magnification in
             let layout = base.applying(resolver.frame(
                 for: layoutTimeline.layout(at: time),
-                zoomProgress: magnification > 1 ? 1 : 0
+                zoomProgress: magnification > 1 ? 1 : 0,
+                magnification: magnification
             ))
             return CGSize(
                 width: layout.cardRect.width / layout.contentFillSize.width,
@@ -81,12 +85,26 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
             )
             let zoomed = target.magnification > 1.0001
             let cameraLayout = layoutTimeline.layout(at: time)
-            let destination = resolver.frame(for: cameraLayout, zoomProgress: zoomed ? 1 : 0)
-            let layout = base.applying(destination)
+            let destination = resolver.frame(
+                for: cameraLayout,
+                zoomProgress: usesZoomMotion ? targets.zoomProgress(at: time) : (zoomed ? 1 : 0),
+                magnification: style.camera.zoomResponse == .magnification && cameraLayout.kind == .pictureInPicture
+                    ? 1 : target.magnification
+            )
+            if usesZoomMotion {
+                if targets.snaps(at: time) || index == 0 { layoutSpring = StudioLayoutSpring(destination) }
+                else { layoutSpring.step(toward: destination, dt: dt) }
+            }
+            let layout = base.applying(usesZoomMotion ? layoutSpring.frame : destination)
             var draw = layout.frameRect(for: ViewportFrame(
                 magnification: target.magnification, anchor: target.point
             ))
-            if zoomed {
+            if zoomed, usesZoomMotion {
+                let focus = focusCenter(in: layoutSpring.frame)
+                let progress = CGFloat(targets.zoomProgress(at: time)) * (1 - CGFloat(target.boundsBias))
+                draw.origin.x += (focus.x - layout.cardRect.midX) * progress
+                draw.origin.y += (focus.y - layout.cardRect.midY) * progress
+            } else if zoomed {
                 let focus = focusCenter(in: destination)
                 let original = CGPoint(
                     x: layout.cardRect.minX + (target.point.x - crop.minX) / crop.width * layout.cardRect.width,
@@ -111,20 +129,39 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
             } else if showsCamera, cameraLayout.kind == .split, cameraLayout.screenFit == .fill {
                 draw = restingSplitRect(draw, layout: layout, cameraLayout: cameraLayout, anchor: target.point)
             }
-            draw = contained(draw, in: destination.screenRect, crop: crop)
+            draw = contained(draw, in: usesZoomMotion ? layoutSpring.frame.screenRect : destination.screenRect, crop: crop)
             let drawnCrop = cropRect(draw, crop: crop)
-            if targets.snaps(at: time) || (reframe != nil && index == 0) {
+            if usesZoomMotion {
+                drawSpring = StudioRectSpring(drawnCrop)
+            } else if targets.snaps(at: time) || (reframe != nil && index == 0) {
                 layoutSpring = StudioLayoutSpring(destination)
                 drawSpring = StudioRectSpring(drawnCrop)
             } else if index > 0 {
                 layoutSpring.step(toward: destination, dt: dt)
                 drawSpring.step(toward: drawnCrop, dt: dt, profile: zoomAnimationStyle.spring)
             }
-            let frame = layoutSpring.frame
+            var frame = layoutSpring.frame
+            let appliedDrawRect = contained(sourceRect(drawSpring.rect, crop: crop), in: frame.screenRect, crop: crop)
+            if style.camera.zoomResponse == .magnification, cameraLayout.kind == .pictureInPicture {
+                let contentWidth = base.applying(frame).contentFillSize.width
+                let appliedMagnification = Double(appliedDrawRect.width / max(contentWidth, 0.001))
+                let resting = resolver.frame(for: cameraLayout)
+                let scaled = resolver.frame(for: cameraLayout, magnification: appliedMagnification)
+                let scale = scaled.cameraRect.width / max(resting.cameraRect.width, 0.001)
+                let point = cameraLayout.position
+                frame.cameraRect.origin.x += frame.cameraRect.width * (1 - scale) * point.x
+                frame.cameraRect.origin.y += frame.cameraRect.height * (1 - scale) * point.y
+                frame.cameraRect.size.width *= scale
+                frame.cameraRect.size.height *= scale
+                frame.cameraCornerRadius *= scale
+            }
             samples.append(Sample(
                 frame: frame,
-                drawRect: contained(sourceRect(drawSpring.rect, crop: crop), in: frame.screenRect, crop: crop),
-                isLayoutSettled: layoutSpring.isSettled(on: destination),
+                drawRect: appliedDrawRect,
+                isLayoutSettled: layoutSpring.isSettled(on: destination)
+                    && (style.camera.zoomResponse != .magnification || cameraLayout.kind != .pictureInPicture
+                        || (drawSpring.isSettled(on: drawnCrop)
+                            && (targets.zoomProgress(at: time) < 0.0001 || targets.zoomProgress(at: time) > 0.9999))),
                 isZoomed: zoomed
             ))
         }
@@ -174,7 +211,9 @@ nonisolated struct RecordingStudioMotionTimeline: Sendable {
                 cameraRect: a.frame.cameraRect.motionLerp(b.frame.cameraRect, t),
                 cameraCornerRadius: a.frame.cameraCornerRadius + (b.frame.cameraCornerRadius - a.frame.cameraCornerRadius) * t,
                 cameraOpacity: a.frame.cameraOpacity + (b.frame.cameraOpacity - a.frame.cameraOpacity) * t,
-                cameraCutout: a.frame.cameraCutout + (b.frame.cameraCutout - a.frame.cameraCutout) * t
+                cameraCutout: a.frame.cameraCutout + (b.frame.cameraCutout - a.frame.cameraCutout) * t,
+                cameraSquircle: a.frame.cameraSquircle + (b.frame.cameraSquircle - a.frame.cameraSquircle) * t,
+                cameraBubble: a.frame.cameraBubble + (b.frame.cameraBubble - a.frame.cameraBubble) * t
             ),
             drawRect: a.drawRect.motionLerp(b.drawRect, t),
             isLayoutSettled: a.isLayoutSettled && b.isLayoutSettled,
@@ -298,6 +337,8 @@ nonisolated private struct StudioLayoutSpring {
     private var screenOpacity: DampedSpring
     private var cameraOpacity: DampedSpring
     private var cameraCutout: DampedSpring
+    private var cameraSquircle: DampedSpring
+    private var cameraBubble: DampedSpring
 
     init(_ frame: RecordingCameraLayoutFrame) {
         screen = StudioRectSpring(frame.screenRect)
@@ -306,13 +347,17 @@ nonisolated private struct StudioLayoutSpring {
         screenOpacity = DampedSpring(position: frame.screenOpacity)
         cameraOpacity = DampedSpring(position: frame.cameraOpacity)
         cameraCutout = DampedSpring(position: frame.cameraCutout)
+        cameraSquircle = DampedSpring(position: frame.cameraSquircle)
+        cameraBubble = DampedSpring(position: frame.cameraBubble)
     }
 
     var frame: RecordingCameraLayoutFrame {
         RecordingCameraLayoutFrame(
             screenRect: screen.rect, screenOpacity: screenOpacity.position,
             cameraRect: camera.rect, cameraCornerRadius: radius.position, cameraOpacity: cameraOpacity.position,
-            cameraCutout: min(max(cameraCutout.position, 0), 1)
+            cameraCutout: min(max(cameraCutout.position, 0), 1),
+            cameraSquircle: min(max(cameraSquircle.position, 0), 1),
+            cameraBubble: min(max(cameraBubble.position, 0), 1)
         )
     }
 
@@ -323,6 +368,8 @@ nonisolated private struct StudioLayoutSpring {
         screenOpacity.motionStep(toward: frame.screenOpacity, dt: dt)
         cameraOpacity.motionStep(toward: frame.cameraOpacity, dt: dt)
         cameraCutout.motionStep(toward: frame.cameraCutout, dt: dt)
+        cameraSquircle.motionStep(toward: frame.cameraSquircle, dt: dt)
+        cameraBubble.motionStep(toward: frame.cameraBubble, dt: dt)
     }
 
     func isSettled(on frame: RecordingCameraLayoutFrame) -> Bool {
@@ -330,6 +377,8 @@ nonisolated private struct StudioLayoutSpring {
             && radius.isSettled(on: frame.cameraCornerRadius)
             && screenOpacity.isSettled(on: frame.screenOpacity) && cameraOpacity.isSettled(on: frame.cameraOpacity)
             && cameraCutout.isSettled(on: frame.cameraCutout)
+            && cameraSquircle.isSettled(on: frame.cameraSquircle)
+            && cameraBubble.isSettled(on: frame.cameraBubble)
     }
 }
 

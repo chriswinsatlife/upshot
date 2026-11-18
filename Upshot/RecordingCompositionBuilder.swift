@@ -8,6 +8,26 @@
 import AVFoundation
 
 nonisolated enum RecordingCompositionBuilder {
+    static func recordedAudioMuteRanges(in timeline: RecordingClipTimeline) -> [CMTimeRange] {
+        var ranges: [CMTimeRange] = []
+        var insertionTime = CMTime.zero
+        for clip in timeline.segments {
+            let duration = CMTime(
+                seconds: abs(clip.speed - 1) > 0.000_001 ? clip.editorDuration : clip.duration,
+                preferredTimescale: 600
+            )
+            if clip.muted, duration > .zero {
+                if let last = ranges.last, CMTimeRangeGetEnd(last) == insertionTime {
+                    ranges[ranges.count - 1].duration = last.duration + duration
+                } else {
+                    ranges.append(CMTimeRange(start: insertionTime, duration: duration))
+                }
+            }
+            insertionTime = insertionTime + duration
+        }
+        return ranges
+    }
+
     static func makeAsset(
         from sourceAsset: AVAsset,
         tracks sourceTracks: [AVAssetTrack],

@@ -24,6 +24,15 @@ nonisolated enum ExportAspectPreset: String, Codable, CaseIterable, Sendable {
     case vertical9x16
     case square
     case portrait4x5
+    case landscape3x2
+    case landscape4x3
+    case landscape5x4
+    case portrait3x4
+    case portrait2x3
+    case wide16x10
+    case vertical10x16
+    case wide3x1
+    case custom
 
     var title: String {
         switch self {
@@ -32,6 +41,15 @@ nonisolated enum ExportAspectPreset: String, Codable, CaseIterable, Sendable {
         case .vertical9x16: "9:16"
         case .square: "1:1"
         case .portrait4x5: "4:5"
+        case .landscape3x2: "3:2"
+        case .landscape4x3: "4:3"
+        case .landscape5x4: "5:4"
+        case .portrait3x4: "3:4"
+        case .portrait2x3: "2:3"
+        case .wide16x10: "16:10"
+        case .vertical10x16: "10:16"
+        case .wide3x1: "3:1"
+        case .custom: "Custom"
         }
     }
 
@@ -42,30 +60,65 @@ nonisolated enum ExportAspectPreset: String, Codable, CaseIterable, Sendable {
         case .vertical9x16: "Vertical 9:16 - Shorts, Reels, TikTok"
         case .square: "Square 1:1"
         case .portrait4x5: "Portrait 4:5 - feed posts"
+        case .landscape3x2, .landscape4x3, .landscape5x4, .wide16x10, .wide3x1:
+            "Landscape \(title)"
+        case .portrait3x4, .portrait2x3, .vertical10x16:
+            "Portrait \(title)"
+        case .custom: "Use a custom width-to-height ratio"
         }
     }
 
     /// Width divided by height; nil means "keep the source".
     var ratio: CGFloat? {
         switch self {
-        case .original: nil
+        case .original, .custom: nil
         case .wide16x9: 16.0 / 9.0
         case .vertical9x16: 9.0 / 16.0
         case .square: 1
         case .portrait4x5: 4.0 / 5.0
+        case .landscape3x2: 3.0 / 2.0
+        case .landscape4x3: 4.0 / 3.0
+        case .landscape5x4: 5.0 / 4.0
+        case .portrait3x4: 3.0 / 4.0
+        case .portrait2x3: 2.0 / 3.0
+        case .wide16x10: 16.0 / 10.0
+        case .vertical10x16: 10.0 / 16.0
+        case .wide3x1: 3
         }
     }
 
     /// Canvas for this preset derived from the source, preserving the
     /// source's pixel density along the surviving axis.
-    func canvasSize(for source: CGSize) -> CGSize {
-        guard let ratio, source.width > 0, source.height > 0 else { return source }
-        let sourceRatio = source.width / source.height
+    func resolvedRatio(customWidth: Int = 1920, customHeight: Int = 1080) -> CGFloat? {
+        guard self == .custom else { return ratio }
+        guard (128...7680).contains(customWidth), (128...7680).contains(customHeight) else {
+            return 16.0 / 9.0
+        }
+        return CGFloat(customWidth) / CGFloat(customHeight)
+    }
+
+    func canvasSize(for source: CGSize, customWidth: Int = 1920, customHeight: Int = 1080) -> CGSize {
+        guard let ratio = resolvedRatio(customWidth: customWidth, customHeight: customHeight),
+              source.width.isFinite, source.height.isFinite,
+              source.width > 0, source.height > 0 else { return source }
+        let bounds: CGSize
+        switch self {
+        case .landscape3x2, .landscape4x3, .landscape5x4, .portrait3x4,
+             .portrait2x3, .wide16x10, .vertical10x16, .wide3x1, .custom:
+            let longSide = max(source.width, source.height)
+            let shortSide = min(source.width, source.height)
+            bounds = ratio >= 1
+                ? CGSize(width: longSide, height: shortSide)
+                : CGSize(width: shortSide, height: longSide)
+        case .original, .wide16x9, .vertical9x16, .square, .portrait4x5:
+            bounds = source
+        }
+        let sourceRatio = bounds.width / bounds.height
         var size: CGSize
         if ratio < sourceRatio {
-            size = CGSize(width: source.height * ratio, height: source.height)
+            size = CGSize(width: bounds.height * ratio, height: bounds.height)
         } else {
-            size = CGSize(width: source.width, height: source.width / ratio)
+            size = CGSize(width: bounds.width, height: bounds.width / ratio)
         }
         size.width = CGFloat(max(2, Int(size.width.rounded()) & ~1))
         size.height = CGFloat(max(2, Int(size.height.rounded()) & ~1))
@@ -141,12 +194,14 @@ nonisolated struct ReframeTrack: Sendable {
     ///     anchor (which is the canvas center when unzoomed).
     static func build(
         preset: ExportAspectPreset,
+        customAspectWidth: Int = 1920,
+        customAspectHeight: Int = 1080,
         sourceSize: CGSize,
         viewportTimeline: ViewportTimeline,
         duration: TimeInterval,
         focus: (TimeInterval) -> CGPoint?
     ) -> ReframeTrack? {
-        guard let targetRatio = preset.ratio,
+        guard let targetRatio = preset.resolvedRatio(customWidth: customAspectWidth, customHeight: customAspectHeight),
               sourceSize.width > 0, sourceSize.height > 0,
               duration.isFinite, duration > 0 else {
             return nil

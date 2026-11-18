@@ -267,6 +267,7 @@ nonisolated struct RecordingTextOverlay: Identifiable, Codable, Equatable, Hasha
     var start: TimeInterval
     var end: TimeInterval
     var text = "Your text"
+    var coordinateSpace: RecordingOverlayCoordinateSpace = .canvas
     /// The text block's centre, as a fraction of the canvas.
     var center = CGPoint(x: 0.5, y: 0.5)
     /// Font size as a fraction of the canvas height.
@@ -292,6 +293,7 @@ nonisolated struct RecordingTextOverlay: Identifiable, Codable, Equatable, Hasha
         start = try container.decode(TimeInterval.self, forKey: .start)
         end = try container.decode(TimeInterval.self, forKey: .end)
         text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        coordinateSpace = try container.decodeIfPresent(RecordingOverlayCoordinateSpace.self, forKey: .coordinateSpace) ?? .canvas
         center = try container.decodeIfPresent(CGPoint.self, forKey: .center) ?? CGPoint(x: 0.5, y: 0.5)
         fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 0.08
         font = try container.decodeIfPresent(RecordingTextFont.self, forKey: .font) ?? .sans
@@ -308,30 +310,31 @@ nonisolated struct RecordingTextOverlay: Identifiable, Codable, Equatable, Hasha
     }
 }
 
-/// Where a text or effect sits on the edited timeline: its source range
-/// mapped through the cut. A cut inside it removes editor time between its
-/// slices, so they always merge into one block.
-nonisolated struct RecordingOverlayTimelineBlock<Item: Identifiable & Sendable>: Identifiable, Sendable {
+nonisolated struct RecordingOverlayTimelineBlock<Item: Identifiable & Sendable>: Identifiable, Sendable where Item.ID == UUID {
     let item: Item
     let editorStart: TimeInterval
     let editorEnd: TimeInterval
 
-    var id: Item.ID { item.id }
+    var fragmentID: UUID? = nil
+
+    var id: UUID { fragmentID ?? item.id }
 
     static func blocks(
         for items: [Item],
         clipTimeline: RecordingClipTimeline,
         range: (Item) -> (start: TimeInterval, end: TimeInterval)
     ) -> [RecordingOverlayTimelineBlock<Item>] {
-        items.compactMap { item in
+        items.flatMap { item in
             let source = range(item)
-            let slices = clipTimeline.slices(overlapping: source.start, sourceEnd: source.end)
-            guard let first = slices.first, let last = slices.last else { return nil }
-            return RecordingOverlayTimelineBlock(
-                item: item,
-                editorStart: first.editorStart,
-                editorEnd: last.editorEnd
-            )
+            return clipTimeline.editorRegions(overlapping: source.start, sourceEnd: source.end)
+                .enumerated().map { index, region in
+                    RecordingOverlayTimelineBlock(
+                        item: item,
+                        editorStart: region.start,
+                        editorEnd: region.end,
+                        fragmentID: index == 0 ? nil : region.fragmentID(for: item.id)
+                    )
+                }
         }
     }
 }

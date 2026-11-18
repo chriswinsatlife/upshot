@@ -258,7 +258,16 @@ struct StudioStylePreview: View {
             let card = frame.screenRect
 
             ZStack(alignment: .topLeading) {
-                BackgroundSwatch(style: style.background)
+                Group {
+                    if case .customWallpaper(let wallpaper) = style.background, !wallpaper.isVideo,
+                       style.backgroundBlur > 0, let image = RecordingStudioBackgroundBlur.wallpaper(
+                        at: wallpaper.url, canvasSize: size, amount: style.backgroundBlur
+                       ) {
+                        Image(decorative: image, scale: 1).resizable()
+                    } else {
+                        BackgroundSwatch(style: style.resolvedBackground(canvasSize: size))
+                    }
+                }
                     .frame(width: size.width, height: size.height)
 
                 Group {
@@ -272,11 +281,7 @@ struct StudioStylePreview: View {
                 }
                 .frame(width: card.width, height: card.height)
                 .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius * short, style: .continuous))
-                .shadow(
-                    color: .black.opacity(style.background == .none ? 0 : 0.5 * style.shadow),
-                    radius: short * 0.05 * style.shadow,
-                    y: short * 0.02 * style.shadow
-                )
+                .modifier(RecordingStudioFrameShadowModifier(style: style, canvasSize: size, isStylePreview: true))
                 .opacity(frame.screenOpacity)
                 .offset(x: card.minX, y: card.minY)
 

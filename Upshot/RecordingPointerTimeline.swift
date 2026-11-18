@@ -17,6 +17,12 @@ nonisolated struct PointerPressFrame: Sendable, Equatable {
     /// settling when the click lands, but feedback must mark the real target.
     var location: CGPoint
     var progress: Double
+    var elapsed: TimeInterval = 0
+    var isPressed = false
+    var releaseLocation: CGPoint? = nil
+    var releaseAge: TimeInterval? = nil
+    var bounceDuration: TimeInterval = 0.23
+    var holdDuration: TimeInterval? = nil
 }
 
 nonisolated struct PointerFrame: Sendable, Equatable {
@@ -29,6 +35,7 @@ nonisolated struct PointerFrame: Sendable, Equatable {
     var opacity: Double
     var blurRadius: Double
     var press: PointerPressFrame?
+    var clickPress: PointerPressFrame? = nil
 }
 
 nonisolated struct PointerTimeline: Sendable {
@@ -92,7 +99,8 @@ nonisolated struct PointerTimeline: Sendable {
                 + (b.tiltDegrees - a.tiltDegrees) * fraction,
             opacity: a.opacity + (b.opacity - a.opacity) * fraction,
             blurRadius: a.blurRadius + (b.blurRadius - a.blurRadius) * fraction,
-            press: fraction < 0.5 ? a.press : b.press
+            press: fraction < 0.5 ? a.press : b.press,
+            clickPress: fraction < 0.5 ? a.clickPress : b.clickPress
         )
     }
 
@@ -123,7 +131,8 @@ nonisolated struct PointerTimeline: Sendable {
         recordingSizeInPoints: CGSize = CGSize(width: 1_000, height: 1_000),
         fallbackArtwork: PointerArtwork? = nil,
         hideAfterInactivity: TimeInterval? = nil,
-        clipTimeline: RecordingClipTimeline? = nil
+        clipTimeline: RecordingClipTimeline? = nil,
+        cursorStyle: RecordingStudioStyle = RecordingStudioStyle()
     ) -> PointerTimeline {
         guard duration.isFinite, duration > 0 else { return .empty }
         let timelineDuration = clipTimeline?.duration ?? duration
@@ -142,10 +151,11 @@ nonisolated struct PointerTimeline: Sendable {
         let sourceSamples = stream.samples.filter {
             $0.time.isFinite && $0.x.isFinite && $0.y.isFinite
         }
-        let samples = timelineSamples(
+        let cursorMotion = RecordingCursorMotion(style: cursorStyle)
+        let samples = cursorMotion.prepare(timelineSamples(
             from: sourceSamples,
             clipTimeline: clipTimeline
-        )
+        ))
         guard let firstSample = samples.first else { return .empty }
 
         let pressSamples = samples.filter { $0.kind == .press }
@@ -156,6 +166,8 @@ nonisolated struct PointerTimeline: Sendable {
             from: samples,
             duration: timelineDuration
         )
+        let clickTimeline = RecordingPointerPressTimeline(samples: samples)
+        let glide = cursorMotion.glide
 
         var artworkByID: [String: PointerArtwork] = [:]
         for artwork in stream.artwork where artworkByID[artwork.artworkID] == nil {
@@ -222,7 +234,7 @@ nonisolated struct PointerTimeline: Sendable {
             let isDragging = latest.kind == .drag
             let motion = isDragging
                 ? PointerSpring.track
-                : (approachingPress ? PointerSpring.intercept : PointerSpring.glide)
+                : (approachingPress ? PointerSpring.intercept : glide)
             xSpring.step(toward: target.x, using: motion, dt: dt)
             ySpring.step(toward: target.y, using: motion, dt: dt)
 
@@ -240,7 +252,14 @@ nonisolated struct PointerTimeline: Sendable {
                 isHidden = time - previousTravel.time > hideAfterInactivity && !willMoveSoon
             }
 
-            let targetMagnification = (isPressed ? 0.8 : 1) * (isHidden ? 0.8 : 1)
+            let clickPress = clickTimeline.frame(at: time, bounceDuration: cursorStyle.cursorClickBounceDuration)
+            let clickMagnification: Double
+            if let strength = cursorStyle.cursorClickBounce {
+                clickMagnification = clickPress?.magnification(strength: strength) ?? 1
+            } else {
+                clickMagnification = isPressed ? 0.8 : 1
+            }
+            let targetMagnification = clickMagnification * (isHidden ? 0.8 : 1)
             magnificationSpring.step(toward: targetMagnification, using: PointerSpring.settle, dt: dt)
             opacitySpring.step(toward: isHidden ? 0 : 1, using: PointerSpring.settle, dt: dt)
             blurSpring.step(toward: isHidden ? 5 : 0, using: PointerSpring.settle, dt: dt)
@@ -252,7 +271,8 @@ nonisolated struct PointerTimeline: Sendable {
                 press = elapsed <= pulseDuration
                     ? PointerPressFrame(
                         location: event.location,
-                        progress: min(max(elapsed / pulseDuration, 0), 1)
+                        progress: min(max(elapsed / pulseDuration, 0), 1),
+                        elapsed: elapsed
                     )
                     : nil
             } else {
@@ -266,7 +286,8 @@ nonisolated struct PointerTimeline: Sendable {
                 tiltDegrees: 0,
                 opacity: min(max(opacitySpring.position, 0), 1),
                 blurRadius: max(0, blurSpring.position),
-                press: press
+                press: press,
+                clickPress: clickPress
             ))
         }
 
@@ -308,19 +329,15 @@ nonisolated struct PointerTimeline: Sendable {
         var ranked: [EditedPointerEvent] = []
         ranked.reserveCapacity(sourceSamples.count + clipTimeline.segments.count)
         for (index, sample) in sourceSamples.enumerated() {
-            guard let editorTime = editorTime(
-                forSourceEventTime: sample.time,
-                in: clipTimeline
-            ) else {
-                continue
+            for editorTime in clipTimeline.editorTimes(forSourceEventTime: sample.time) {
+                var mapped = sample
+                mapped.time = editorTime
+                ranked.append(EditedPointerEvent(
+                    event: mapped,
+                    boundarySeed: false,
+                    order: index
+                ))
             }
-            var mapped = sample
-            mapped.time = editorTime
-            ranked.append(EditedPointerEvent(
-                event: mapped,
-                boundarySeed: false,
-                order: index
-            ))
         }
 
         var editorStart: TimeInterval = 0
@@ -344,26 +361,6 @@ nonisolated struct PointerTimeline: Sendable {
             return lhs.order < rhs.order
         }
         return ranked.map(\.event)
-    }
-
-    /// Events use half-open source ranges so an event at an outgoing clip's
-    /// exact end cannot leak onto the first frame of the next clip. The public
-    /// clip lookup is inclusive because it also serves playhead placement,
-    /// which is a different boundary contract.
-    private static func editorTime(
-        forSourceEventTime sourceTime: TimeInterval,
-        in clipTimeline: RecordingClipTimeline
-    ) -> TimeInterval? {
-        var editorStart: TimeInterval = 0
-        for segment in clipTimeline.segments {
-            if sourceTime >= segment.sourceStart,
-               sourceTime < segment.sourceEnd {
-                return editorStart
-                    + (sourceTime - segment.sourceStart) / max(segment.speed, 1)
-            }
-            editorStart += segment.editorDuration
-        }
-        return nil
     }
 
     private static func sourceSample(
@@ -481,7 +478,6 @@ nonisolated private struct EditedPointerEvent {
 }
 
 nonisolated private enum PointerSpring {
-    static let glide = SpringConstant(tension: 470, friction: 70, inertia: 3, clampsOvershoot: true)
     static let intercept = SpringConstant(tension: 538, friction: 40, inertia: 1, clampsOvershoot: true)
     static let track = SpringConstant(tension: 1_000, friction: 40, inertia: 1, clampsOvershoot: true)
     static let settle = SpringConstant(tension: 300, friction: 30, inertia: 0.3)

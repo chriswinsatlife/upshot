@@ -110,6 +110,7 @@ struct StudioActionFooter: View {
             RecordingExportOptionsPopover(
                 initialSettings: model.exportSettings,
                 initialDeliveryOptions: model.exportDeliveryOptions,
+                canvasSize: model.basePreviewCanvasSize,
                 onConfirm: model.export(settings:)
             )
         }
@@ -129,6 +130,9 @@ struct StudioActionFooter: View {
         .popover(isPresented: $isShareOptionsPresented, arrowEdge: .top) {
             CloudUploadOptionsPopover(
                 suggestedTitle: model.projectDisplayName,
+                publishedPreviewURL: model.shareItemID.flatMap { CloudUploader.shared.uploadedPreviewURLs[$0] },
+                publishedShareURL: model.shareItemID.flatMap { CloudUploader.shared.uploadedURLs[$0] },
+                allowsNotes: true,
                 onConfirm: model.shareToCloud
             )
         }

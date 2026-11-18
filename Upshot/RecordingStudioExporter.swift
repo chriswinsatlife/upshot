@@ -19,12 +19,14 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let viewportTimeline: ViewportTimeline
         let pointerTimeline: PointerTimeline?
         let showsPressEffects: Bool
+        let clickEffectSettings: RecordingClickEffectSettings
         let keystrokeTimeline: KeystrokeCaptionTimeline?
         let keystrokePlacement: RecordingKeystrokePlacement
         let speedBadgeTimeline: SpeedBadgeTimeline?
         let speedBadgePlacement: RecordingKeystrokePlacement
         let subtitleTimeline: SubtitleTimeline?
         let subtitleStyle: SubtitleBarStyle
+        let captionTimeline: StudioCaptionTimeline?
         let karaokeTimeline: KaraokeTimeline?
         let canvasSize: CGSize
         let videoCropRect: CGRect
@@ -34,6 +36,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         var deliveryOptions = RecordingExportDeliveryOptions()
         var sourcePixelScale: Double = 1
         var recordedAudioTrackNames: [String] = []
+        var cameraLoops = false
+        var growingUploadSource: GrowingCloudUploadSource?
         let audioReplacementURL: URL?
         let audioVolume: Double
         let reframe: ReframeTrack?
@@ -42,6 +46,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let motionTimeline: RecordingStudioMotionTimeline
         var textOverlays: [RecordingTextOverlay] = []
         var redactions: [RecordingRedaction] = []
+        var arrowOverlays: [RecordingArrowOverlay] = []
         var imageOverlays: [RecordingImageOverlay] = []
         var audioClips: [RecordingAudioClip] = []
         var mediaDirectory: URL?
@@ -56,12 +61,14 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             viewportTimeline: ViewportTimeline,
             pointerTimeline: PointerTimeline?,
             showsPressEffects: Bool,
+            clickEffectSettings: RecordingClickEffectSettings = RecordingClickEffectSettings(),
             keystrokeTimeline: KeystrokeCaptionTimeline?,
             keystrokePlacement: RecordingKeystrokePlacement,
             speedBadgeTimeline: SpeedBadgeTimeline? = nil,
             speedBadgePlacement: RecordingKeystrokePlacement = .topRight,
             subtitleTimeline: SubtitleTimeline?,
             subtitleStyle: SubtitleBarStyle,
+            captionTimeline: StudioCaptionTimeline? = nil,
             karaokeTimeline: KaraokeTimeline? = nil,
             canvasSize: CGSize,
             videoCropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
@@ -75,6 +82,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             motionTimeline: RecordingStudioMotionTimeline = .none,
             textOverlays: [RecordingTextOverlay] = [],
             redactions: [RecordingRedaction] = [],
+            arrowOverlays: [RecordingArrowOverlay] = [],
             imageOverlays: [RecordingImageOverlay] = [],
             audioClips: [RecordingAudioClip] = [],
             mediaDirectory: URL? = nil
@@ -88,12 +96,14 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             self.viewportTimeline = viewportTimeline
             self.pointerTimeline = style.hidesCursor ? nil : pointerTimeline
             self.showsPressEffects = showsPressEffects
+            self.clickEffectSettings = clickEffectSettings.normalized
             self.keystrokeTimeline = keystrokeTimeline
             self.keystrokePlacement = keystrokePlacement
             self.speedBadgeTimeline = speedBadgeTimeline
             self.speedBadgePlacement = speedBadgePlacement
             self.subtitleTimeline = subtitleTimeline
             self.subtitleStyle = subtitleStyle
+            self.captionTimeline = captionTimeline
             self.karaokeTimeline = karaokeTimeline
             self.canvasSize = canvasSize
             self.videoCropRect = videoCropRect
@@ -107,6 +117,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             self.motionTimeline = motionTimeline
             self.textOverlays = textOverlays
             self.redactions = redactions
+            self.arrowOverlays = arrowOverlays
             self.imageOverlays = imageOverlays
             self.audioClips = audioClips
             self.mediaDirectory = mediaDirectory
@@ -117,6 +128,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         case noVideoTrack
         case writerFailed(Error?)
         case cancelled
+        case invalidResolution
 
         var errorDescription: String? {
             switch self {
@@ -126,6 +138,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 error?.localizedDescription ?? "Writing the exported video failed."
             case .cancelled:
                 "Export cancelled."
+            case .invalidResolution:
+                "Enter even dimensions between 2 and 8192 pixels."
             }
         }
     }
@@ -185,6 +199,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             frameRateOverride: configuration.deliveryOptions.format == .gif ? Double(configuration.deliveryOptions.gifFrameRate.rawValue) : nil
         )
         let sourceAsset = AVURLAsset(url: configuration.screenURL)
+        let wallpaperVideo = try await StudioWallpaperVideoFrameSource.make(background: configuration.style.background)
         let sourceDuration = try await sourceAsset.load(.duration).seconds
         let clipTimeline = configuration.clipTimeline.normalized(to: sourceDuration)
         guard clipTimeline.duration >= RecordingClipSegment.minimumDuration else {
@@ -208,10 +223,15 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
 
         let pixelScale = configuration.deliveryOptions.scalesRetinaToOne && configuration.sourcePixelScale.isFinite
             ? max(1, configuration.sourcePixelScale) : 1
-        let outputSize = Self.outputSize(
-            source: CGSize(width: configuration.canvasSize.width / pixelScale, height: configuration.canvasSize.height / pixelScale),
-            resolution: configuration.exportSettings.resolution
-        )
+        let sourceSize = CGSize(width: configuration.canvasSize.width / pixelScale, height: configuration.canvasSize.height / pixelScale)
+        let outputSize: CGSize
+        if configuration.deliveryOptions.format == .gif, let size = configuration.deliveryOptions.gifSize {
+            outputSize = size.outputSize(for: sourceSize)
+        } else {
+            var settings = configuration.exportSettings
+            if configuration.deliveryOptions.format == .gif { settings.resolutionUsesLongestEdge = false }
+            outputSize = try Self.outputSize(source: sourceSize, settings: settings)
+        }
         let canvasWidth = max(2, Int(outputSize.width.rounded()) & ~1)
         let canvasHeight = max(2, Int(outputSize.height.rounded()) & ~1)
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
@@ -250,6 +270,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                     clips: clipSources,
                     timeRange: exportTimeRange,
                     volume: configuration.audioVolume,
+                    clipTimeline: clipTimeline,
                     monoAudio: configuration.deliveryOptions.monoAudio
                 )
             if let mixed {
@@ -276,7 +297,9 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                     audioTracks: audioTracks,
                     audioSettings: RecordingAudioChannels.decodedSettings(mono: configuration.deliveryOptions.monoAudio)
                 )
-                output.audioMix = RecordingAudioGain.makeMix(tracks: audioTracks, volume: configuration.audioVolume)
+                output.audioMix = RecordingAudioGain.makeMix(
+                    tracks: audioTracks, volume: configuration.audioVolume, clipTimeline: clipTimeline
+                )
                 output.alwaysCopiesSampleData = false
                 screenReader.add(output)
                 audioOutput = output
@@ -286,26 +309,38 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let cameraFeed = try await CameraFrameFeed(
             url: configuration.cameraURL,
             offset: configuration.cameraOffset,
+            loopingTo: configuration.cameraLoops ? sourceDuration : nil,
             beauty: StudioCameraBeautyFrameFilter(beauty: configuration.style.camera.beauty)
         )
 
         let container = configuration.exportSettings.effectiveContainer
         let outputURL = Self.temporaryOutputURL(container: container)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: container.fileType)
-        writer.shouldOptimizeForNetworkUse = container.supportsFastStart
+        writer.shouldOptimizeForNetworkUse = container.supportsFastStart && configuration.growingUploadSource == nil
 
         let codec: AVVideoCodecType = configuration.exportSettings.codec == .hevc ? .hevc : .h264
+        let bitrate = Self.averageBitRate(
+            width: canvasWidth,
+            height: canvasHeight,
+            quality: configuration.exportSettings.quality,
+            frameRate: timing.framesPerSecond,
+            encodingMode: configuration.exportSettings.encodingMode
+        )
         var compressionProperties: [String: Any] = [
-            AVVideoAverageBitRateKey: Self.averageBitRate(
-                width: canvasWidth,
-                height: canvasHeight,
-                quality: configuration.exportSettings.quality
-            ),
+            AVVideoAverageBitRateKey: bitrate,
             AVVideoExpectedSourceFrameRateKey: timing.framesPerSecond
         ]
-        if codec == .hevc {
+        if let mode = configuration.exportSettings.encodingMode {
+            compressionProperties[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = mode == .fast
+        } else if codec == .hevc {
             compressionProperties[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = true
         }
+        AppLog.event("recording", "export_encoding_configured", fields: [
+            "mode": configuration.exportSettings.encodingMode?.rawValue ?? "legacy",
+            "codec": configuration.exportSettings.codec.rawValue,
+            "bitrate": String(bitrate),
+            "fps": String(timing.framesPerSecond), "width": String(canvasWidth), "height": String(canvasHeight)
+        ])
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: codec,
             AVVideoWidthKey: canvasWidth,
@@ -333,7 +368,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48_000,
                 AVNumberOfChannelsKey: configuration.deliveryOptions.monoAudio ? 1 : 2,
-                AVEncoderBitRateKey: 192_000
+                AVEncoderBitRateKey: configuration.exportSettings.encodingMode == nil
+                    ? 192_000 : configuration.exportSettings.quality.audioBitsPerSecond
             ])
             input.expectsMediaDataInRealTime = false
             writer.add(input)
@@ -348,7 +384,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 return try RecordingAudioTrackExport(
                     asset: screenAsset, track: track, timeRange: exportTimeRange,
                     volume: configuration.audioVolume, mono: configuration.deliveryOptions.monoAudio,
-                    title: title, writer: writer
+                    title: title, writer: writer, clipTimeline: clipTimeline
                 )
             }
         } else {
@@ -369,6 +405,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             throw ExportError.writerFailed(writer.error)
         }
         writer.startSession(atSourceTime: exportStartTime)
+        configuration.growingUploadSource?.opened(outputURL)
 
         let compositor = StudioFrameCompositor(
             canvasSize: canvasSize,
@@ -378,6 +415,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             viewportTimeline: configuration.viewportTimeline,
             pointerTimeline: configuration.pointerTimeline,
             showsPressEffects: configuration.showsPressEffects,
+            clickEffectSettings: configuration.clickEffectSettings,
             keystrokeTimeline: configuration.keystrokeTimeline,
             keystrokePlacement: configuration.keystrokePlacement,
             keystrokeAppearance: configuration.appearance.keystrokes,
@@ -386,6 +424,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             speedBadgePlacement: configuration.speedBadgePlacement,
             subtitleTimeline: configuration.subtitleTimeline,
             subtitleStyle: configuration.subtitleStyle,
+            captionTimeline: configuration.captionTimeline,
+            captionCanvasSize: configuration.canvasSize,
             karaokeTimeline: configuration.karaokeTimeline,
             includeBubble: cameraFeed != nil,
             cameraAspect: configuration.cameraAspect ?? RecordingCameraLayoutResolver.defaultCameraAspect,
@@ -395,12 +435,15 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             usesUniformPadding: configuration.usesUniformPadding,
             motionTimeline: configuration.motionTimeline,
             textOverlays: configuration.textOverlays,
+            arrowOverlays: configuration.arrowOverlays,
             imageOverlays: configuration.imageOverlays,
             mediaDirectory: configuration.mediaDirectory
         )
 
+        compositor.wallpaperVideo = wallpaperVideo
+
         var cutoutMattes: StudioCameraMatteTrack?
-        if cameraFeed != nil, configuration.cameraLayoutTimeline.usesCutout, let cameraURL = configuration.cameraURL {
+        if cameraFeed != nil, !configuration.cameraLoops, configuration.cameraLayoutTimeline.usesCutout, let cameraURL = configuration.cameraURL {
             let frameCount = timing.frameCount(for: clipTimeline.duration)
             let neededTimes = (0..<frameCount).compactMap { frame -> TimeInterval? in
                 let editorTime = timing.time(forFrame: frame)
@@ -592,6 +635,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         clips: [RecordingAudioClipSource],
         timeRange: CMTimeRange,
         volume: Double,
+        clipTimeline: RecordingClipTimeline,
         monoAudio: Bool = false
     ) async throws -> (reader: AVAssetReader, output: AVAssetReaderAudioMixOutput)? {
         let composition = AVMutableComposition()
@@ -625,7 +669,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             recordingTracks: tracks.filter { recordingTrackIDs.contains($0.trackID) },
             recordingVolume: volume,
             clips: clips.map(\.clip),
-            trackIDs: clipTrackIDs
+            trackIDs: clipTrackIDs,
+            clipTimeline: replacementURL == nil ? clipTimeline : nil
         )
         output.alwaysCopiesSampleData = false
         reader.add(output)
@@ -671,14 +716,32 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
 
     private static func outputSize(
         source: CGSize,
-        resolution: VideoCompressionResolution
-    ) -> CGSize {
-        guard source.width > 0, source.height > 0 else {
+        settings: VideoCompressionSettings
+    ) throws -> CGSize {
+        if settings.resolution == .custom {
+            guard settings.hasValidCustomResolution else {
+                AppLog.event("recording", "export_resolution_invalid", fields: [
+                    "width": String(settings.effectiveCustomWidth), "height": String(settings.effectiveCustomHeight)
+                ])
+                throw ExportError.invalidResolution
+            }
+            return CGSize(width: settings.effectiveCustomWidth, height: settings.effectiveCustomHeight)
+        }
+        guard source.width.isFinite, source.height.isFinite, source.width > 0, source.height > 0 else {
             return CGSize(width: 1920, height: 1080)
         }
+        if settings.resolutionUsesLongestEdge == true || [.p1440, .p2160].contains(settings.resolution) {
+            guard let edge = settings.resolution.longestEdge else { return source }
+            let scale = edge / max(source.width, source.height)
+            return CGSize(
+                width: max(2, Int((source.width * scale).rounded(.down)) & ~1),
+                height: max(2, Int((source.height * scale).rounded(.down)) & ~1)
+            )
+        }
         let requestedHeight: CGFloat?
-        switch resolution {
+        switch settings.resolution {
         case .original: requestedHeight = nil
+        case .custom, .p1440, .p2160: requestedHeight = nil
         case .p1080: requestedHeight = 1080
         case .p720: requestedHeight = 720
         case .p480: requestedHeight = 480
@@ -693,8 +756,30 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
     private static func averageBitRate(
         width: Int,
         height: Int,
-        quality: VideoCompressionQuality
+        quality: VideoCompressionQuality,
+        frameRate: Double,
+        encodingMode: VideoExportEncodingMode?
     ) -> Int {
+        if let encodingMode {
+            let pixels = Double(width) * Double(height)
+            let highQuality = quality == .high
+            let hd = highQuality ? 8_000_000.0 : 5_000_000.0
+            let fhd = highQuality ? 12_000_000.0 : 8_000_000.0
+            let uhd = highQuality ? 45_000_000.0 : 35_000_000.0
+            let base: Double
+            if pixels <= 1280 * 720 {
+                base = hd
+            } else if pixels <= 1920 * 1080 {
+                base = fhd
+            } else {
+                let fraction = min(1, (pixels - 1920 * 1080) / Double(3840 * 2160 - 1920 * 1080))
+                base = (fhd + (uhd - fhd) * fraction).rounded()
+            }
+            let qualityMultiplier = quality == .low ? 1.25 / 2.1 : 1
+            let requested = base * sqrt(max(1, frameRate / 30)) * encodingMode.bitrateMultiplier * qualityMultiplier
+            let detail = encodingMode == .quality ? pixels * frameRate * 0.3 : 0
+            return max(2_500_000, Int(max(requested, detail).rounded()))
+        }
         let factor: Double
         switch quality {
         case .high: factor = 3.2
@@ -708,7 +793,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
 
 nonisolated private final class CameraFrameFeed: @unchecked Sendable {
     private let reader: AVAssetReader
-    private let output: AVAssetReaderTrackOutput
+    private let output: AVAssetReaderOutput
     private let offset: TimeInterval
     private let beauty: StudioCameraBeautyFrameFilter?
     private var currentFrame: (buffer: CVPixelBuffer, time: TimeInterval)?
@@ -716,22 +801,28 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
     private var ahead: [(buffer: CVPixelBuffer, time: TimeInterval)] = []
     private var isFinished = false
 
-    init?(url: URL?, offset: TimeInterval, beauty: StudioCameraBeautyFrameFilter? = nil) async throws {
+    init?(url: URL?, offset: TimeInterval, loopingTo: TimeInterval? = nil, beauty: StudioCameraBeautyFrameFilter? = nil) async throws {
         guard let url else { return nil }
-        let asset = AVURLAsset(url: url)
+        let asset = try await RecordingCameraAsset.load(url: url, loopingTo: loopingTo)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else {
             return nil
         }
 
         let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(
-            track: track,
-            outputSettings: [
+        let settings: [String: Any] = [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferMetalCompatibilityKey as String: true,
                 kCVPixelBufferIOSurfacePropertiesKey as String: [:]
-            ]
-        )
+        ]
+        let transform = try await track.load(.preferredTransform)
+        let output: AVAssetReaderOutput
+        if transform != .identity {
+            let composed = AVAssetReaderVideoCompositionOutput(videoTracks: [track], videoSettings: settings)
+            composed.videoComposition = try await AVVideoComposition.videoComposition(withPropertiesOf: asset)
+            output = composed
+        } else {
+            output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+        }
         output.alwaysCopiesSampleData = false
         reader.add(output)
         guard reader.startReading() else {
@@ -781,10 +872,12 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
 nonisolated private struct SettledLayout: Hashable, Sendable {
     let layout: RecordingCameraLayout
     let isShrunk: Bool
+    var cameraWidth: CGFloat = 0
 }
 
 
-nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
+nonisolated final class StudioFrameCompositor: @unchecked Sendable {
+    var wallpaperVideo: StudioWallpaperVideoFrameSource?
     fileprivate final class LayoutResources {
         let layout: RecordingStudioLayout
         let backdrop: CGImage?
@@ -813,6 +906,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private static let maxLayoutResources = 2
     private var morphRenderer: StudioMetalScreenRenderer?
     private var morphRendererFailed = false
+    private var didLogScreenMotionBlurFallback = false
     private var morphCameraRenderer: StudioMorphCameraRenderer?
     private var morphCameraRendererFailed = false
     var cutoutMattes: StudioCameraMatteTrack?
@@ -842,6 +936,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let viewportTimeline: ViewportTimeline
     private let pointerTimeline: PointerTimeline?
     private let showsPressEffects: Bool
+    private let clickEffectSettings: RecordingClickEffectSettings
     private let keystrokeTimeline: KeystrokeCaptionTimeline?
     private let keystrokePlacement: RecordingKeystrokePlacement
     private let keystrokeAppearance: RecordingKeystrokeAppearance
@@ -851,10 +946,13 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let speedBadgePlacement: RecordingKeystrokePlacement
     private let subtitleTimeline: SubtitleTimeline?
     private let subtitleStyle: SubtitleBarStyle
+    private let captionTimeline: StudioCaptionTimeline?
+    private let captionCanvasSize: CGSize
     private let karaokeTimeline: KaraokeTimeline?
     private let reframe: ReframeTrack?
     private let motionTimeline: RecordingStudioMotionTimeline
     private let textOverlays: [RecordingTextOverlay]
+    private let arrowOverlays: [RecordingArrowOverlay]
     private let imageOverlays: [RecordingImageOverlay]
     private let mediaDirectory: URL?
     private let overlayImages = RecordingOverlayImageStore()
@@ -890,6 +988,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         viewportTimeline: ViewportTimeline,
         pointerTimeline: PointerTimeline?,
         showsPressEffects: Bool,
+        clickEffectSettings: RecordingClickEffectSettings = RecordingClickEffectSettings(),
         keystrokeTimeline: KeystrokeCaptionTimeline?,
         keystrokePlacement: RecordingKeystrokePlacement,
         keystrokeAppearance: RecordingKeystrokeAppearance = RecordingKeystrokeAppearance(),
@@ -898,6 +997,8 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         speedBadgePlacement: RecordingKeystrokePlacement = .topRight,
         subtitleTimeline: SubtitleTimeline?,
         subtitleStyle: SubtitleBarStyle = SubtitleBarStyle(),
+        captionTimeline: StudioCaptionTimeline? = nil,
+        captionCanvasSize: CGSize? = nil,
         karaokeTimeline: KaraokeTimeline? = nil,
         includeBubble: Bool,
         cameraAspect: CGFloat = RecordingCameraLayoutResolver.defaultCameraAspect,
@@ -907,11 +1008,13 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         usesUniformPadding: Bool = false,
         motionTimeline: RecordingStudioMotionTimeline = .none,
         textOverlays: [RecordingTextOverlay] = [],
+        arrowOverlays: [RecordingArrowOverlay] = [],
         imageOverlays: [RecordingImageOverlay] = [],
         mediaDirectory: URL? = nil
     ) {
         self.canvasSize = canvasSize
         self.textOverlays = textOverlays
+        self.arrowOverlays = arrowOverlays
         self.imageOverlays = mediaDirectory == nil ? [] : imageOverlays
         self.mediaDirectory = mediaDirectory
         self.videoCropRect = RecordingVideoCropGeometry.normalized(videoCropRect)
@@ -936,6 +1039,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         self.viewportTimeline = viewportTimeline
         self.pointerTimeline = style.hidesCursor ? nil : pointerTimeline
         self.showsPressEffects = showsPressEffects
+        self.clickEffectSettings = clickEffectSettings.normalized
         self.keystrokeTimeline = keystrokeTimeline
         self.keystrokePlacement = keystrokePlacement
         self.keystrokeAppearance = keystrokeAppearance
@@ -944,6 +1048,8 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         self.speedBadgePlacement = speedBadgePlacement
         self.subtitleTimeline = subtitleTimeline
         self.subtitleStyle = subtitleStyle
+        self.captionTimeline = captionTimeline
+        self.captionCanvasSize = captionCanvasSize ?? canvasSize
         self.karaokeTimeline = karaokeTimeline
         self.reframe = reframe
         self.motionTimeline = motionTimeline
@@ -967,13 +1073,20 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             guard motionTimeline.isLayoutSettled(at: editorTime) else { return (layout, nil) }
             return (layout, SettledLayout(
                 layout: layoutTimeline.layout(at: editorTime),
-                isShrunk: motionTimeline.isZoomed(at: editorTime)
+                isShrunk: motionTimeline.isZoomed(at: editorTime),
+                cameraWidth: layout.bubbleRect.width
             ))
         }
         let state = layoutTimeline.state(at: editorTime)
         let zoomProgress = viewportTimeline.zoomProgress(at: editorTime)
-        let layout = layoutResolver.layout(for: state, zoomProgress: zoomProgress)
+        let layout = layoutResolver.layout(for: state, zoomProgress: zoomProgress,
+                                           magnification: viewportFrame(at: editorTime).magnification)
         guard let settled = state.settledLayout else { return (layout, nil) }
+        if settled.kind == .pictureInPicture, style.camera.zoomResponse == .magnification {
+            guard zoomProgress < 0.0001 || zoomProgress > 0.9999 else { return (layout, nil) }
+            return (layout, SettledLayout(layout: settled, isShrunk: zoomProgress > 0.5,
+                                          cameraWidth: layout.bubbleRect.width))
+        }
         guard settled.kind == .pictureInPicture || settled.kind == .cutout else {
             return (layout, SettledLayout(layout: settled, isShrunk: false))
         }
@@ -1043,8 +1156,10 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         layout: RecordingStudioLayout, settled: SettledLayout?, sampleRects: [CGRect],
         editorTime: TimeInterval, sourceTime: TimeInterval
     ) -> ComposedFrameState? {
+        guard wallpaperVideo == nil else { return nil }
         guard shot != .orbit, !bypassFrameCache, settled != nil, sampleRects.count <= 1 else { return nil }
-        guard !textOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }),
+        if subtitleStyle.preset != .upshot, captionTimeline?.cue(at: sourceTime) != nil { return nil }
+        guard !arrowOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }), !textOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }),
               !imageOverlays.contains(where: { $0.isActive(atSourceTime: sourceTime) }) else { return nil }
         let showsScreen = layout.screenOpacity > 0.001
         let showsCamera = layout.cameraOpacity > 0.001 && layout.bubbleRect.width > 0
@@ -1071,6 +1186,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         fileprivate let layout: RecordingStudioLayout
         fileprivate let settledLayout: SettledLayout?
         fileprivate let sampleRects: [CGRect]
+        fileprivate let screenMotionBlur: StudioScreenMotionBlur
         fileprivate let shouldCacheScreen: Bool
         fileprivate let plansRestore: Bool
         fileprivate let submission: StudioMetalScreenRenderer.Submission?
@@ -1095,7 +1211,10 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             ? timing.screenSampleRects(at: editorTime, frameRect: screenDrawRect(at:))
             : []
         let sampleCount = sampleRects.count
-        let composedState = composedState(
+        let screenMotionBlur = showsScreen ? timing.screenMotionBlur(
+            at: editorTime, stageSize: canvasSize, frameRect: screenDrawRect(at:)
+        ) : StudioScreenMotionBlur()
+        let composedState = screenMotionBlur.isActive ? nil : composedState(
             screenFrame: screenFrame, cameraFrame: cameraFrame,
             layout: frameLayout, settled: settled, sampleRects: sampleRects,
             editorTime: editorTime, sourceTime: sourceTime
@@ -1104,7 +1223,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             return PendingFrame(
                 screenFrame: screenFrame, cameraFrame: cameraFrame, cameraTime: cameraTime,
                 editorTime: editorTime, sourceTime: sourceTime, layout: frameLayout,
-                settledLayout: settled, sampleRects: sampleRects, shouldCacheScreen: false,
+                settledLayout: settled, sampleRects: sampleRects, screenMotionBlur: screenMotionBlur, shouldCacheScreen: false,
                 plansRestore: false, submission: nil, resources: nil, cameraSubmission: nil,
                 reusesComposedFrame: true, destination: cached
             )
@@ -1114,11 +1233,11 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
               let destination = destinationBuffer else {
             throw RecordingStudioExporter.ExportError.writerFailed(nil)
         }
-        let plansRestore = !bypassScreenCache && sampleCount == 1
+        let plansRestore = wallpaperVideo == nil && !screenMotionBlur.isActive && !bypassScreenCache && sampleCount == 1
             && plannedCacheKey.map {
                 $0.source === screenFrame && $0.rect == sampleRects[0] && $0.layout == settled
             } == true
-        let shouldCacheScreen = !bypassScreenCache && sourceRepeatsOnNextFrame && sampleCount == 1
+        let shouldCacheScreen = wallpaperVideo == nil && !screenMotionBlur.isActive && !bypassScreenCache && sourceRepeatsOnNextFrame && sampleCount == 1
             && settled != nil
             && self.frameLayout(at: editorTime + timing.frameInterval).settled == settled
             && sampleRects[0] == screenDrawRect(at: editorTime + timing.frameInterval)
@@ -1132,11 +1251,14 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let submission: StudioMetalScreenRenderer.Submission? = if plansRestore {
             nil
         } else if settled == nil {
-            submitMorphMetal(screenFrame: screenFrame, sampleRects: sampleRects, layout: frameLayout, into: destination)
+            submitMorphMetal(
+                screenFrame: screenFrame, sampleRects: sampleRects, layout: frameLayout,
+                motionBlur: screenMotionBlur, into: destination
+            )
         } else {
             submitMetal(
                 screenFrame: screenFrame, sampleRects: sampleRects, settled: settled,
-                layout: frameLayout, into: destination
+                layout: frameLayout, motionBlur: screenMotionBlur, into: destination
             )
         }
         let resources = settled.map { resources(for: $0, layout: frameLayout) }
@@ -1156,6 +1278,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             layout: frameLayout,
             settledLayout: settled,
             sampleRects: sampleRects,
+            screenMotionBlur: screenMotionBlur,
             shouldCacheScreen: shouldCacheScreen,
             plansRestore: plansRestore,
             submission: submission,
@@ -1187,7 +1310,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         if !reusedScreen,
            let submission = frame.submission ?? submitMetal(
                screenFrame: screenFrame, sampleRects: sampleRects, settled: settled,
-               layout: frame.layout, into: destination
+               layout: frame.layout, motionBlur: frame.screenMotionBlur, into: destination
            ) {
             let waitStart = CFAbsoluteTimeGetCurrent()
             renderedWithMetal = StudioMetalScreenRenderer.wait(for: submission)
@@ -1196,6 +1319,13 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             else { metalFailed = true }
         }
         let shouldCacheScreen = frame.shouldCacheScreen
+        if frame.screenMotionBlur.isActive, !reusedScreen, !renderedWithMetal, !didLogScreenMotionBlurFallback {
+            didLogScreenMotionBlurFallback = true
+            let reason = forceCoreGraphics ? "requested_cpu" : (wallpaperVideo == nil ? "metal_unavailable" : "wallpaper_video")
+            AppLog.event("rendering", reason == "metal_unavailable" ? "screen_motion_blur_metal_failed" : "screen_motion_blur_fallback", fields: [
+                "fallback": "core_graphics", "reason": reason, "mode": String(describing: frame.screenMotionBlur.mode)
+            ])
+        }
         let editorTime = frame.editorTime
         let sourceTime = frame.sourceTime
         let cameraFrame = frame.cameraFrame
@@ -1206,9 +1336,18 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             throw RecordingStudioExporter.ExportError.writerFailed(nil)
         }
 
+        var wallpaperBackdrop: CGImage?
         let screenOpacity = layout.screenOpacity
         if !reusedScreen, !renderedWithMetal {
-            if let resources {
+            if let wallpaperVideo {
+                let wallpaperFrame = try wallpaperVideo.image(at: editorTime)
+                wallpaperBackdrop = Self.renderBackdrop(
+                    canvasSize: canvasSize, layout: nil, style: style,
+                    colorSpace: colorSpace, wallpaperFrame: wallpaperFrame
+                )
+                drawBackdrop(wallpaperBackdrop, in: context)
+                drawCardShadow(for: layout, in: context)
+            } else if let resources {
                 drawBackdrop(resources.backdrop, in: context)
             } else {
                 drawBackdrop(plainBackdrop, in: context)
@@ -1225,11 +1364,14 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 context.clip()
                 for (sample, drawRect) in sampleRects.enumerated() {
                     context.setAlpha(1 / CGFloat(sample + 1))
-                    context.draw(screenImage, in: flipped(drawRect))
+                    frame.screenMotionBlur.draw(screenImage, in: drawRect, canvasHeight: canvasSize.height, context: context)
                 }
                 context.restoreGState()
             } else {
-                drawMorphingScreen(screenImage, editorTime: editorTime, opacity: screenOpacity, in: context)
+                drawMorphingScreen(
+                    screenImage, editorTime: editorTime, opacity: screenOpacity,
+                    motionBlur: frame.screenMotionBlur, in: context
+                )
             }
             renderedScreen = true
         }
@@ -1252,7 +1394,8 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         if screenOpacity > 0.001, shot != .flat {
             try shotRenderer.draw(
                 shot: shot, card: layout.cardRect, cornerRadius: layout.cardCornerRadius,
-                canvasSize: canvasSize, background: plainBackdrop, shadow: style.shadow,
+                canvasSize: canvasSize, background: wallpaperBackdrop ?? plainBackdrop, shadow: style.shadow,
+                shadowLayers: style.usesLayeredShadow ? style.shadowLayers(canvasSize: canvasSize) : nil,
                 time: editorTime, in: context
             )
         }
@@ -1290,13 +1433,29 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             }
         }
 
-        drawImageOverlays(at: sourceTime, in: context)
-        drawTextOverlays(at: sourceTime, in: context)
+        let placement = RecordingOverlayPlacement(layout: layout, viewport: viewportFrame(at: editorTime))
+        drawArrowOverlays(at: sourceTime, placement: placement, in: context)
+        drawImageOverlays(at: sourceTime, placement: placement, in: context)
+        drawTextOverlays(at: sourceTime, placement: placement, in: context)
 
         drawSubtitleBar(at: sourceTime, in: context)
     }
 
-    private func drawImageOverlays(at sourceTime: TimeInterval, in context: CGContext) {
+    private func drawArrowOverlays(at sourceTime: TimeInterval, placement: RecordingOverlayPlacement, in context: CGContext) {
+        let active = arrowOverlays.filter { $0.isActive(atSourceTime: sourceTime) }
+        guard !active.isEmpty else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.translateBy(x: 0, y: canvasSize.height)
+        context.scaleBy(x: 1, y: -1)
+        for overlay in active {
+            placement.draw(space: overlay.coordinateSpace, canvasSize: canvasSize, in: context) { size in
+                RecordingArrowOverlayRenderer.draw(overlay, canvasSize: size, in: context)
+            }
+        }
+    }
+
+    private func drawImageOverlays(at sourceTime: TimeInterval, placement: RecordingOverlayPlacement, in context: CGContext) {
         guard let mediaDirectory else { return }
         let active = imageOverlays.filter { $0.isActive(atSourceTime: sourceTime) }
         guard !active.isEmpty else { return }
@@ -1305,19 +1464,19 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.scaleBy(x: 1, y: -1)
         for overlay in active {
             guard let image = overlayImages.image(at: mediaDirectory.appendingPathComponent(overlay.fileName)) else { continue }
-            RecordingImageOverlayRenderer.draw(overlay, image: image, atSourceTime: sourceTime, canvasSize: canvasSize, in: context)
+            RecordingImageOverlayRenderer.draw(overlay, image: image, atSourceTime: sourceTime, canvasSize: canvasSize, placement: placement, in: context)
         }
         context.restoreGState()
     }
 
-    private func drawTextOverlays(at sourceTime: TimeInterval, in context: CGContext) {
+    private func drawTextOverlays(at sourceTime: TimeInterval, placement: RecordingOverlayPlacement, in context: CGContext) {
         let active = textOverlays.filter { $0.isActive(atSourceTime: sourceTime) }
         guard !active.isEmpty else { return }
         context.saveGState()
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
         for overlay in active {
-            RecordingTextOverlayRenderer.draw(overlay, atSourceTime: sourceTime, canvasSize: canvasSize, in: context)
+            RecordingTextOverlayRenderer.draw(overlay, atSourceTime: sourceTime, canvasSize: canvasSize, placement: placement, in: context)
         }
         context.restoreGState()
     }
@@ -1358,23 +1517,23 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
 
     private func drawCardShadow(for layout: RecordingStudioLayout, in context: CGContext) {
         let opacity = layout.screenOpacity
-        guard opacity > 0.001, style.shadow > 0.01, style.background != .none,
+        guard opacity > 0.001, style.shadow > 0, style.background != .none,
               let shadowContext = morphShadowContext else { return }
         let scale = Self.morphShadowScale
-        let minDimension = min(canvasSize.width, canvasSize.height)
-        let blur = minDimension * 0.045 * style.shadow
         let small = CGRect(x: 0, y: 0, width: shadowContext.width, height: shadowContext.height)
         shadowContext.clear(small)
         shadowContext.saveGState()
         shadowContext.scaleBy(x: 1 / scale, y: 1 / scale)
-        Self.castShadow(
-            of: roundedPath(for: layout.cardRect, radius: layout.cardCornerRadius),
-            in: shadowContext,
-            offset: CGSize(width: 0, height: -blur * 0.35 / scale),
-            blur: blur / scale,
-            color: CGColor(gray: 0, alpha: 0.55 * style.shadow * opacity),
-            baseUnitsPerPoint: 1 / scale
-        )
+        for layer in style.shadowLayers(canvasSize: canvasSize, opacity: opacity) {
+            Self.castShadow(
+                of: roundedPath(for: layout.cardRect, radius: layout.cardCornerRadius),
+                in: shadowContext,
+                offset: CGSize(width: 0, height: -layer.offset / scale),
+                blur: layer.blur / scale,
+                color: CGColor(gray: 0, alpha: layer.alpha),
+                baseUnitsPerPoint: 1 / scale
+            )
+        }
         shadowContext.restoreGState()
         guard let image = shadowContext.makeImage() else { return }
         context.saveGState()
@@ -1387,9 +1546,10 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         screenFrame: CVPixelBuffer,
         sampleRects: [CGRect],
         layout: RecordingStudioLayout,
+        motionBlur: StudioScreenMotionBlur,
         into destination: CVPixelBuffer
     ) -> StudioMetalScreenRenderer.Submission? {
-        guard !sampleRects.isEmpty, !forceCoreGraphics, !metalFailed, !morphRendererFailed,
+        guard wallpaperVideo == nil, !sampleRects.isEmpty, !forceCoreGraphics, !metalFailed, !morphRendererFailed,
               StudioMetalScreenRenderer.shouldAccelerate(screenFrame: screenFrame, sampleRects: sampleRects)
         else { return nil }
         if morphRenderer == nil {
@@ -1405,9 +1565,10 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             sampleRects: sampleRects,
             card: StudioMetalScreenRenderer.MorphCard(
                 rect: layout.cardRect, cornerRadius: layout.cardCornerRadius,
-                opacity: layout.screenOpacity, shadow: cardShadow(for: layout)
+                opacity: layout.screenOpacity, shadow: cardShadow(for: layout),
+                contactShadow: cardShadow(for: layout, layerIndex: 1)
             ),
-            into: destination
+            motionBlur: motionBlur, into: destination
         ) else {
             morphRendererFailed = true
             return nil
@@ -1415,45 +1576,30 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         return submission
     }
 
-    private func cardShadow(for layout: RecordingStudioLayout) -> StudioMorphShadow? {
-        guard layout.screenOpacity > 0.001, style.shadow > 0.01, style.background != .none else { return nil }
-        let blur = min(canvasSize.width, canvasSize.height) * 0.045 * style.shadow
-        return StudioMorphShadow(offset: blur * 0.35, blur: blur, alpha: 0.55 * style.shadow * layout.screenOpacity)
-    }
-
-    private static let maxMorphSamples = 8
-
-    private func morphSampleTimes(at editorTime: TimeInterval, rect: (TimeInterval) -> CGRect) -> [TimeInterval] {
-        let times = timing.sampleTimes(at: editorTime, frameRect: rect)
-        guard times.count > Self.maxMorphSamples else { return times }
-        guard Self.maxMorphSamples > 1 else { return [editorTime] }
-        return (0..<Self.maxMorphSamples).map { index in
-            times[index * (times.count - 1) / (Self.maxMorphSamples - 1)]
-        }
+    private func cardShadow(for layout: RecordingStudioLayout, layerIndex: Int = 0) -> StudioMorphShadow? {
+        guard layout.screenOpacity > 0.001 else { return nil }
+        let layers = style.shadowLayers(canvasSize: canvasSize, opacity: layout.screenOpacity)
+        guard layers.indices.contains(layerIndex) else { return nil }
+        let layer = layers[layerIndex]
+        return StudioMorphShadow(offset: layer.offset, blur: layer.blur, alpha: layer.alpha)
     }
 
     private func drawMorphingScreen(
         _ screenImage: CGImage,
         editorTime: TimeInterval,
         opacity: CGFloat,
+        motionBlur: StudioScreenMotionBlur,
         in context: CGContext
     ) {
-        let times = morphSampleTimes(at: editorTime, rect: screenDrawRect(at:))
-        guard !times.isEmpty else { return }
         context.saveGState()
         context.setAlpha(opacity)
-        context.beginTransparencyLayer(auxiliaryInfo: nil)
-        context.setBlendMode(.plusLighter)
-        for time in times {
-            let sample = frameLayout(at: time).layout
-            context.saveGState()
-            context.setAlpha(1 / CGFloat(times.count))
-            context.addPath(roundedPath(for: sample.cardRect, radius: sample.cardCornerRadius))
-            context.clip()
-            context.draw(screenImage, in: flipped(sample.frameRect(for: viewportFrame(at: time))))
-            context.restoreGState()
-        }
-        context.endTransparencyLayer()
+        let sample = frameLayout(at: editorTime).layout
+        context.addPath(roundedPath(for: sample.cardRect, radius: sample.cardCornerRadius))
+        context.clip()
+        motionBlur.draw(
+            screenImage, in: sample.frameRect(for: viewportFrame(at: editorTime)),
+            canvasHeight: canvasSize.height, context: context
+        )
         context.restoreGState()
     }
 
@@ -1465,7 +1611,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         guard !times.isEmpty, bubble.width > 0, bubble.height > 0 else { return }
         let imageSize = CGSize(width: cameraImage.width, height: cameraImage.height)
         let minDimension = min(canvasSize.width, canvasSize.height)
-        let path = roundedPath(for: bubble, radius: layout.bubbleCornerRadius)
+        let path = roundedPath(for: bubble, radius: layout.bubbleCornerRadius, squircle: layout.cameraSquircle)
 
         Self.castShadow(
             of: path,
@@ -1475,30 +1621,29 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             color: CGColor(gray: 0, alpha: 0.35 * opacity)
         )
 
+        let layerRect = bubbleContentRect(for: layout)
+        guard let content = renderLayer(covering: layerRect, draw: { layer in
+            layer.saveGState()
+            layer.addPath(path)
+            layer.clip()
+            layer.interpolationQuality = .medium
+            for (index, time) in times.enumerated() {
+                let sample = frameLayout(at: time).layout.bubbleRect
+                guard sample.width > 0, sample.height > 0 else { continue }
+                let fillRect = RecordingCameraCropGeometry.fillRect(
+                    sourceSize: imageSize, destination: sample, crop: style.camera.pictureCrop
+                )
+                layer.setAlpha(index == 0 ? 1 : 1 / CGFloat(index + 1))
+                layer.draw(cameraImage, in: flipped(fillRect))
+            }
+            layer.restoreGState()
+            drawBubbleRim(layout: layout, in: layer)
+        }) else { return }
+        let framed = finishBubbleContent(content, layout: layout)
         context.saveGState()
-        context.addPath(path)
-        context.clip()
-        context.interpolationQuality = .medium
-        for (index, time) in times.enumerated() {
-            let sample = frameLayout(at: time).layout.bubbleRect
-            guard sample.width > 0, sample.height > 0 else { continue }
-            let scale = max(sample.width / imageSize.width, sample.height / imageSize.height)
-            let fillSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
-            let fillRect = CGRect(
-                x: sample.midX - fillSize.width / 2,
-                y: sample.midY - fillSize.height / 2,
-                width: fillSize.width,
-                height: fillSize.height
-            )
-            context.setAlpha(index == 0 ? opacity : 1 / CGFloat(index + 1))
-            context.draw(cameraImage, in: flipped(fillRect))
-        }
+        context.setAlpha(opacity)
+        context.draw(framed, in: layerRect)
         context.restoreGState()
-
-        context.addPath(roundedPath(for: bubble.insetBy(dx: 0.5, dy: 0.5), radius: layout.bubbleCornerRadius))
-        context.setStrokeColor(CGColor(gray: 1, alpha: 0.25 * opacity))
-        context.setLineWidth(max(1, minDimension * 0.0018))
-        context.strokePath()
     }
 
     private static let maxMorphCameraSamples = 4
@@ -1516,6 +1661,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private func renderMorphingCamera(
         _ cameraFrame: CVPixelBuffer, editorTime: TimeInterval, into destination: CVPixelBuffer
     ) -> Bool {
+        guard bubbleFrame(for: layout) == .legacy, layout.cameraSquircle < 0.001 else { return false }
         guard !forceCoreGraphics, !morphCameraRendererFailed else { return false }
         if morphCameraRenderer == nil { morphCameraRenderer = StudioMorphCameraRenderer() }
         guard let renderer = morphCameraRenderer else {
@@ -1628,9 +1774,10 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         sampleRects: [CGRect],
         settled: SettledLayout?,
         layout: RecordingStudioLayout,
+        motionBlur: StudioScreenMotionBlur,
         into destination: CVPixelBuffer
     ) -> StudioMetalScreenRenderer.Submission? {
-        guard let settled, !sampleRects.isEmpty, !forceCoreGraphics, !metalFailed,
+        guard wallpaperVideo == nil, let settled, !sampleRects.isEmpty, !forceCoreGraphics, !metalFailed,
               StudioMetalScreenRenderer.shouldAccelerate(screenFrame: screenFrame, sampleRects: sampleRects)
         else { return nil }
         let resources = resources(for: settled, layout: layout)
@@ -1643,7 +1790,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let submitStart = CFAbsoluteTimeGetCurrent()
         defer { metalSeconds += CFAbsoluteTimeGetCurrent() - submitStart }
         guard let submission = resources.metalRenderer?.submit(
-            screenFrame: screenFrame, sampleRects: sampleRects, into: destination
+            screenFrame: screenFrame, sampleRects: sampleRects, motionBlur: motionBlur, into: destination
         ) else {
             metalFailed = true
             return nil
@@ -1670,6 +1817,39 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         flipped(layout.bubbleRect).integral
     }
 
+    private func bubbleFrame(for layout: RecordingStudioLayout) -> RecordingCameraPreviewFrame {
+        layout.cameraCutout > 0.001 || layout.cameraBubble < 0.5 ? .legacy : style.camera.previewFrame
+    }
+
+    private func drawBubbleRim(layout: RecordingStudioLayout, in context: CGContext) {
+        let frame = bubbleFrame(for: layout)
+        guard frame != .softBlur else { return }
+        let bubble = layout.bubbleRect
+        context.saveGState()
+        if frame == .standard {
+            let path = roundedPath(for: bubble, radius: layout.bubbleCornerRadius, squircle: layout.cameraSquircle)
+            context.addPath(path)
+            context.clip()
+            context.addPath(path)
+            context.setStrokeColor(CGColor(gray: 1, alpha: 0.26))
+            context.setLineWidth(StudioCameraBubbleFrame.rimWidth(size: bubble.size) * 2)
+        } else {
+            context.addPath(roundedPath(for: bubble.insetBy(dx: 0.5, dy: 0.5), radius: layout.bubbleCornerRadius,
+                                        squircle: layout.cameraSquircle))
+            context.setStrokeColor(CGColor(gray: 1, alpha: 0.25))
+            context.setLineWidth(max(1, min(canvasSize.width, canvasSize.height) * 0.0018))
+        }
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private func finishBubbleContent(_ image: CGImage, layout: RecordingStudioLayout) -> CGImage {
+        guard bubbleFrame(for: layout) == .softBlur else { return image }
+        return StudioCameraBubbleFrame.soften(image, size: bubbleContentRect(for: layout).size,
+                                              radius: layout.bubbleCornerRadius, squircle: layout.cameraSquircle,
+                                              canvasWidth: canvasSize.width) ?? image
+    }
+
     private func bubbleShadow(for resources: LayoutResources) -> (image: CGImage, rect: CGRect)? {
         if let cached = resources.bubbleShadow { return cached }
         let layout = resources.layout
@@ -1682,7 +1862,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             .integral
         let image = renderLayer(covering: rect, draw: { context in
             Self.castShadow(
-                of: roundedPath(for: layout.bubbleRect, radius: layout.bubbleCornerRadius),
+                of: roundedPath(for: layout.bubbleRect, radius: layout.bubbleCornerRadius, squircle: layout.cameraSquircle),
                 in: context,
                 offset: CGSize(width: 0, height: -offset),
                 blur: blur,
@@ -1704,13 +1884,11 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     }
 
     private func cameraFillRect(_ cameraFrame: CVPixelBuffer, layout: RecordingStudioLayout) -> CGRect {
-        let bubble = layout.bubbleRect
-        let scale = max(bubble.width / CGFloat(CVPixelBufferGetWidth(cameraFrame)),
-                        bubble.height / CGFloat(CVPixelBufferGetHeight(cameraFrame)))
-        let size = CGSize(width: CGFloat(CVPixelBufferGetWidth(cameraFrame)) * scale,
-                          height: CGFloat(CVPixelBufferGetHeight(cameraFrame)) * scale)
-        return CGRect(x: bubble.midX - size.width / 2, y: bubble.midY - size.height / 2,
-                      width: size.width, height: size.height)
+        RecordingCameraCropGeometry.fillRect(
+            sourceSize: CGSize(width: CVPixelBufferGetWidth(cameraFrame), height: CVPixelBufferGetHeight(cameraFrame)),
+            destination: layout.bubbleRect,
+            crop: style.camera.pictureCrop
+        )
     }
 
     private func prepareCamera(
@@ -1738,14 +1916,13 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let imageSize = CGSize(width: CVPixelBufferGetWidth(cameraFrame), height: CVPixelBufferGetHeight(cameraFrame))
         guard imageSize.width > 0, imageSize.height > 0 else { return nil }
         let fillRect = cameraFillRect(cameraFrame, layout: layout)
-        let minDimension = min(canvasSize.width, canvasSize.height)
         let layerRect = bubbleContentRect(for: layout)
         let scaledCamera = submission.flatMap { cameraScaler(for: resources)?.image(for: $0) }
         let cameraImage = scaledCamera == nil ? Self.makeImage(from: cameraFrame, colorSpace: colorSpace) : nil
         guard scaledCamera != nil || cameraImage != nil else { return nil }
-        return renderLayer(covering: layerRect) { context in
+        guard let content = renderLayer(covering: layerRect, draw: { context in
             context.saveGState()
-            context.addPath(roundedPath(for: bubble, radius: layout.bubbleCornerRadius))
+            context.addPath(roundedPath(for: bubble, radius: layout.bubbleCornerRadius, squircle: layout.cameraSquircle))
             context.clip()
             if let scaledCamera {
                 context.draw(scaledCamera, in: layerRect)
@@ -1754,11 +1931,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             }
             context.restoreGState()
 
-            context.addPath(roundedPath(for: bubble.insetBy(dx: 0.5, dy: 0.5), radius: layout.bubbleCornerRadius))
-            context.setStrokeColor(CGColor(gray: 1, alpha: 0.25))
-            context.setLineWidth(max(1, minDimension * 0.0018))
-            context.strokePath()
-        }
+            drawBubbleRim(layout: layout, in: context)
+        }) else { return nil }
+        return finishBubbleContent(content, layout: layout)
     }
 
     private func renderLayer(covering rect: CGRect, draw: (CGContext) -> Void) -> CGImage? {
@@ -1790,23 +1965,28 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             y: canvasSize.height - (drawRect.minY + pointer.location.y * drawRect.height)
         )
 
-        var pressGeometry: (tip: CGPoint, effect: PointerPressEffectGeometry)?
-        if showsPressEffects, let press = pointer.press {
+        let resolvedArtwork = artwork(for: pointer, in: pointerTimeline)
+        var pressGeometry: (tip: CGPoint, effect: RecordingClickEffectGeometry)?
+        if showsPressEffects,
+           let press = clickEffectSettings.effect == .impact ? pointer.press : pointer.clickPress {
+            let location = clickEffectSettings.location(for: press, cursor: pointer.location)
             pressGeometry = (
                 CGPoint(
-                    x: drawRect.minX + press.location.x * drawRect.width,
-                    y: canvasSize.height - (drawRect.minY + press.location.y * drawRect.height)
+                    x: drawRect.minX + location.x * drawRect.width,
+                    y: canvasSize.height - (drawRect.minY + location.y * drawRect.height)
                 ),
-                PointerPressEffectStyle.geometry(
-                    progress: press.progress,
+                clickEffectSettings.geometry(
+                    press: press,
                     referenceHeight: layout.contentFillSize.height,
-                    cursorScale: pointerScale
+                    cursorScale: pointerScale,
+                    cursorHeight: layout.contentFillSize.height * PointerArtworkMetrics.heightRatio
+                        * pointerScale * (resolvedArtwork?.intrinsicScale ?? 1)
                 )
             )
         }
         var artworkPlacement: (image: CGImage, rect: CGRect, transform: CGAffineTransform)?
         var material: (material: PointerMaterial, radius: CGFloat)?
-        if let resolved = artwork(for: pointer, in: pointerTimeline) {
+        if let resolved = resolvedArtwork {
             let height = layout.contentFillSize.height
                 * PointerArtworkMetrics.heightRatio
                 * pointerScale
@@ -1833,15 +2013,15 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
 
         var bounds = CGRect.null
         if let pressGeometry {
-            let reach = max(pressGeometry.effect.impactRadius, pressGeometry.effect.rippleRadius)
-                + pressGeometry.effect.rippleLineWidth
-            bounds = bounds.union(CGRect(
-                x: pressGeometry.tip.x - reach, y: pressGeometry.tip.y - reach,
-                width: reach * 2, height: reach * 2
-            ))
+            bounds = bounds.union(pressGeometry.effect.bounds.offsetBy(dx: pressGeometry.tip.x, dy: pressGeometry.tip.y))
         }
         if let artworkPlacement {
-            bounds = bounds.union(artworkPlacement.rect.applying(artworkPlacement.transform))
+            let shadowPadding = resolvedArtwork?.needsCursorShadow == true
+                ? RecordingCursorShadowMetrics.padding * CGFloat(max(pointer.magnification, 0.1)) : 0
+            bounds = bounds.union(
+                artworkPlacement.rect.applying(artworkPlacement.transform)
+                    .insetBy(dx: -shadowPadding, dy: -shadowPadding)
+            )
         }
         guard !bounds.isNull else { return }
         let card = flipped(layout.cardRect)
@@ -1858,34 +2038,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
         if let pressGeometry {
             let (pressTip, effect) = pressGeometry
-            let accent = PointerPressEffectStyle.color
-            context.saveGState()
-            context.setFillColor(CGColor(
-                red: accent.red,
-                green: accent.green,
-                blue: accent.blue,
-                alpha: effect.impactOpacity
-            ))
-            context.fillEllipse(in: CGRect(
-                x: pressTip.x - effect.impactRadius,
-                y: pressTip.y - effect.impactRadius,
-                width: effect.impactRadius * 2,
-                height: effect.impactRadius * 2
-            ))
-            context.setStrokeColor(CGColor(
-                red: accent.red,
-                green: accent.green,
-                blue: accent.blue,
-                alpha: effect.rippleOpacity
-            ))
-            context.setLineWidth(effect.rippleLineWidth)
-            context.strokeEllipse(in: CGRect(
-                x: pressTip.x - effect.rippleRadius,
-                y: pressTip.y - effect.rippleRadius,
-                width: effect.rippleRadius * 2,
-                height: effect.rippleRadius * 2
-            ))
-            context.restoreGState()
+            effect.draw(in: context, at: pressTip, settings: clickEffectSettings)
         }
 
         if let artworkPlacement {
@@ -1894,6 +2047,23 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 pointerMaterialRenderer.draw(material.material, center: tip, radius: material.radius, in: context)
             }
             context.concatenate(artworkPlacement.transform)
+            if resolvedArtwork?.usesNearestNeighborSampling == true {
+                context.interpolationQuality = .none
+            }
+            if resolvedArtwork?.needsCursorShadow == true {
+                let transform = artworkPlacement.transform
+                let offsetX = RecordingCursorShadowMetrics.offsetX
+                let offsetY = -RecordingCursorShadowMetrics.offsetY
+                let scale = sqrt(transform.a * transform.a + transform.b * transform.b)
+                context.setShadow(
+                    offset: CGSize(
+                        width: transform.a * offsetX + transform.c * offsetY,
+                        height: transform.b * offsetX + transform.d * offsetY
+                    ),
+                    blur: RecordingCursorShadowMetrics.blurRadius * scale,
+                    color: CGColor(gray: 0, alpha: RecordingCursorShadowMetrics.opacity)
+                )
+            }
             context.draw(artworkPlacement.image, in: artworkPlacement.rect)
         }
         context.restoreGState()
@@ -1976,6 +2146,17 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     }
 
     private func drawSubtitleBar(at time: TimeInterval, in context: CGContext) {
+        if subtitleStyle.preset != .upshot {
+            guard let captionTimeline,
+                  let frame = StudioCaptionRenderer.layout(timeline: captionTimeline, style: subtitleStyle, canvasSize: captionCanvasSize, time: time) else { return }
+            context.saveGState()
+            context.translateBy(x: 0, y: canvasSize.height)
+            context.scaleBy(x: 1, y: -1)
+            context.scaleBy(x: canvasSize.width / max(1, captionCanvasSize.width), y: canvasSize.height / max(1, captionCanvasSize.height))
+            StudioCaptionRenderer.draw(frame, style: subtitleStyle, time: time, in: context)
+            context.restoreGState()
+            return
+        }
         guard let subtitleTimeline,
               let text = subtitleTimeline.text(at: time) else {
             return
@@ -2068,6 +2249,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         let colorKey = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
 
         guard subtitleStyle.highlightsSpokenWord,
+              captionTimeline?.cue(at: time)?.hasRecognizedTiming != false,
               let karaokeTimeline,
               let karaokeLine = karaokeTimeline.line(at: time),
               !karaokeLine.words.isEmpty else {
@@ -2110,7 +2292,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         aspectRatio: CGFloat,
         intrinsicScale: CGFloat,
         material: PointerMaterial?,
-        leans: Bool
+        leans: Bool,
+        usesNearestNeighborSampling: Bool,
+        needsCursorShadow: Bool
     )? {
         if let resolved = timeline.artwork(id: pointer.artworkID),
            let image = artworkImage(for: resolved) {
@@ -2120,7 +2304,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 resolved.aspectRatio,
                 resolved.intrinsicScale,
                 PointerShape(artworkID: resolved.artworkID)?.material,
-                resolved.leans
+                resolved.leans,
+                resolved.usesNearestNeighborSampling,
+                resolved.needsCursorShadow
             )
         }
         return nil
@@ -2147,8 +2333,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         )
     }
 
-    private func roundedPath(for rect: CGRect, radius: CGFloat) -> CGPath {
+    private func roundedPath(for rect: CGRect, radius: CGFloat, squircle: CGFloat = 0) -> CGPath {
         let flippedRect = flipped(rect)
+        if squircle > 0.001 { return StudioCameraBubbleFrame.path(in: flippedRect, radius: radius, squircle: squircle) }
         let boundedRadius = min(radius, min(flippedRect.width, flippedRect.height) / 2)
         guard boundedRadius > 0.5 else { return CGPath(rect: flippedRect, transform: nil) }
         return CGPath(
@@ -2182,7 +2369,8 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         canvasSize: CGSize,
         layout: RecordingStudioLayout?,
         style: RecordingStudioStyle,
-        colorSpace: CGColorSpace
+        colorSpace: CGColorSpace,
+        wallpaperFrame: CGImage? = nil
     ) -> CGImage? {
         guard let context = CGContext(
             data: nil,
@@ -2198,7 +2386,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         context.interpolationQuality = .high
         let canvasRect = CGRect(origin: .zero, size: canvasSize)
 
-        switch style.background {
+        switch style.resolvedBackground(canvasSize: canvasSize) {
         case .none:
             context.setFillColor(CGColor(gray: 0.04, alpha: 1))
             context.fill(canvasRect)
@@ -2234,7 +2422,20 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 ])
             }
         case .customWallpaper(let wallpaper):
-            if let source = CGImageSourceCreateWithURL(wallpaper.url as CFURL, nil),
+            if let wallpaperFrame {
+                if let image = RecordingStudioBackgroundBlur.render(
+                    wallpaperFrame, canvasSize: canvasSize, amount: style.backgroundBlur
+                ) {
+                    context.draw(image, in: canvasRect)
+                }
+            } else if wallpaper.isVideo {
+                context.setFillColor(CGColor(gray: 0.04, alpha: 1))
+                context.fill(canvasRect)
+            } else if style.backgroundBlur > 0, let image = RecordingStudioBackgroundBlur.wallpaper(
+                at: wallpaper.url, canvasSize: canvasSize, amount: style.backgroundBlur
+            ) {
+                context.draw(image, in: canvasRect)
+            } else if let source = CGImageSourceCreateWithURL(wallpaper.url as CFURL, nil),
                let image = CGImageSourceCreateImageAtIndex(source, 0, [
                    kCGImageSourceShouldCache: false
                ] as CFDictionary) {
@@ -2254,9 +2455,7 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
             }
         }
 
-        if let layout, style.shadow > 0.01, style.background != .none {
-            let minDimension = min(canvasSize.width, canvasSize.height)
-            let blur = minDimension * 0.045 * style.shadow
+        if let layout, style.shadow > 0, style.background != .none {
             let cardRect = CGRect(
                 x: layout.cardRect.minX,
                 y: canvasSize.height - layout.cardRect.maxY,
@@ -2268,13 +2467,15 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
                 ? CGPath(roundedRect: cardRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
                 : CGPath(rect: cardRect, transform: nil)
 
-            castShadow(
-                of: path,
-                in: context,
-                offset: CGSize(width: 0, height: -blur * 0.35),
-                blur: blur,
-                color: CGColor(gray: 0, alpha: 0.55 * style.shadow)
-            )
+            for layer in style.shadowLayers(canvasSize: canvasSize) {
+                castShadow(
+                    of: path,
+                    in: context,
+                    offset: CGSize(width: 0, height: -layer.offset),
+                    blur: layer.blur,
+                    color: CGColor(gray: 0, alpha: layer.alpha)
+                )
+            }
         }
 
         return context.makeImage()

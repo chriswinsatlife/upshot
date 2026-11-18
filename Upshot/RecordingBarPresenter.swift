@@ -31,6 +31,11 @@ final class RecordingBarPresenter {
 
     @ObservationIgnored private var panel: NSPanel?
 
+    var recordingWindowIDs: Set<CGWindowID> {
+        guard mode == .recording, let panel, panel.isVisible, panel.windowNumber > 0 else { return [] }
+        return [CGWindowID(panel.windowNumber)]
+    }
+
     private init() {}
 
     func toggleTeleprompter() {

@@ -74,6 +74,7 @@ nonisolated final class RecordingExportShotRenderer {
         canvasSize: CGSize,
         background: CGImage?,
         shadow: CGFloat,
+        shadowLayers: [RecordingStudioShadowLayer]? = nil,
         time: TimeInterval,
         in graphics: CGContext
     ) throws {
@@ -109,8 +110,20 @@ nonisolated final class RecordingExportShotRenderer {
             graphics.fill(CGRect(origin: .zero, size: canvasSize))
         }
         graphics.setBlendMode(.normal)
-        let blur = min(canvasSize.width, canvasSize.height) * 0.045 * shadow
-        graphics.setShadow(offset: CGSize(width: 0, height: -blur * 0.35), blur: blur, color: CGColor(gray: 0, alpha: shadow * 0.55))
+        if let shadowLayers {
+            let shift = (transformed.extent.maxX + canvasSize.width + 2).rounded(.up)
+            for layer in shadowLayers {
+                graphics.saveGState()
+                graphics.translateBy(x: -shift, y: 0)
+                graphics.setShadow(offset: CGSize(width: shift, height: -layer.offset), blur: layer.blur,
+                                   color: CGColor(gray: 0, alpha: layer.alpha))
+                graphics.draw(rendered, in: transformed.extent)
+                graphics.restoreGState()
+            }
+        } else {
+            let blur = min(canvasSize.width, canvasSize.height) * 0.045 * shadow
+            graphics.setShadow(offset: CGSize(width: 0, height: -blur * 0.35), blur: blur, color: CGColor(gray: 0, alpha: shadow * 0.55))
+        }
         graphics.draw(rendered, in: transformed.extent)
         graphics.restoreGState()
     }

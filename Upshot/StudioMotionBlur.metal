@@ -63,12 +63,54 @@ static float4 reconstruct(texture2d<float, access::sample> image, float2 uv, flo
     return clamp(color, 0.0f, 1.0f);
 }
 
+static float4 screenMotionSample(texture2d<float, access::sample> source, float2 pixel,
+                                 float4 rect, constant float4 *motion) {
+    if (motion[0].x == 1.0f) {
+        float2 velocity = motion[0].yz;
+        float magnitude = length(velocity);
+        if (magnitude < 0.01f) return reconstruct(source, (pixel - rect.xy) / rect.zw, rect.zw);
+        float offset = -motion[1].z / magnitude - 0.5f;
+        float4 color = reconstruct(source, (pixel - rect.xy) / rect.zw, rect.zw);
+        for (uint i = 0; i < 12; ++i) {
+            float2 position = pixel + velocity * (float(i) / 12.0f + offset);
+            color += reconstruct(source, (position - rect.xy) / rect.zw, rect.zw);
+        }
+        return color / 13.0f;
+    }
+    if (motion[0].x == 2.0f && motion[0].w > 0) {
+        float2 direction = (motion[1].xy - pixel) * motion[0].w;
+        float4 color = 0;
+        float total = 0;
+        for (uint i = 0; i < 32; ++i) {
+            float percent = (float(i) + 0.5f) / 32.0f;
+            float weight = 4.0f * (percent - percent * percent);
+            float2 position = pixel + direction * percent;
+            color += reconstruct(source, (position - rect.xy) / rect.zw, rect.zw) * weight;
+            total += weight;
+        }
+        return color / total;
+    }
+    return reconstruct(source, (pixel - rect.xy) / rect.zw, rect.zw);
+}
+
+kernel void studioPreviewMotionBlur(texture2d<float, access::sample> source [[texture(0)]],
+                                    texture2d<float, access::write> output [[texture(1)]],
+                                    constant float4 &rect [[buffer(0)]],
+                                    constant float4 *motion [[buffer(3)]],
+                                    uint2 pixel [[thread_position_in_grid]]) {
+    if (pixel.x >= output.get_width() || pixel.y >= output.get_height()) return;
+    float2 center = float2(pixel) + 0.5f;
+    float2 edge = clamp(min(center - rect.xy, rect.xy + rect.zw - center) + 0.5f, 0.0f, 1.0f);
+    output.write(screenMotionSample(source, center, rect, motion) * edge.x * edge.y, pixel);
+}
+
 kernel void studioMotionBlur(texture2d<float, access::sample> source [[texture(0)]],
                              texture2d<float, access::read> backdrop [[texture(1)]],
                              texture2d<float, access::read> clip [[texture(2)]],
                              texture2d<float, access::write> output [[texture(3)]],
                              constant float4 *rects [[buffer(0)]],
                              constant uint &count [[buffer(1)]],
+                             constant float4 *motion [[buffer(3)]],
                              uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= output.get_width() || pixel.y >= output.get_height()) return;
     float4 result = backdrop.read(pixel);
@@ -80,7 +122,7 @@ kernel void studioMotionBlur(texture2d<float, access::sample> source [[texture(0
             float2 edge = clamp(min(center - rect.xy, rect.xy + rect.zw - center) + 0.5f, 0.0f, 1.0f);
             float opacity = coverage * edge.x * edge.y / float(i + 1);
             if (opacity == 0) continue;
-            float4 value = reconstruct(source, (center - rect.xy) / rect.zw, rect.zw);
+            float4 value = screenMotionSample(source, center, rect, motion);
             // Match the existing premultiplied source-over running average
             // in encoded sRGB bytes, including 8-bit rounding after each draw.
             result = round(clamp(value * opacity + result * (1.0f - value.a * opacity), 0.0f, 1.0f) * 255.0f) / 255.0f;
@@ -163,12 +205,14 @@ kernel void studioMorphScreen(texture2d<float, access::sample> source [[texture(
                               constant float4 *rects [[buffer(0)]],
                               constant uint &count [[buffer(1)]],
                               constant float4 *shape [[buffer(2)]],
+                              constant float4 *motion [[buffer(3)]],
                               uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= output.get_width() || pixel.y >= output.get_height()) return;
     float2 center = float2(pixel) + 0.5f;
     float4 card = shape[0];
     float radius = shape[1].x;
     float4 result = castShadow(backdrop.read(pixel), center, card, radius, shape[2]);
+    result = castShadow(result, center, card, radius, shape[3]);
     float coverage = clamp(0.5f - roundedRectDistance(center, card, radius), 0.0f, 1.0f) * shape[1].y;
     if (coverage > 0) {
         for (uint i = 0; i < count; ++i) {
@@ -176,7 +220,7 @@ kernel void studioMorphScreen(texture2d<float, access::sample> source [[texture(
             float2 edge = clamp(min(center - rect.xy, rect.xy + rect.zw - center) + 0.5f, 0.0f, 1.0f);
             float opacity = coverage * edge.x * edge.y / float(i + 1);
             if (opacity == 0) continue;
-            float4 value = reconstruct(source, (center - rect.xy) / rect.zw, rect.zw);
+            float4 value = screenMotionSample(source, center, rect, motion);
             result = round(clamp(value * opacity + result * (1.0f - value.a * opacity), 0.0f, 1.0f) * 255.0f) / 255.0f;
         }
     }

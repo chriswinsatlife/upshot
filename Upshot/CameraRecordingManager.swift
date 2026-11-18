@@ -65,10 +65,16 @@ final class CameraRecordingManager {
             }
             await stopPreview()
         }
-        guard RecordingDeviceCatalog.camera(withID: deviceID) != nil else { return false }
+        guard RecordingDeviceCatalog.camera(withID: deviceID) != nil else {
+            AppLog.event("recording", "camera_preview_device_unavailable")
+            return false
+        }
 
         let authorized = await AVCaptureDevice.requestAccess(for: .video)
-        guard authorized else { return false }
+        guard authorized else {
+            AppLog.event("recording", "camera_preview_access_denied")
+            return false
+        }
 
         do {
             try await engine.startSession(deviceID: deviceID)
@@ -221,6 +227,7 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
     private var input: AVCaptureDeviceInput?
     private var output: AVCaptureVideoDataOutput?
     private var activeDevice: AVCaptureDevice?
+    private var captureFrameRate: Double = 30
 
     func startSession(deviceID: String) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -229,6 +236,11 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
                     guard let device = RecordingDeviceCatalog.camera(withID: deviceID) else {
                         throw CocoaError(.fileNoSuchFile)
                     }
+                    if activeDevice?.uniqueID == deviceID, session.isRunning {
+                        continuation.resume()
+                        return
+                    }
+                    if input != nil { teardownSession() }
                     try configureSession(device: device)
                     activeDevice = device
                     session.startRunning()
@@ -253,7 +265,8 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
                     try writer.setup(
                         outputURL: outputURL,
                         width: Int(dimensions.width),
-                        height: Int(dimensions.height)
+                        height: Int(dimensions.height),
+                        frameRate: captureFrameRate
                     )
                     continuation.resume()
                 } catch {
@@ -323,6 +336,8 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
         session.addOutput(output)
         self.output = output
 
+        try configureFrameRate(device: device)
+
         if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = true
@@ -336,6 +351,49 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
                 continuation.resume()
             }
         }
+    }
+
+    private func configureFrameRate(device: AVCaptureDevice) throws {
+        let formats = device.formats.filter { format in
+            format.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= 60 && $0.maxFrameRate >= 60 }
+        }
+        let preferred = formats.min { lhs, rhs in
+            let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+            let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+            return abs(Int(left.width) - 1280) + abs(Int(left.height) - 720)
+                < abs(Int(right.width) - 1280) + abs(Int(right.height) - 720)
+        }
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+        if let preferred {
+            device.activeFormat = preferred
+        }
+        let currentDuration = device.activeVideoMinFrameDuration.seconds
+        captureFrameRate = currentDuration.isFinite && currentDuration > 0 ? 1 / currentDuration : 30
+        guard !device.isVideoFrameDurationLocked, !device.isFollowingExternalSyncDevice else {
+            AppLog.event("recording", "camera_frame_rate_device_controlled", fields: ["fps": String(captureFrameRate)])
+            return
+        }
+        if device.activeFormat.isAutoVideoFrameRateSupported { device.isAutoVideoFrameRateEnabled = false }
+        let ranges = device.activeFormat.videoSupportedFrameRateRanges
+        let frameRate: Double?
+        if ranges.contains(where: { $0.minFrameRate <= 60 && $0.maxFrameRate >= 60 }) {
+            frameRate = 60
+        } else {
+            frameRate = ranges.filter { $0.minFrameRate <= 60 }.map { min($0.maxFrameRate, 60) }.max()
+        }
+        if let frameRate, frameRate > 0 {
+            let duration = frameRate == 60 ? CMTime(value: 1, timescale: 60)
+                : ranges.first(where: { $0.maxFrameRate == frameRate })?.minFrameDuration
+                    ?? CMTime(seconds: 1 / frameRate, preferredTimescale: 600_000)
+            device.activeVideoMinFrameDuration = duration
+            device.activeVideoMaxFrameDuration = duration
+            captureFrameRate = 1 / duration.seconds
+        }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        AppLog.event("recording", "camera_capture_format_selected", fields: [
+            "fps": String(captureFrameRate), "width": String(dimensions.width), "height": String(dimensions.height)
+        ])
     }
 
     private func teardownSession() {
@@ -379,7 +437,7 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
     private var pixelWidth = 0
     private var pixelHeight = 0
 
-    func setup(outputURL: URL, width: Int, height: Int) throws {
+    func setup(outputURL: URL, width: Int, height: Int, frameRate: Double) throws {
         try? FileManager.default.removeItem(at: outputURL)
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
@@ -391,8 +449,8 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: max(6_000_000, width * height * 6),
-                AVVideoExpectedSourceFrameRateKey: 30
+                AVVideoAverageBitRateKey: max(8_000_000, width * height * 6),
+                AVVideoExpectedSourceFrameRateKey: frameRate
             ] as [String: Any]
         ]
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)

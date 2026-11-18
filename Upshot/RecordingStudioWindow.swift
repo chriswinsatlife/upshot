@@ -8,19 +8,42 @@ struct RecordingStudioWindow: View {
 
     @State private var model: RecordingStudioModel?
 
+    private var finalizationState: RecordingStudioFinalization.State? {
+        RecordingStudioFinalization.shared.state(for: url)
+    }
+
+    private var readyURL: URL? {
+        switch finalizationState {
+        case .finishing, .failed: nil
+        case .ready(let readyURL): readyURL
+        case nil: url
+        }
+    }
+
     var body: some View {
         Group {
-            if let model {
+            if case .failed(let message) = finalizationState {
+                ContentUnavailableView(
+                    "Couldn't open recording",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(message)
+                )
+                .frame(minWidth: 900, minHeight: 600)
+            } else if let model {
                 RecordingStudioContent(model: model)
+            } else if finalizationState == .finishing {
+                ProgressView("Finishing recording…")
+                    .frame(minWidth: 900, minHeight: 600)
             } else {
                 ProgressView()
                     .frame(minWidth: 900, minHeight: 600)
             }
         }
         .modifier(CaptureLibraryEditorRegistration(url: url))
-        .task(id: url) {
-            guard let url else { return }
+        .task(id: readyURL) {
             model?.teardown()
+            model = nil
+            guard let url = readyURL else { return }
             AgentProjects.shared.releaseAgentModel(for: url)
             let newModel = RecordingStudioModel(url: url)
             model = newModel
@@ -106,6 +129,7 @@ struct RecordingStudioContent: View {
                 .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
             }
         }
+        .onCommand(#selector(NSDocument.saveAs(_:))) { model.saveProjectAs() }
         .navigationTitle(windowTitle)
         .navigationSubtitle(windowSubtitle)
         .onWindowChange { window in
@@ -122,7 +146,9 @@ struct RecordingStudioContent: View {
         }
         .onDeleteCommand {
             withAnimation(.morphIfAllowed) {
-                if let textID = model.selectedTextID {
+                if let arrowID = model.selectedArrowID {
+                    model.removeArrow(id: arrowID)
+                } else if let textID = model.selectedTextID {
                     model.removeText(id: textID)
                 } else if let imageID = model.selectedImageID {
                     model.removeImage(id: imageID)
@@ -217,6 +243,10 @@ struct RecordingStudioContent: View {
         }
         .keyboardShortcut("s", modifiers: .command)
         .disabled(!model.hasUnsavedChanges && !model.saveFlash)
+        .contextMenu {
+            Button("Save As…") { model.saveProjectAs() }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+        }
         .help(model.hasUnsavedChanges ? "Save this project (⌘S)" : "All changes saved")
         .motion(.morphQuick, value: model.saveFlash)
     }
@@ -485,7 +515,8 @@ private struct StudioCanvasComposition: View {
             ? resolver.frame(for: .screenOnly)
             : resolver.frame(
                 for: timeline.state(at: model.displayTime),
-                zoomProgress: model.zoomProgress(at: model.displayTime)
+                zoomProgress: model.zoomProgress(at: model.displayTime),
+                magnification: model.previewViewportFrame(at: model.displayTime).magnification
             )
     }
 
@@ -515,7 +546,13 @@ private struct StudioCanvasComposition: View {
             )
 
             ZStack {
-                StudioBackgroundView(style: model.previewBackground ?? model.style.background)
+                StudioBackgroundView(
+                    style: model.style.resolvedBackground(canvasSize: canvasSize, preview: model.previewBackground),
+                    backgroundBlur: model.style.backgroundBlur,
+                    canvasSize: canvasSize,
+                    time: model.displayTime,
+                    isPlaying: model.isPlaying
+                )
                     .frame(width: canvasSize.width, height: canvasSize.height)
                     .clipped()
 
@@ -529,17 +566,18 @@ private struct StudioCanvasComposition: View {
                         layout: layout,
                         isMovable: !isEditingVideoCrop && !model.isPlaying && frame == target
                             && settled?.kind == .pictureInPicture,
-                        destination: { corner in
+                        destination: { dropped in
                             var moved = settled ?? model.style.camera.layout
-                            moved.corner = corner
+                            moved.setPosition(resolver.position(for: dropped))
                             let destination = resolver.frame(
                                 for: moved,
-                                zoomProgress: model.zoomProgress(at: model.displayTime)
+                                zoomProgress: model.zoomProgress(at: model.displayTime),
+                                magnification: model.previewViewportFrame(at: model.displayTime).magnification
                             )
                             return (destination.cameraRect, destination.cameraCornerRadius)
                         },
-                        onDrop: { dropped, corner in
-                            dropCamera(at: dropped, into: corner, from: frame)
+                        onDrop: { dropped in
+                            dropCamera(at: dropped, from: frame)
                         }
                     )
                     .opacity(layout.cameraOpacity)
@@ -548,19 +586,23 @@ private struct StudioCanvasComposition: View {
                 if !isEditingVideoCrop {
                     let texts = model.texts(atEditorTime: model.displayTime)
                     let images = overlayImages
-                    if !texts.isEmpty || !images.isEmpty {
+                    let arrows = model.arrows(atEditorTime: model.displayTime)
+                    if !texts.isEmpty || !images.isEmpty || !arrows.isEmpty {
                         StudioCanvasOverlayLayer(
                             images: images,
                             texts: texts,
+                            arrows: arrows,
+                            placement: RecordingOverlayPlacement(layout: layout, viewport: state),
                             sourceTime: model.sourceTime(atEditorTime: model.displayTime),
                             canvasSize: canvasSize
                         )
                     }
                 }
 
-                if let subtitle = model.subtitleText(at: model.displayTime) {
+                if model.showsSubtitles, model.hasSubtitles {
                     StudioSubtitleBarView(
-                        text: subtitle,
+                        model: model,
+                        text: model.subtitleText(at: model.displayTime) ?? "",
                         karaokeLine: model.subtitleKaraokeLine(at: model.displayTime),
                         style: model.subtitleStyle,
                         canvasSize: canvasSize
@@ -588,13 +630,21 @@ private struct StudioCanvasComposition: View {
                             )
                         }
                     }
+                    let arrows = model.arrows(atEditorTime: model.displayTime)
+                    if !arrows.isEmpty, layout.screenOpacity > 0.5 {
+                        StudioArrowEditingLayer(
+                            model: model, arrows: arrows,
+                            placement: RecordingOverlayPlacement(layout: layout, viewport: state), canvasSize: canvasSize
+                        )
+                    }
                     let images = model.images(atEditorTime: model.displayTime)
+
                     if !images.isEmpty {
-                        StudioImageEditingLayer(model: model, images: images, canvasSize: canvasSize)
+                        StudioImageEditingLayer(model: model, images: images, placement: RecordingOverlayPlacement(layout: layout, viewport: state), canvasSize: canvasSize)
                     }
                     let texts = model.texts(atEditorTime: model.displayTime)
                     if !texts.isEmpty {
-                        StudioTextEditingLayer(model: model, texts: texts, canvasSize: canvasSize)
+                        StudioTextEditingLayer(model: model, texts: texts, placement: RecordingOverlayPlacement(layout: layout, viewport: state), canvasSize: canvasSize)
                     }
                 }
             }
@@ -615,13 +665,15 @@ private struct StudioCanvasComposition: View {
         }
     }
 
-    private func dropCamera(at dropped: CGRect, into corner: RecordingCameraLayout.Corner, from frame: RecordingCameraLayoutFrame) {
+    private func dropCamera(at dropped: CGRect, from frame: RecordingCameraLayoutFrame) {
         if !reduceMotion {
             var from = frame
             from.cameraRect = dropped
             startMorph(from: from)
         }
-        model.editLayout(atEditorTime: model.displayTime, actionName: "Move Camera") { $0.corner = corner }
+        let point = resolver.position(for: dropped)
+        model.editLayout(atEditorTime: model.displayTime, actionName: "Move Camera") { $0.setPosition(point) }
+        AppLog.event("recording", "camera_bubble_dragged", fields: ["x": String(Double(point.x)), "y": String(Double(point.y))])
     }
 
     private func startMorph(from: RecordingCameraLayoutFrame) {
@@ -662,6 +714,19 @@ private struct StudioCanvasComposition: View {
             )
             .frame(width: layout.cardRect.width, height: layout.cardRect.height)
             .overlay {
+                StudioScreenMotionBlurPreview(
+                    player: model.screenPlayer,
+                    drawRect: layout.frameRect(for: state),
+                    cardRect: layout.cardRect,
+                    canvasSize: canvasSize,
+                    time: model.displayTime,
+                    isPlaying: model.isPlaying && !isEditingVideoCrop && zoomTargetCue == nil,
+                    shutterFraction: (model.exportDeliveryOptions.motionBlurLevel
+                        ?? (model.exportSettings.effectiveMotionBlurEnabled ? .high : .off)).shutterFraction
+                )
+                .allowsHitTesting(false)
+            }
+            .overlay {
                 if let pointer = model.pointerFrame(at: model.displayTime) {
                     StudioCursorOverlay(
                         pointer: pointer,
@@ -670,7 +735,8 @@ private struct StudioCanvasComposition: View {
                         cardSize: layout.cardRect.size,
                         contentSize: layout.contentFillSize,
                         cursorScale: model.style.cursorScale,
-                        showsClickEffect: model.showsPressEffects
+                        showsClickEffect: model.showsPressEffects,
+                        clickEffectSettings: model.clickEffectSettings
                     )
                 }
             }
@@ -694,11 +760,8 @@ private struct StudioCanvasComposition: View {
                     )
                 }
             }
-            .shadow(
-                color: .black.opacity((model.previewBackground ?? model.style.background) == .none ? 0 : 0.55 * model.style.shadow),
-                radius: min(canvasSize.width, canvasSize.height) * 0.045 * model.style.shadow,
-                y: min(canvasSize.width, canvasSize.height) * 0.016 * model.style.shadow
-            )
+            .modifier(RecordingStudioFrameShadowModifier(style: model.style, canvasSize: canvasSize,
+                                                       previewBackground: model.previewBackground))
             .position(x: layout.cardRect.midX, y: layout.cardRect.midY)
     }
 
@@ -900,6 +963,7 @@ private struct StudioCursorOverlay: View {
     var contentSize: CGSize?
     let cursorScale: CGFloat
     let showsClickEffect: Bool
+    let clickEffectSettings: RecordingClickEffectSettings
 
     var body: some View {
         let content = contentSize ?? cardSize
@@ -909,34 +973,33 @@ private struct StudioCursorOverlay: View {
         )
 
         ZStack(alignment: .topLeading) {
-            if showsClickEffect, let press = pointer.press {
+            if showsClickEffect,
+               let press = clickEffectSettings.effect == .impact ? pointer.press : pointer.clickPress {
+                let location = clickEffectSettings.location(for: press, cursor: pointer.location)
                 let pressTip = CGPoint(
                     x: cardSize.width / 2
-                        + content.width * state.magnification * (press.location.x - state.anchor.x),
+                        + content.width * state.magnification * (location.x - state.anchor.x),
                     y: cardSize.height / 2
-                        + content.height * state.magnification * (press.location.y - state.anchor.y)
+                        + content.height * state.magnification * (location.y - state.anchor.y)
                 )
-                let effect = PointerPressEffectStyle.geometry(
-                    progress: press.progress,
+                let effect = clickEffectSettings.geometry(
+                    press: press,
                     referenceHeight: content.height,
-                    cursorScale: cursorScale
+                    cursorScale: cursorScale,
+                    cursorHeight: content.height * PointerArtworkMetrics.heightRatio
+                        * cursorScale * (artwork?.intrinsicScale ?? 1)
                 )
-                let accent = PointerPressEffectStyle.color
-                Circle()
-                    .fill(
-                        Color(red: accent.red, green: accent.green, blue: accent.blue)
-                            .opacity(effect.impactOpacity)
-                    )
-                    .frame(width: effect.impactRadius * 2, height: effect.impactRadius * 2)
-                    .position(x: pressTip.x, y: pressTip.y)
-                Circle()
-                    .stroke(
-                        Color(red: accent.red, green: accent.green, blue: accent.blue)
-                            .opacity(effect.rippleOpacity),
-                        lineWidth: effect.rippleLineWidth
-                    )
-                    .frame(width: effect.rippleRadius * 2, height: effect.rippleRadius * 2)
-                    .position(x: pressTip.x, y: pressTip.y)
+                let accent = clickEffectSettings.rgb
+                Canvas { context, _ in
+                    context.translateBy(x: pressTip.x, y: pressTip.y)
+                    for component in effect.components where component.opacity > 0 {
+                        context.fill(
+                            Path(component.path),
+                            with: .color(Color(red: accent.red, green: accent.green, blue: accent.blue).opacity(component.opacity))
+                        )
+                    }
+                }
+                .frame(width: cardSize.width, height: cardSize.height)
             }
 
             if let artwork,
@@ -953,8 +1016,14 @@ private struct StudioCursorOverlay: View {
                 let material = PointerShape(artworkID: artwork.artworkID)?.material
                 Image(nsImage: image)
                     .resizable()
-                    .interpolation(.high)
+                    .interpolation(artwork.usesNearestNeighborSampling ? .none : .high)
                     .frame(width: size.width, height: size.height)
+                    .shadow(
+                        color: .black.opacity(artwork.needsCursorShadow ? Double(RecordingCursorShadowMetrics.opacity) : 0),
+                        radius: artwork.needsCursorShadow ? RecordingCursorShadowMetrics.blurRadius : 0,
+                        x: RecordingCursorShadowMetrics.offsetX,
+                        y: RecordingCursorShadowMetrics.offsetY
+                    )
                     .background {
                         if let material {
                             PointerMaterialView(
@@ -1064,15 +1133,24 @@ private struct StudioSpeedBadgeView: View {
 }
 
 private struct StudioSubtitleBarView: View {
+    let model: RecordingStudioModel
     let text: String
     var karaokeLine: KaraokeTimeline.Line?
     let style: SubtitleBarStyle
     let canvasSize: CGSize
 
     var body: some View {
+        if style.preset == .upshot {
+            if !text.isEmpty { legacyBar }
+        } else {
+            StudioCaptionPreview(model: model, canvasSize: canvasSize)
+        }
+    }
+
+    private var legacyBar: some View {
         let metrics = SubtitleBarMetrics(canvasSize: canvasSize, style: style)
 
-        barText
+        return barText
             .font(.system(size: metrics.fontSize, weight: .semibold, design: .rounded))
             .lineLimit(SubtitleBarMetrics.maximumLineCount)
             .multilineTextAlignment(.center)
@@ -1178,8 +1256,8 @@ private struct StudioCameraBubble: View {
     @Bindable var model: RecordingStudioModel
     let layout: RecordingStudioLayout
     let isMovable: Bool
-    let destination: (RecordingCameraLayout.Corner) -> (rect: CGRect, radius: CGFloat)
-    let onDrop: (CGRect, RecordingCameraLayout.Corner) -> Void
+    let destination: (CGRect) -> (rect: CGRect, radius: CGFloat)
+    let onDrop: (CGRect) -> Void
 
     private static let hoverRingPadding: CGFloat = 3
 
@@ -1198,7 +1276,7 @@ private struct StudioCameraBubble: View {
 
         ZStack(alignment: .topLeading) {
             if dragOffset != nil {
-                let target = destination(corner(for: rect))
+                let target = destination(rect)
                 RoundedRectangle(cornerRadius: target.radius, style: .continuous)
                     .fill(Palette.highlight.opacity(0.14))
                     .overlay {
@@ -1212,13 +1290,15 @@ private struct StudioCameraBubble: View {
             }
 
             ZStack(alignment: .topLeading) {
-                StudioPlayerLayerView(player: model.cameraPlayer, gravity: .resizeAspectFill)
-                    .frame(width: rect.width, height: rect.height)
-                    .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            .strokeBorder(.white.opacity(0.25), lineWidth: 1)
-                    }
+                StudioCameraBubbleSurface(
+                    size: rect.size, radius: radius, squircle: layout.cameraSquircle,
+                    frame: layout.cameraCutout > 0.001 || layout.cameraBubble < 0.5
+                        ? .legacy : model.style.camera.previewFrame,
+                    canvasWidth: canvas.width,
+                    player: model.cameraPlayer,
+                    sourceAspect: model.cameraVideoAspect,
+                    crop: model.style.camera.pictureCrop
+                )
                     .overlay {
                         if isActive {
                             RoundedRectangle(
@@ -1237,12 +1317,12 @@ private struct StudioCameraBubble: View {
                     )
                     .opacity(framedOpacity)
                     .animation(.easeOut(duration: 0.15), value: isCutoutReady)
-                    .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+                    .contentShape(StudioCameraBubbleShape(radius: radius, squircle: layout.cameraSquircle))
                     .onHover { isHovering = $0 }
                     .pointerStyle(isMovable ? (dragOffset == nil ? PointerStyle.grabIdle : .grabActive) : nil)
                     .onTapGesture {}
                     .gesture(dragGesture, including: isMovable ? .all : .none)
-                    .help(isMovable ? "Drag the camera to another corner" : "")
+                    .help(isMovable ? "Drag to position the camera" : "")
                     .allowsHitTesting(isMovable)
                     .offset(x: rect.minX, y: rect.minY)
 
@@ -1268,25 +1348,15 @@ private struct StudioCameraBubble: View {
 
     private func cutoutParameters(rect: CGRect, radius: CGFloat, cutout: CGFloat) -> StudioCutoutLayerParameters {
         let aspect = model.cameraVideoAspect
-        let fill = max(rect.width / aspect, rect.height)
-        let picture = CGRect(
-            x: rect.midX - fill * aspect / 2, y: rect.midY - fill / 2, width: fill * aspect, height: fill
+        let picture = RecordingCameraCropGeometry.fillRect(
+            sourceSize: CGSize(width: aspect, height: 1), destination: rect, crop: model.style.camera.pictureCrop
         )
         return StudioCutoutLayerParameters(
             cornerRadius: radius,
             feather: StudioCutoutStyle.feather(picture: picture, canvas: layout.canvasSize),
-            shadowAlpha: StudioCutoutStyle.shadowAlpha * cutout
+            shadowAlpha: StudioCutoutStyle.shadowAlpha * cutout,
+            pictureCrop: model.style.camera.pictureCrop
         )
-    }
-
-    private func corner(for rect: CGRect) -> RecordingCameraLayout.Corner {
-        let card = layout.cardRect
-        switch (rect.midX < card.midX, rect.midY < card.midY) {
-        case (true, true): return .topLeading
-        case (false, true): return .topTrailing
-        case (true, false): return .bottomLeading
-        case (false, false): return .bottomTrailing
-        }
     }
 
     private var dragGesture: some Gesture {
@@ -1297,7 +1367,7 @@ private struct StudioCameraBubble: View {
             .onEnded { value in
                 let dropped = layout.bubbleRect.offsetBy(dx: value.translation.width, dy: value.translation.height)
                 dragOffset = nil
-                onDrop(dropped, corner(for: dropped))
+                onDrop(dropped)
             }
     }
 }
@@ -1324,6 +1394,10 @@ private extension ViewportFrame {
 
 private struct StudioBackgroundView: View {
     let style: AnnotationBackgroundStyle
+    var backgroundBlur: CGFloat = 0
+    var canvasSize: CGSize = .zero
+    var time: TimeInterval = 0
+    var isPlaying = false
 
     var body: some View {
         switch style {
@@ -1338,7 +1412,20 @@ private struct StudioBackgroundView: View {
                 endPoint: gradient.endPoint
             )
         case .customWallpaper(let wallpaper):
-            if let image = NSImage(contentsOf: wallpaper.url) {
+            if wallpaper.isVideo {
+                let blur = min(max(backgroundBlur, 0), 8) * max(1, canvasSize.width) / 640
+                let overscan = ceil(blur * 2)
+                StudioWallpaperVideoView(url: wallpaper.url, time: time, isPlaying: isPlaying)
+                    .frame(width: canvasSize.width + overscan * 2, height: canvasSize.height + overscan * 2)
+                    .blur(radius: blur)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+                    .clipped()
+            } else if backgroundBlur > 0, let image = RecordingStudioBackgroundBlur.wallpaper(
+                at: wallpaper.url, canvasSize: canvasSize, amount: backgroundBlur
+            ) {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+            } else if let image = NSImage(contentsOf: wallpaper.url) {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)

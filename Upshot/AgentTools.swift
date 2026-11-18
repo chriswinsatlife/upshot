@@ -81,6 +81,114 @@ enum AgentTools {
     enum value (fonts, animations, layouts, export formats, backgrounds).
     """
 
+    private static let updateProjectPatchSchema: JSONValue = [
+        "type": "object",
+        "description": "Merge patch against get_recording's document. subtitleAppearance stores caption styling. Selecting preset copies its colors, opacity, radius, and animation before applying explicit overrides. Existing subtitleVerticalPosition, subtitleFontScale, and subtitleWordHighlight remain accepted.",
+        "properties": [
+            "exportAspect": ["type": "string", "enum": enumValues(ExportAspectPreset.self)],
+            "exportCustomAspectWidth": ["type": "integer", "minimum": 128, "maximum": 7680],
+            "exportCustomAspectHeight": ["type": "integer", "minimum": 128, "maximum": 7680],
+            "clickEffect": ["type": "string", "enum": enumValues(RecordingClickEffect.self)],
+            "clickEffectColor": ["type": "string", "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"],
+            "clickEffectScale": ["type": "number", "minimum": 0.5, "maximum": 2],
+            "clickEffectOpacity": ["type": "number", "minimum": 0, "maximum": 1],
+            "clickEffectDuration": ["type": "number", "minimum": 0.12, "maximum": 1.2, "description": "Click effect duration in seconds."],
+            "style": [
+                "type": "object",
+                "properties": [
+                    "cameraPictureCrop": [
+                        "type": ["array", "null"],
+                        "description": "Normalized camera source crop [[x, y], [width, height]] from the top-left, minimum side 0.08. Null restores the full picture.",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": ["type": "array", "minItems": 2, "maxItems": 2, "items": ["type": "number", "minimum": 0, "maximum": 1]],
+                    ],
+                    "cameraLayout": [
+                        "type": "object",
+                        "properties": [
+                            "positionPreset": ["type": "string", "enum": enumValues(RecordingCameraLayout.PositionPreset.self)],
+                            "positionX": ["type": "number", "minimum": 0, "maximum": 1],
+                            "positionY": ["type": "number", "minimum": 0, "maximum": 1],
+                            "shape": ["type": "string", "enum": enumValues(RecordingCameraLayout.Shape.self)],
+                            "width": ["type": ["number", "null"], "minimum": 0.1, "maximum": 1],
+                            "height": ["type": ["number", "null"], "minimum": 0.1, "maximum": 1]
+                        ]
+                    ],
+                    "cameraPreviewFrame": ["type": "string", "enum": ["legacy", "standard", "softBlur"]],
+                    "cameraZoomResponse": ["type": "string", "enum": ["progress", "magnification"]],
+                    "cameraShrinksDuringZoom": ["type": "boolean"],
+                    "cameraZoomShrinkAmount": ["type": "number", "minimum": 0.05, "maximum": 0.7],
+                    "backgroundBlur": ["type": ["number", "null"], "minimum": 0, "maximum": 8, "multipleOf": 0.25, "description": "Wallpaper blur in pixels at a 640-pixel canvas width. Null restores zero."],
+                    "paddingSides": [
+                        "type": ["object", "null"],
+                        "description": "Per-side percentages scaled by 0.2. Null restores legacy uniform padding. Linked values use top for every side.",
+                        "properties": [
+                            "top": ["type": "number", "minimum": 0, "maximum": 250],
+                            "bottom": ["type": "number", "minimum": 0, "maximum": 250],
+                            "left": ["type": "number", "minimum": 0, "maximum": 100],
+                            "right": ["type": "number", "minimum": 0, "maximum": 100],
+                            "linked": ["type": "boolean"]
+                        ]
+                    ],
+                    "authoredGradient": [
+                        "type": ["object", "null"],
+                        "description": "Selects a custom linear gradient. Null clears the authored angle metadata and retains the stored background.",
+                        "properties": [
+                            "angle": ["type": "integer", "minimum": 0, "maximum": 360],
+                            "colors": ["type": "array", "minItems": 2, "maxItems": 5, "items": ["type": "string", "pattern": "^#[0-9a-fA-F]{6}$"]]
+                        ]
+                    ],
+                    "shadow": ["type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.01],
+                    "usesLayeredShadow": ["type": "boolean", "description": "Uses the two-layer 640-pixel reference profile. Editing shadow selects this profile unless explicitly overridden."],
+                    "cursorSmoothing": ["type": ["number", "null"], "minimum": 0, "maximum": 2, "description": "Null preserves the existing spring. Zero disables glide smoothing."],
+                    "cursorSpringStiffnessMultiplier": ["type": "number", "minimum": 0.25, "maximum": 3],
+                    "cursorSpringDampingMultiplier": ["type": "number", "minimum": 0.25, "maximum": 3],
+                    "cursorSpringMassMultiplier": ["type": "number", "minimum": 0.25, "maximum": 3],
+                    "cursorClickBounce": ["type": ["number", "null"], "minimum": 0, "maximum": 5, "description": "Null preserves the existing click pulse."],
+                    "cursorClickBounceDuration": ["type": "number", "minimum": 0.06, "maximum": 0.5, "description": "Click bounce duration in seconds."]
+                ]
+            ],
+            "subtitleAppearance": [
+                "type": "object",
+                "properties": [
+                    "preset": ["type": "string", "enum": ["upshot", "reveal", "serif"]],
+                    "fontSize": ["type": "number", "minimum": 16, "maximum": 72],
+                    "maximumRows": ["type": "integer", "minimum": 1, "maximum": 4],
+                    "bottomOffset": ["type": "number", "minimum": 0, "maximum": 30],
+                    "maximumWidth": ["type": "number", "minimum": 40, "maximum": 95],
+                    "boxRadius": ["type": "number", "minimum": 0, "maximum": 40],
+                    "backgroundOpacity": ["type": "number", "minimum": 0, "maximum": 1],
+                    "animation": ["type": "string", "enum": ["none", "fade", "rise", "pop"]],
+                    "textColor": ["type": "string", "description": "Hexadecimal RGB or RGBA color."],
+                    "inactiveTextColor": ["type": "string"],
+                    "revealsWords": ["type": "boolean"],
+                    "highlightsSpokenWord": ["type": "boolean"],
+                    "highlightFill": ["type": "string"],
+                    "highlightTextColor": ["type": "string"],
+                    "verticalPosition": ["type": "number", "minimum": 0.1, "maximum": 0.95],
+                    "fontScale": ["type": "number", "minimum": 0.6, "maximum": 1.8]
+                ]
+            ]
+        ]
+    ]
+
+    private static let updateProjectAppearanceSchema: JSONValue = [
+        "type": "object",
+        "description": "Merge patch against get_recording's exportAppearance. All zoom durations are seconds. Null zoomMotion preserves legacy animation.",
+        "properties": [
+            "zoomMotion": [
+                "type": ["object", "null"],
+                "properties": [
+                    "zoomInDuration": ["type": "number", "minimum": 0.06, "maximum": 4],
+                    "zoomOutDuration": ["type": "number", "minimum": 0.06, "maximum": 4],
+                    "connectZooms": ["type": "boolean"],
+                    "connectedZoomGap": ["type": "number", "minimum": 0, "maximum": 5, "description": "Connection eligibility is capped at 1.5 seconds."],
+                    "connectedZoomDuration": ["type": "number", "minimum": 0.06, "maximum": 4]
+                ]
+            ]
+        ]
+    ]
+
     static var definitions: [JSONValue] {
         [
             tool(
@@ -108,6 +216,7 @@ enum AgentTools {
                 properties: [
                     "recording": recordingProperty,
                     "transcribe_if_missing": ["type": "boolean", "description": "Transcribe the recording if it has no transcript yet. Defaults to false."],
+                    "language": ["type": "string", "description": "BCP-47 language identifier for on-device transcription, such as en-US. An empty string uses the system default. Omit to use the selected transcription language. Applies only when transcribe_if_missing generates a transcript."],
                     "include_cut_words": ["type": "boolean", "description": "Include words already cut from the edit. Defaults to true."],
                 ],
                 required: ["recording"],
@@ -159,15 +268,26 @@ enum AgentTools {
             tool(
                 "set_speed",
                 title: "Set speed",
-                description: "Plays a range faster (1 to 8x), splitting clips at its edges. Audio speeds up with the picture. Use 1 to return a range to normal speed.",
+                description: "Changes a range's playback speed from 0.25 to 30×, splitting clips at its edges. Audio stays in sync with the picture. Use 1 to return a range to normal speed.",
                 properties: [
                     "recording": recordingProperty,
                     "start": ["type": "number", "description": "Seconds on `clock`."],
                     "end": ["type": "number", "description": "Seconds on `clock`."],
                     "clock": clockProperty,
-                    "speed": ["type": "number", "description": "Playback rate, 1...8."],
+                    "speed": ["type": "number", "minimum": 0.25, "maximum": 30, "description": "Playback rate, 0.25...30. Values below 1 produce slow motion."],
                 ],
                 required: ["recording", "start", "end", "clock", "speed"]
+            ),
+            tool(
+                "set_clip_muted",
+                title: "Mute clip",
+                description: "Mutes or unmutes one clip's recorded audio while retaining its picture. Imported audio clips and replacement audio remain audible.",
+                properties: [
+                    "recording": recordingProperty,
+                    "clip_id": ["type": "string", "description": "Clip id from get_recording."],
+                    "muted": ["type": "boolean", "description": "True silences recorded audio; false restores it."],
+                ],
+                required: ["recording", "clip_id", "muted"]
             ),
             tool(
                 "edit_transcript",
@@ -184,10 +304,10 @@ enum AgentTools {
             tool(
                 "add_items",
                 title: "Add items",
-                description: "Adds zooms, text, redactions (blur/pixelate), camera layout changes, or captions. Each item is a partial object: give start and end (on `clock`) plus any fields you want to set; the rest take defaults. Field names match get_recording's document. Returns the created items with their ids. Images and audio are added with add_media.",
+                description: "Adds zooms, text, arrows, redactions (blur/pixelate/color fill), camera layout changes, or captions. Each item is a partial object: give start and end (on `clock`) plus any fields you want to set; the rest take defaults. Field names match get_recording's document. Returns the created items with their ids. Images and audio are added with add_media.",
                 properties: [
                     "recording": recordingProperty,
-                    "kind": ["type": "string", "enum": ["zoom", "text", "redaction", "camera_layout", "caption"]],
+                    "kind": ["type": "string", "enum": ["zoom", "text", "redaction", "arrow", "camera_layout", "caption"]],
                     "clock": clockProperty,
                     "items": ["type": "array", "items": ["type": "object"], "description": itemFieldsDescription],
                 ],
@@ -230,12 +350,24 @@ enum AgentTools {
                 required: ["recording", "path", "time", "clock"]
             ),
             tool(
+                "set_camera_source",
+                title: "Set camera source",
+                description: "Copies a camera video into the project, enables the camera, and loops the video from source time zero. Omit path to remove the project camera source. The recorded sidecar remains on disk.",
+                properties: [
+                    "recording": recordingProperty,
+                    "path": ["type": "string", "description": "Absolute path to a camera video. Omit to remove the camera source."],
+                ],
+                required: ["recording"]
+            ),
+            tool(
                 "update_project",
                 title: "Update project",
                 description: "Applies a JSON merge patch (RFC 7386) to the project document from get_recording: objects merge, arrays replace, null removes. Use it for style (background, padding, cornerRadius, shadow, cursor, camera), toggles (zoomEnabled, showsSubtitles, showsKeystrokes, showsClickEffects, showsSpeedBadge), subtitle look, exportAspect/exportAspectMode, videoCropRect, audioVolume, exportSettings, or the `clips` list itself (source ranges with speeds, in order). Rejected if the result is not a valid project.",
                 properties: [
                     "recording": recordingProperty,
-                    "patch": ["type": "object", "description": "Merge patch against get_recording's `document`."],
+                    "patch": updateProjectPatchSchema,
+                    "appearance": updateProjectAppearanceSchema,
+                    "motionPreset": ["type": "string", "enum": enumValues(RecordingMotionPreset.self), "description": "Apply Focused or Cinematic zoom timing, cursor size, smoothing, spring multipliers, and click bounce."],
                 ],
                 required: ["recording", "patch"]
             ),
@@ -281,8 +413,25 @@ enum AgentTools {
                     "recording": recordingProperty,
                     "output_path": ["type": "string", "description": "Absolute file path to move the finished video to. Its extension should match the container."],
                     "appearance": ["type": "object", "description": "Merge patch for export appearance. zoomAnimationStyle: Smooth or Dynamic. keystrokes: {size: Small|Medium|Large, style: Dark|Light, position: topLeft|topCenter|topRight|middleLeft|middleCenter|middleRight|bottomLeft|bottomCenter|bottomRight, filter: Command Keys Only|All Keys}. Typed keys are hidden by default and exist only if capture was explicitly enabled before recording. shot: Flat, Tilt Left, Tilt Right, Tilt Up, or Orbit (export only). Saved per project. Zoom animation style also applies to the Studio preview."],
-                    "options": ["type": "object", "description": "Merge patch for additional export options. format: Video or GIF; gifFrameRate: 10, 15, 20, 25, or 30; gifQuality: Low, Medium, or High; optimizesGIF, scalesRetinaToOne, monoAudio, separateAudioTracks: booleans. motionBlurLevel: Off, Low, Medium, or High. Resolution uses settings.resolution. GIF contains no audio. Saved per project."],
-                    "settings": ["type": "object", "description": "Merge patch for the export settings: quality, speed, codec, resolution, container, frameRate, motionBlurEnabled, removeAudio. See get_editing_guide for values. Saved into the project."],
+                    "options": [
+                        "type": "object",
+                        "description": "Merge patch for additional export options. format: Video or GIF; gifFrameRate: 10, 15, 20, 25, or 30; gifQuality: Low, Medium, or High; optimizesGIF, scalesRetinaToOne, monoAudio, separateAudioTracks: booleans. motionBlurLevel: Off, Low, Medium, or High. GIF contains no audio. Saved per project.",
+                        "properties": [
+                            "gifSize": ["type": "string", "enum": enumValues(RecordingGIFSize.self)],
+                            "gifLoops": ["type": "boolean"],
+                        ]
+                    ],
+                    "settings": [
+                        "type": "object",
+                        "description": "Merge patch for the export settings: quality, speed, codec, resolution, customWidth, customHeight, encodingMode, container, frameRate, motionBlurEnabled, removeAudio. Fixed resolution tiers set the longest edge and may upscale. Custom dimensions must be even, 2 through 8192. See get_editing_guide for values. Saved into the project.",
+                        "properties": [
+                            "resolution": ["type": "string", "enum": enumValues(VideoCompressionResolution.self)],
+                            "customWidth": ["type": "integer", "minimum": 2, "maximum": 8192, "multipleOf": 2],
+                            "customHeight": ["type": "integer", "minimum": 2, "maximum": 8192, "multipleOf": 2],
+                            "encodingMode": ["type": "string", "enum": enumValues(VideoExportEncodingMode.self)],
+                            "frameRate": ["type": "string", "enum": enumValues(VideoExportFrameRate.self)],
+                        ]
+                    ],
                     "wait": ["type": "boolean", "description": "Wait for the export to finish. Defaults to true."],
                 ],
                 required: ["recording"]
@@ -328,11 +477,13 @@ enum AgentTools {
         case "get_frame": return try await getFrame(arguments)
         case "cut": return try await cut(arguments)
         case "set_speed": return try await setSpeed(arguments)
+        case "set_clip_muted": return try await setClipMuted(arguments)
         case "edit_transcript": return try await editTranscript(arguments)
         case "add_items": return try await addItems(arguments)
         case "update_items": return try await updateItems(arguments)
         case "remove_items": return try await removeItems(arguments)
         case "add_media": return try await addMedia(arguments)
+        case "set_camera_source": return try await setCameraSource(arguments)
         case "update_project": return try await updateProject(arguments)
         case "undo": return try await undoRedo(arguments, redo: false)
         case "redo": return try await undoRedo(arguments, redo: true)
@@ -360,7 +511,7 @@ enum AgentTools {
 
     static let itemKindProperty: JSONValue = [
         "type": "string",
-        "enum": ["zoom", "text", "redaction", "camera_layout", "caption", "image", "audio"],
+        "enum": ["zoom", "text", "redaction", "arrow", "camera_layout", "caption", "image", "audio"],
     ]
 
     static let rangeSchema: JSONValue = [
@@ -370,14 +521,19 @@ enum AgentTools {
     ]
 
     static let itemFieldsDescription: JSONValue = """
-    zoom: start, end, zoom (magnification, e.g. 1.5-3), anchorMode, pinnedPoint [x,y] (framed when anchorMode is \"pinnedAnchor\"), isEnabled. \
-    text: start, end, text, center [x,y], fontSize (fraction of canvas height, 0.02-0.3), font, color {red,green,blue,alpha 0-1}, isBold, hasBackground, backgroundColor, animationIn, animationOut. \
-    redaction: start, end, rect [[x,y],[w,h]] in the recorded picture, style (pixelate|blur), amount 0-1, cornerRadius, fadeIn, fadeOut. \
+    zoom: start, end, zoom (continuous magnification 1-5; presets 1.25, 1.5, 1.8, 2.2, 3.5, 5; new items default to 1.8), anchorMode, pinnedPoint [x,y] (framed when anchorMode is \"pinnedAnchor\"), isEnabled. \
+    text: start, end, text, coordinateSpace (canvas|recording, default canvas), center [x,y], fontSize (fraction of coordinate-space height, 0.02-0.3), font, color {red,green,blue,alpha 0-1}, isBold, hasBackground, backgroundColor, animationIn, animationOut. \
+    redaction: start, end, rect [[x,y],[w,h]] in the recorded picture, style (pixelate|blur), fillColor (null for no fill, or {red,green,blue,alpha 0-1}; opaque skips filtering, translucent tints filtered pixels), amount 0-1, cornerRadius, fadeIn, fadeOut. \
+    arrow: start, end, rect [[x,y],[w,h]], coordinateSpace (canvas|recording, default recording), direction (up|down|left|right|up-right|up-left|down-right|down-left), color {red,green,blue,alpha 0-1}, strokeWidth (integer 1-6). \
     camera_layout: start, end, layout (see get_editing_guide). \
     caption: start, end, text. \
-    image: start, end, center [x,y], width (fraction of canvas width), rotation (degrees), opacity, cornerRadius, shadow, fadeIn, fadeOut. \
+    image: start, end, coordinateSpace (canvas|recording, default canvas), center [x,y], width (fraction of coordinate-space width), rotation (degrees), opacity, cornerRadius, shadow, shadowScale (default 1; converted automatically when coordinateSpace changes), fadeIn, fadeOut. \
     audio: start (edited clock), trimStart, trimEnd, volume 0-1, fadeIn, fadeOut.
     """
+
+    private static func enumValues<Value: RawRepresentable & CaseIterable>(_ type: Value.Type) -> JSONValue where Value.RawValue == String {
+        .array(Value.allCases.map { .string($0.rawValue) })
+    }
 
     private static func tool(
         _ name: String,

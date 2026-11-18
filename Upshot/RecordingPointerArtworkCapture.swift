@@ -1,12 +1,3 @@
-//
-//  RecordingPointerArtworkCapture.swift
-//  Upshot
-//
-//  Converts AppKit-provided cursor images into the recording sidecar format.
-//  The sidecar always keeps what macOS showed; PointerShape stand-ins are
-//  swapped in only when the Studio draws it.
-//
-
 import AppKit
 import Foundation
 
@@ -51,23 +42,24 @@ enum PointerArtworkCapture {
 }
 
 extension PointerArtwork {
-    /// What the Studio draws for this captured cursor: a circle for every
-    /// cursor, or the chosen arrow in place of the macOS arrow and the vector
-    /// hand for any pointing hand. Only the arrow leans as it moves.
-    /// `inverted` turns a vector arrow, and the hand beside it, black inside
-    /// a white outline; the macOS arrow stays as macOS drew it.
     @MainActor
     func styled(_ style: RecordingCursorStyle, inverted: Bool) -> PointerArtwork {
+        if style.usesArtworkCatalog {
+            guard let pose = style.replacesEveryCursor ? RecordingCursorPose.arrow : SystemPointer.pose(for: self) else {
+                return self
+            }
+            return RecordingCursorArtworkCatalog.artwork(style: style, pose: pose, inverted: inverted) ?? self
+        }
         if let shape = style.shape, shape.isCircle {
             return shape.artwork ?? self
         }
         let inverts = inverted && style.shape != nil
-        if imageData == SystemPointer.arrow {
+        if imageData == SystemPointer.arrow?.imageData {
             var arrow = style.shape?.artwork(inverted: inverts) ?? self
             arrow.leans = true
             return arrow
         }
-        if imageData == SystemPointer.pointingHand || SystemPointer.isBrowserHand(self) {
+        if imageData == SystemPointer.pointingHand?.imageData || SystemPointer.isBrowserHand(self) {
             return PointerShape.hand.artwork(inverted: inverts) ?? self
         }
         return self
@@ -76,12 +68,30 @@ extension PointerArtwork {
 
 @MainActor
 private enum SystemPointer {
-    static let arrow = PointerArtworkCapture.capture(NSCursor.arrow, id: "")?.imageData
-    static let pointingHand = PointerArtworkCapture.capture(NSCursor.pointingHand, id: "")?.imageData
+    static let arrow = PointerArtworkCapture.capture(NSCursor.arrow, id: "")
+    static let pointingHand = PointerArtworkCapture.capture(NSCursor.pointingHand, id: "")
 
-    /// Browsers draw their own link hand, a pixel to the right of the macOS
-    /// one. Its 32-point square and fingertip hot spot are distinct from
-    /// every other system cursor (the open hand grabs at its center).
+    private static let poses: [(RecordingCursorPose, PointerArtwork?)] = [
+        (.arrow, arrow),
+        (.pointer, pointingHand),
+        (.text, PointerArtworkCapture.capture(NSCursor.iBeam, id: "")),
+        (.crosshair, PointerArtworkCapture.capture(NSCursor.crosshair, id: "")),
+        (.openHand, PointerArtworkCapture.capture(NSCursor.openHand, id: "")),
+        (.closedHand, PointerArtworkCapture.capture(NSCursor.closedHand, id: "")),
+        (.resizeEW, PointerArtworkCapture.capture(NSCursor.columnResize, id: "")),
+        (.resizeNS, PointerArtworkCapture.capture(NSCursor.rowResize, id: "")),
+        (.notAllowed, PointerArtworkCapture.capture(NSCursor.operationNotAllowed, id: "")),
+        (.resizeEW, PointerArtworkCapture.capture(NSCursor.resizeLeftRight, id: "")),
+        (.resizeNS, PointerArtworkCapture.capture(NSCursor.resizeUpDown, id: ""))
+    ]
+
+    static func pose(for artwork: PointerArtwork) -> RecordingCursorPose? {
+        if let pose = poses.first(where: { $0.1?.imageData == artwork.imageData })?.0 {
+            return pose
+        }
+        return isBrowserHand(artwork) ? .pointer : nil
+    }
+
     static func isBrowserHand(_ artwork: PointerArtwork) -> Bool {
         artwork.referenceSize == PointerArtwork.Size(width: 32, height: 32)
             && artwork.anchorPoint == PointerArtwork.Point(x: 13, y: 8)

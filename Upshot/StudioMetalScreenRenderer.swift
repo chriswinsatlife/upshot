@@ -92,27 +92,33 @@ nonisolated final class StudioMetalScreenRenderer {
         /// The screen's coverage, for a card fading in or out.
         var opacity: CGFloat
         var shadow: StudioMorphShadow?
+        var contactShadow: StudioMorphShadow? = nil
     }
 
     /// Rectangles use the same top-left canvas coordinates as StudioLayout.
     /// Returns nil, without encoding anything, if Metal cannot take a frame.
     /// Commands on one queue run in order, so the shared downsample texture
     /// is never overwritten while an earlier pass still reads it.
-    func submit(screenFrame: CVPixelBuffer, sampleRects: [CGRect], into destination: CVPixelBuffer) -> Submission? {
-        submit(screenFrame: screenFrame, sampleRects: sampleRects, morph: nil, into: destination)
+    func submit(
+        screenFrame: CVPixelBuffer, sampleRects: [CGRect],
+        motionBlur: StudioScreenMotionBlur = StudioScreenMotionBlur(), into destination: CVPixelBuffer
+    ) -> Submission? {
+        submit(screenFrame: screenFrame, sampleRects: sampleRects, motionBlur: motionBlur, morph: nil, into: destination)
     }
 
     /// A frame inside a layout morph: unlike `redraw`, nothing is drawn on
     /// the CPU or uploaded, so passes can follow each other on one renderer.
     func submitMorph(
-        screenFrame: CVPixelBuffer, sampleRects: [CGRect], card: MorphCard, into destination: CVPixelBuffer
+        screenFrame: CVPixelBuffer, sampleRects: [CGRect], card: MorphCard,
+        motionBlur: StudioScreenMotionBlur = StudioScreenMotionBlur(), into destination: CVPixelBuffer
     ) -> Submission? {
         guard morphPipeline != nil else { return nil }
-        return submit(screenFrame: screenFrame, sampleRects: sampleRects, morph: card, into: destination)
+        return submit(screenFrame: screenFrame, sampleRects: sampleRects, motionBlur: motionBlur, morph: card, into: destination)
     }
 
     private func submit(
-        screenFrame: CVPixelBuffer, sampleRects: [CGRect], morph: MorphCard?, into destination: CVPixelBuffer
+        screenFrame: CVPixelBuffer, sampleRects: [CGRect], motionBlur: StudioScreenMotionBlur,
+        morph: MorphCard?, into destination: CVPixelBuffer
     ) -> Submission? {
         guard (1...24).contains(sampleRects.count),
             sampleRects.allSatisfy({
@@ -172,7 +178,8 @@ nonisolated final class StudioMetalScreenRenderer {
             let shape: [SIMD4<Float>] = [
                 SIMD4(Float(morph.rect.minX), Float(morph.rect.minY), Float(morph.rect.width), Float(morph.rect.height)),
                 SIMD4(Float(morph.cornerRadius), Float(morph.opacity), 0, 0),
-                morph.shadow?.parameters ?? .zero
+                morph.shadow?.parameters ?? .zero,
+                morph.contactShadow?.parameters ?? .zero
             ]
             shape.withUnsafeBytes { bytes in
                 encoder.setBytes(bytes.baseAddress!, length: bytes.count, index: 2)
@@ -187,6 +194,9 @@ nonisolated final class StudioMetalScreenRenderer {
             encoder.setBytes(bytes.baseAddress!, length: bytes.count, index: 0)
         }
         encoder.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 1)
+        motionBlur.parameters.withUnsafeBytes { bytes in
+            encoder.setBytes(bytes.baseAddress!, length: bytes.count, index: 3)
+        }
         let width = pipeline.threadExecutionWidth
         let height = min(8, pipeline.maxTotalThreadsPerThreadgroup / width)
         encoder.dispatchThreads(

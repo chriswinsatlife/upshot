@@ -50,6 +50,10 @@ struct StudioTimelineDock: View {
                 .frame(height: 0.5)
         }
         .overlay(alignment: .top) { resizeHandle }
+        .overlay(alignment: .top) {
+            RecordingZoomSuggestionToast(state: model.automaticZoomState)
+                .padding(.top, Space.l)
+        }
     }
 
     private var fullTracksHeight: CGFloat {
@@ -125,7 +129,7 @@ struct StudioTimelineDock: View {
                 model.splitClip(at: model.currentTime)
             }
             .keyboardShortcut("b", modifiers: .command)
-            .disabled(!model.isLoaded)
+            .disabled(!model.isLoaded || !model.canSplitClipAtPlayhead)
 
             addTools
 
@@ -441,6 +445,15 @@ struct StudioTimelineDock: View {
             }
         }
         .frame(height: StudioTimelineMetrics.scrollingLanesHeight(tracks: tracks))
+        .overlay(alignment: .top) {
+            if model.showsAutomaticZoomPrompt {
+                RecordingAutoZoomPrompt(model: model)
+                    .frame(height: StudioTrack.zooms.height)
+                    .offset(y: tracks.prefix { $0 != .zooms }.reduce(CGFloat.zero) {
+                        $0 + $1.height + StudioTimelineMetrics.trackSpacing
+                    })
+            }
+        }
     }
 
     @ViewBuilder
@@ -495,7 +508,8 @@ struct StudioTimelineDock: View {
     private func hint(for track: StudioTrack) -> String? {
         switch track {
         case .zooms:
-            model.zoomEnabled && model.zoomTimelineBlocks.isEmpty ? "Drag across to add a zoom" : nil
+            model.zoomEnabled && model.zoomTimelineBlocks.isEmpty && !model.showsAutomaticZoomPrompt
+                ? "Drag across to add a zoom" : nil
         case .layouts:
             model.cameraLayoutCues.isEmpty ? "Drag across to change the camera layout" : nil
         case .text:
@@ -547,7 +561,8 @@ struct StudioTimelineDock: View {
             },
             title: model.projectDisplayName,
             onScrubbing: { isScrubbing = $0 },
-            onResetAll: model.hasClipEdits ? { isResetClipsConfirmationPresented = true } : nil
+            onResetAll: model.hasClipEdits ? { isResetClipsConfirmationPresented = true } : nil,
+            onReorder: { model.reorderClip(id: $0, to: $1) }
         )
     }
 
@@ -620,12 +635,14 @@ struct StudioTimelineDock: View {
     private var canDeleteSelection: Bool {
         model.selectedCueID != nil || model.selectedLayoutCueID != nil
             || model.selectedTextID != nil || model.selectedRedactionID != nil
-            || model.selectedImageID != nil || model.selectedAudioClipID != nil
+            || model.selectedArrowID != nil || model.selectedImageID != nil || model.selectedAudioClipID != nil
             || model.canDeleteSelectedClip
     }
 
     private func deleteSelection() {
-        if let textID = model.selectedTextID {
+        if let arrowID = model.selectedArrowID {
+            model.removeArrow(id: arrowID)
+        } else if let textID = model.selectedTextID {
             model.removeText(id: textID)
         } else if let imageID = model.selectedImageID {
             model.removeImage(id: imageID)
@@ -1127,7 +1144,7 @@ private struct StudioZoomLane: View {
             scale: scale,
             height: StudioTrack.zooms.height,
             overlap: .forbidden(spans: blocks.map {
-                StudioLaneSpan(id: $0.id, editorStart: $0.editorStart, editorEnd: $0.editorEnd)
+                StudioLaneSpan(id: $0.cue.id, editorStart: $0.editorStart, editorEnd: $0.editorEnd)
             }),
             empty: .create(tint: Palette.highlight, minimumLength: ZoomCue.minimumDuration) { range in
                 model.addZoomCue(overEditorRange: range)
@@ -1199,8 +1216,10 @@ private struct StudioZoomLane: View {
         case .move:
             let range = studioMovedSourceRange(
                 model: model,
-                editorStart: base.editorStart + edit.delta,
-                editorLength: base.editorLength
+                sourceStart: base.item.start,
+                sourceEnd: base.item.end,
+                editorAnchor: base.editorStart,
+                editorDelta: edit.delta
             )
             cue.start = range.start
             cue.end = range.end
@@ -1219,12 +1238,12 @@ private struct StudioZoomLane: View {
     @ViewBuilder
     private func menu(for cue: ZoomCue) -> some View {
         Menu("Zoom Level") {
-            ForEach(Self.zoomPresets, id: \.self) { preset in
+            ForEach(RecordingZoomAmount.presets, id: \.self) { preset in
                 Toggle(
-                    String(format: "%g×", preset),
+                    InspectorValueFormat.magnification(fractionDigits: 2).displayString(for: CGFloat(preset)),
                     isOn: Binding(
                         get: { abs(cue.zoom - preset) < 0.01 },
-                        set: { _ in edit(cue, action: "Change Zoom Level") { $0.zoom = preset } }
+                        set: { _ in model.setZoomAmountPreset(preset, for: cue) }
                     )
                 )
             }
@@ -1237,13 +1256,13 @@ private struct StudioZoomLane: View {
                     isOn: Binding(
                         get: { cue.anchorMode == mode },
                         set: { _ in
+                            if mode == .safeZone, model.exportAppearance.zoomMotion == nil {
+                                model.updateZoomMotion(RecordingZoomMotionSettings(), action: "auto_tracking")
+                            }
                             edit(cue, action: "Change Camera Focus") { updated in
                                 updated.anchorMode = mode
-                                if mode == .pinnedAnchor,
-                                   let pointer = model.pointerLocation(at: model.currentTime) {
-                                    updated.pinnedPoint = pointer
-                                }
                             }
+                            AppLog.event("recording", "zoom_tracking_changed", fields: ["mode": mode.rawValue])
                         }
                     )
                 )
@@ -1264,8 +1283,6 @@ private struct StudioZoomLane: View {
         }
     }
 
-    private static let zoomPresets: [Double] = [1.25, 1.5, 2, 2.5, 3]
-
     private func edit(_ cue: ZoomCue, action: String, _ change: (inout ZoomCue) -> Void) {
         var updated = cue
         change(&updated)
@@ -1281,16 +1298,17 @@ private struct StudioZoomLane: View {
     private func visibleBlocks(of blocks: [RecordingZoomTimelineBlock]) -> [StudioLaneBlock<ZoomCue>] {
         blocks
             .filter { $0.editorEnd >= visibleRange.lowerBound && $0.editorStart <= visibleRange.upperBound }
-            .map { StudioLaneBlock(item: $0.cue, editorStart: $0.editorStart, editorEnd: $0.editorEnd) }
+            .map { StudioLaneBlock(item: $0.cue, editorStart: $0.editorStart, editorEnd: $0.editorEnd, fragmentID: $0.fragmentID) }
     }
 }
 
 private extension ZoomAnchorMode {
     var laneTitle: String {
         switch self {
+        case .safeZone: "Auto"
         case .pointerAnchor: "Pointer"
         case .smartAnchor: "Smart"
-        case .pinnedAnchor: "Fixed"
+        case .pinnedAnchor: "Manual"
         }
     }
 }
@@ -1309,7 +1327,7 @@ private struct StudioLayoutLane: View {
             scale: scale,
             height: StudioTrack.layouts.height,
             overlap: .forbidden(spans: blocks.map {
-                StudioLaneSpan(id: $0.id, editorStart: $0.editorStart, editorEnd: $0.editorEnd)
+                StudioLaneSpan(id: $0.cue.id, editorStart: $0.editorStart, editorEnd: $0.editorEnd)
             }),
             empty: .create(tint: Palette.layoutCue, minimumLength: RecordingCameraLayoutCue.minimumDuration) { range in
                 model.addLayoutCue(overEditorRange: range)
@@ -1378,8 +1396,10 @@ private struct StudioLayoutLane: View {
         case .move:
             let range = studioMovedSourceRange(
                 model: model,
-                editorStart: base.editorStart + edit.delta,
-                editorLength: base.editorLength
+                sourceStart: base.item.start,
+                sourceEnd: base.item.end,
+                editorAnchor: base.editorStart,
+                editorDelta: edit.delta
             )
             cue.start = range.start
             cue.end = range.end
@@ -1423,7 +1443,7 @@ private struct StudioLayoutLane: View {
     private func visibleBlocks(of blocks: [RecordingCameraLayoutTimelineBlock]) -> [StudioLaneBlock<RecordingCameraLayoutCue>] {
         blocks
             .filter { $0.editorEnd >= visibleRange.lowerBound && $0.editorStart <= visibleRange.upperBound }
-            .map { StudioLaneBlock(item: $0.cue, editorStart: $0.editorStart, editorEnd: $0.editorEnd) }
+            .map { StudioLaneBlock(item: $0.cue, editorStart: $0.editorStart, editorEnd: $0.editorEnd, fragmentID: $0.fragmentID) }
     }
 }
 
@@ -1486,16 +1506,18 @@ private struct StudioTextLane: View {
     private var visibleBlocks: [StudioLaneBlock<RecordingTextOverlay>] {
         model.textTimelineBlocks
             .filter { $0.editorEnd >= visibleRange.lowerBound && $0.editorStart <= visibleRange.upperBound }
-            .map { StudioLaneBlock(item: $0.item, editorStart: $0.editorStart, editorEnd: $0.editorEnd) }
+            .map { StudioLaneBlock(item: $0.item, editorStart: $0.editorStart, editorEnd: $0.editorEnd, fragmentID: $0.fragmentID) }
     }
 }
 
 private enum StudioEffectsItem: Identifiable {
+    case arrow(RecordingArrowOverlay)
     case image(RecordingImageOverlay)
     case redaction(RecordingRedaction)
 
     var id: UUID {
         switch self {
+        case .arrow(let overlay): overlay.id
         case .image(let overlay): overlay.id
         case .redaction(let redaction): redaction.id
         }
@@ -1503,6 +1525,7 @@ private enum StudioEffectsItem: Identifiable {
 
     var title: String {
         switch self {
+        case .arrow: "Arrow"
         case .image(let overlay): overlay.isAnimated ? "\(overlay.displayName) · GIF" : overlay.displayName
         case .redaction(let redaction): redaction.style.title
         }
@@ -1519,7 +1542,7 @@ private struct StudioRedactionLane: View {
         StudioBlockLane(
             model: model,
             blocks: visibleBlocks,
-            selectedID: model.selectedImageID ?? model.selectedRedactionID,
+            selectedID: model.selectedArrowID ?? model.selectedImageID ?? model.selectedRedactionID,
             scale: scale,
             height: StudioTrack.overlay.height,
             empty: .scrub,
@@ -1527,23 +1550,31 @@ private struct StudioRedactionLane: View {
             actions: StudioBlockLaneActions(
                 select: { item in
                     switch item {
+                    case .arrow(let overlay): model.selectArrow(id: overlay.id)
                     case .image(let overlay): model.selectImage(id: overlay.id)
                     case .redaction(let redaction): model.selectRedaction(id: redaction.id)
                     }
                 },
                 begin: { _ in
+                    model.beginArrowEdit()
                     model.beginImageEdit()
                     model.beginRedactionEdit()
                 },
                 edit: apply,
                 end: { kind in
                     let verb = kind == .move ? "Move" : "Resize"
+                    model.endArrowEdit(actionName: "\(verb) Arrow")
                     model.endImageEdit(actionName: "\(verb) Image")
                     model.endRedactionEdit(actionName: "\(verb) Pixelate")
                 }
             ),
             content: { block, state in
                 switch block.item {
+                case .arrow:
+                    StudioOverlayBlockContent(
+                        style: .effect, systemImage: "arrow.up.right", title: "Arrow",
+                        length: block.editorLength, state: state
+                    )
                 case .image(let overlay):
                     StudioOverlayBlockContent(
                         style: .image,
@@ -1567,6 +1598,9 @@ private struct StudioRedactionLane: View {
             help: { block in "\(block.item.title). Drag to move, drag an end to resize, right-click for options." }
         )
         .contextMenu {
+            Button("Arrow at Playhead", systemImage: "arrow.up.right") {
+                model.addArrow(atEditorTime: model.currentTime)
+            }
             Button("Pixelate at Playhead", systemImage: "squareshape.split.3x3") {
                 model.addRedaction(atEditorTime: model.currentTime)
             }
@@ -1578,6 +1612,11 @@ private struct StudioRedactionLane: View {
 
     private func apply(_ edit: StudioBlockEdit<StudioEffectsItem>) {
         switch edit.base.item {
+        case .arrow(var overlay):
+            let range = studioOverlaySourceRange(for: edit, model: model, start: overlay.start, end: overlay.end)
+            overlay.start = range.start
+            overlay.end = range.end
+            model.setArrow(overlay)
         case .image(var overlay):
             let range = studioOverlaySourceRange(for: edit, model: model, start: overlay.start, end: overlay.end)
             overlay.start = range.start
@@ -1594,6 +1633,10 @@ private struct StudioRedactionLane: View {
     @ViewBuilder
     private func menu(for item: StudioEffectsItem) -> some View {
         switch item {
+        case .arrow(let overlay):
+            Button("Delete Arrow", systemImage: "trash", role: .destructive) {
+                model.removeArrow(id: overlay.id)
+            }
         case .image(let overlay):
             Button("Delete Image", systemImage: "trash", role: .destructive) {
                 model.removeImage(id: overlay.id)
@@ -1620,12 +1663,16 @@ private struct StudioRedactionLane: View {
 
     private var visibleBlocks: [StudioLaneBlock<StudioEffectsItem>] {
         let images = model.imageTimelineBlocks.map {
-            StudioLaneBlock(item: StudioEffectsItem.image($0.item), editorStart: $0.editorStart, editorEnd: $0.editorEnd)
+            StudioLaneBlock(item: StudioEffectsItem.image($0.item), editorStart: $0.editorStart, editorEnd: $0.editorEnd, fragmentID: $0.fragmentID)
         }
         let redactions = model.redactionTimelineBlocks.map {
-            StudioLaneBlock(item: StudioEffectsItem.redaction($0.item), editorStart: $0.editorStart, editorEnd: $0.editorEnd)
+            StudioLaneBlock(item: StudioEffectsItem.redaction($0.item), editorStart: $0.editorStart, editorEnd: $0.editorEnd, fragmentID: $0.fragmentID)
         }
-        return (images + redactions).filter {
+        let arrows = model.arrowTimelineBlocks.map {
+            StudioLaneBlock(item: StudioEffectsItem.arrow($0.item), editorStart: $0.editorStart, editorEnd: $0.editorEnd, fragmentID: $0.fragmentID)
+        }
+        return (arrows + images + redactions).filter {
+
             $0.editorEnd >= visibleRange.lowerBound && $0.editorStart <= visibleRange.upperBound
         }
     }
@@ -1641,8 +1688,10 @@ private func studioOverlaySourceRange<Item>(
     case .move:
         return studioMovedSourceRange(
             model: model,
-            editorStart: edit.base.editorStart + edit.delta,
-            editorLength: edit.base.editorLength
+            sourceStart: start,
+            sourceEnd: end,
+            editorAnchor: edit.base.editorStart,
+            editorDelta: edit.delta
         )
     case .trimLeading:
         let source = model.sourceTime(atEditorTime: edit.base.editorStart + edit.delta)

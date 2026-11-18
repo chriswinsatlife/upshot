@@ -153,6 +153,7 @@ final class ScreenshotHistoryStore {
                 }
                 try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
             }
+            DevelopmentCaptureMarker.mark(destinationURL)
 
             let imageSize = ScreenshotImageLoader.imageSize(at: destinationURL) ?? .zero
             let item = ScreenshotHistoryItem(
@@ -185,6 +186,7 @@ final class ScreenshotHistoryStore {
                 }
                 try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
             }
+            DevelopmentCaptureMarker.mark(destinationURL)
 
             let metadata = await videoMetadata(at: destinationURL)
 
