@@ -45,7 +45,7 @@ nonisolated enum RecordingCursorStyle: String, Codable, CaseIterable, Sendable {
         case .triangle: "Triangle"
         case .transparent: "Transparent"
         case .frosted: "Frosted"
-        case .macos: "macOS"
+        case .macos: "Classic macOS"
         case .tahoe: "Golden Gate"
         case .tahoeInverted: "Golden Gate Inverted"
         case .boldOutline: "Bold Outline"

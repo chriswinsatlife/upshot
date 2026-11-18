@@ -16,10 +16,13 @@ nonisolated struct RecordingZoomSuggestionFeedback: Identifiable {
     var detail: String?
     var succeeded = false
 
-    init(result: RecordingZoomSuggestionResult, hasTelemetry: Bool) {
+    init(result: RecordingZoomSuggestionResult, hasTelemetry: Bool, replacedExisting: Bool) {
         switch result.status {
         case .ok:
-            title = "Added \(result.cues.count) interaction-based zoom suggestion\(result.cues.count == 1 ? "" : "s")"
+            let plural = result.cues.count == 1 ? "" : "s"
+            title = replacedExisting
+                ? "Replaced zooms with \(result.cues.count) interaction-based zoom\(plural)"
+                : "Added \(result.cues.count) interaction-based zoom suggestion\(plural)"
             succeeded = true
         case .noTelemetry:
             title = hasTelemetry ? "No usable cursor telemetry" : "No cursor telemetry available"

@@ -1470,7 +1470,7 @@ final class RecordingStudioModel {
                 actionName: replacingExisting ? "Reset Zooms" : "Apply Auto Zooms"
             )
         }
-        automaticZoomState.feedback = RecordingZoomSuggestionFeedback(result: result, hasTelemetry: hasTelemetry)
+        automaticZoomState.feedback = RecordingZoomSuggestionFeedback(result: result, hasTelemetry: hasTelemetry, replacedExisting: replacingExisting)
         logZoomSuggestions(result, trigger: replacingExisting ? "manual_rebuild" : "lane_suggestions")
     }
 

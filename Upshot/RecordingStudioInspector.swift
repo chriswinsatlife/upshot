@@ -475,7 +475,8 @@ struct StudioInspector: View {
                 )
                 .help("Applying a preset replaces zoom timing, cursor size, smoothing and click bounce.")
 
-                if RecordingMotionPreset.matching(appearance: model.exportAppearance, style: model.style) == nil {
+                if model.exportAppearance.zoomMotion != nil,
+                   RecordingMotionPreset.matching(appearance: model.exportAppearance, style: model.style) == nil {
                     Text("Custom · Your settings differ from these presets.")
                         .font(.dsCaption)
                         .foregroundStyle(Palette.secondaryLabel)
