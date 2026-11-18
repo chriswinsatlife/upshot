@@ -10,7 +10,11 @@ public enum LiveStateRuntime {
 
     @MainActor
     public static func run(_ request: LiveStateLaunchRequest, application makeApplication: @MainActor () -> any LiveStateApplication) -> Never {
-        LiveStateLog.event("live_state_run_started", ["request": String(describing: request), "arguments": Array(CommandLine.arguments.dropFirst())])
+        switch request {
+        case .invalid: break
+        case .listLiveStates, .presentLiveState: LiveStatePrivateBundle.enter()
+        }
+        LiveStateLog.event("live_state_run_started", ["request": String(describing: request), "arguments": Array(CommandLine.arguments.dropFirst()), "bundle": Bundle.main.bundlePath])
         if case .invalid(let reason) = request {
             LiveStateOutput.write(["event": "live_state_failed", "reason": reason])
             LiveStateLog.event("live_state_run_finished", ["exitStatus": 2, "reason": reason])

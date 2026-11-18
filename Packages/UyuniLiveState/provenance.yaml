@@ -1,4 +1,4 @@
 source_repository: chriswinsatlife/uyuni
 source_path: packages/uyuni_live_state_swift
-source_commit: 9667717cbac688037b6bea420ad02c52f35df0b3
+source_commit: a210a019da8a7e512b85e0acde088cadcf8cc8b7
 copied_by: scripts/update-uyuni-live-state-package.sh
