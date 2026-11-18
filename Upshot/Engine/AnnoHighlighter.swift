@@ -32,7 +32,6 @@ extension AnnoEditor {
             identifiers.insert(highlighted.id)
         }
         selectedIds = identifiers.isEmpty ? [id] : identifiers
-        tool = .select
         highlighterDragRect = nil
         AppLog.event("annotation", "annotation_highlighter_committed", fields: ["boxes": String(describing: boxes.count), "snapped": String(describing: String(!boxes.isEmpty))])
     }

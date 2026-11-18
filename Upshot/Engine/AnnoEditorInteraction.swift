@@ -252,7 +252,6 @@ extension AnnoEditor {
                 setBoxSize(id, width: fallback, height: fallback)
             }
             selectedIds = [id]
-            tool = .select
 
         case let .creatingArrow(id):
             updateCreationArrowDirection(optionHeld: pointer.alt)
@@ -266,7 +265,6 @@ extension AnnoEditor {
                 document.delete([id])
             } else {
                 selectedIds = [id]
-                tool = .select
             }
 
         case let .brushing(origin):
@@ -702,7 +700,6 @@ extension AnnoEditor {
         if let props = document.shape(id)?.textProps {
             AppLog.event("annotation", "annotation_text_committed", fields: ["style": String(describing: (props.style ?? .plain).rawValue)])
         }
-        if tool == .text { tool = .select }
         notifyChanged()
     }
 
