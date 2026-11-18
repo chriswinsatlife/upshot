@@ -45,6 +45,7 @@ nonisolated enum UpshotStorage {
 
     static var configurationFileURL: URL {
         if let fixtureRoot { return fixtureRoot.appendingPathComponent("Configuration/config.toml") }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/upshot/config.toml")
+        let fileName = DevelopmentCaptureMarker.isDevelopmentBuild ? "config.dev.toml" : "config.toml"
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/upshot/\(fileName)")
     }
 }

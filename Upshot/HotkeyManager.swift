@@ -9,6 +9,8 @@ final class HotkeyManager {
     static let shared = HotkeyManager()
     
     private static let hotKeySignature = OSType(0x4F53_4854)
+    private static let registersGlobalShortcuts = !DevelopmentCaptureMarker.isDevelopmentBuild
+    private static let developmentBuildShortcutMessage = "Upshot Dev does not register global shortcuts, so they reach only Upshot."
 
     private var eventHandlerRef: EventHandlerRef?
     private var hotKeyRefs: [CaptureHotkeyAction: EventHotKeyRef] = [:]
@@ -34,6 +36,10 @@ final class HotkeyManager {
         guard !isRecordingShortcut else { return }
         unregisterHotkeys()
         registrationErrors.removeAll()
+        guard Self.registersGlobalShortcuts else {
+            markShortcutsUnregisteredInDevelopmentBuild()
+            return
+        }
 
         var registeredShortcuts: Set<HotkeyShortcut> = []
         for action in CaptureHotkeyAction.allCases {
@@ -63,22 +69,39 @@ final class HotkeyManager {
         guard previous != shortcuts else { return }
         installEventHandlerIfNeeded()
         unregisterHotkeys()
-        do {
-            for action in CaptureHotkeyAction.allCases {
-                if let shortcut = shortcuts[action] {
-                    hotKeyRefs[action] = try registerHotKey(action: action, shortcut: shortcut)
+        if Self.registersGlobalShortcuts {
+            do {
+                for action in CaptureHotkeyAction.allCases {
+                    if let shortcut = shortcuts[action] {
+                        hotKeyRefs[action] = try registerHotKey(action: action, shortcut: shortcut)
+                    }
                 }
+            } catch {
+                unregisterHotkeys()
+                reloadHotkeys()
+                throw error
             }
-        } catch {
-            unregisterHotkeys()
-            reloadHotkeys()
-            throw error
         }
         for action in CaptureHotkeyAction.allCases {
             CaptureHotkeyPreferences.saveShortcut(shortcuts[action], for: action)
         }
         registrationErrors.removeAll()
+        if !Self.registersGlobalShortcuts {
+            markShortcutsUnregisteredInDevelopmentBuild()
+        }
         AppLog.event("settings", "shortcut_catalog_loaded", fields: ["bindings": String(describing: shortcuts.count)])
+    }
+
+    private func markShortcutsUnregisteredInDevelopmentBuild() {
+        var unregistered = 0
+        for action in CaptureHotkeyAction.allCases where CaptureHotkeyPreferences.shortcut(for: action) != nil {
+            registrationErrors[action] = Self.developmentBuildShortcutMessage
+            unregistered += 1
+        }
+        AppLog.event("settings", "global_shortcuts_not_registered", fields: [
+            "reason": "development_build",
+            "shortcuts": String(unregistered)
+        ])
     }
 
     func suspendForShortcutRecording() {
@@ -118,7 +141,7 @@ final class HotkeyManager {
     }
     
     func setShortcut(_ shortcut: HotkeyShortcut?, for action: CaptureHotkeyAction) throws {
-        if shortcut == CaptureHotkeyPreferences.shortcut(for: action), hotKeyRefs[action] != nil { return }
+        if shortcut == CaptureHotkeyPreferences.shortcut(for: action), hotKeyRefs[action] != nil || !Self.registersGlobalShortcuts { return }
         installEventHandlerIfNeeded()
         if let shortcut {
             guard shortcut.isValid else { throw AutomationError.message("Use a valid key with at least one modifier.") }
@@ -126,11 +149,11 @@ final class HotkeyManager {
                 throw AutomationError.message("This shortcut is assigned to \(conflict.title).")
             }
         }
-        let newRef = try shortcut.map { try registerHotKey(action: action, shortcut: $0) }
+        let newRef = Self.registersGlobalShortcuts ? try shortcut.map { try registerHotKey(action: action, shortcut: $0) } : nil
         if let oldRef = hotKeyRefs[action] { UnregisterEventHotKey(oldRef) }
         hotKeyRefs[action] = newRef
         CaptureHotkeyPreferences.saveShortcut(shortcut, for: action)
-        registrationErrors[action] = nil
+        registrationErrors[action] = shortcut != nil && !Self.registersGlobalShortcuts ? Self.developmentBuildShortcutMessage : nil
         AppLog.event("settings", "shortcut_updated", fields: ["action": String(describing: action.route), "binding": String(describing: shortcut?.displayString ?? "disabled")])
     }
 
