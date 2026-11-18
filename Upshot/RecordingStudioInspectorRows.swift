@@ -71,14 +71,25 @@ struct StudioInspectorPickerRow<Value: Hashable, Options: View>: View {
     }
 
     var body: some View {
-        InterfaceRow(title) {
-            Picker(title, selection: $selection) {
-                options()
+        HStack(alignment: .center, spacing: InterfaceMetrics.rowControlSpacing) {
+            InterfaceRowLabel(title)
+                .fixedSize()
+                .layoutPriority(1)
+            Spacer(minLength: Space.l)
+            ViewThatFits(in: .horizontal) {
+                picker.fixedSize()
+                picker.fixedSize(horizontal: false, vertical: true)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         }
+        .frame(minHeight: InterfaceMetrics.rowMinimumHeight)
+    }
+
+    private var picker: some View {
+        Picker(title, selection: $selection) {
+            options()
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
     }
 }
 
