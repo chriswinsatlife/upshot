@@ -312,6 +312,7 @@ nonisolated enum RecordingTranscriptionService {
     }
 
     private struct AudioSource {
+        var asset: AVURLAsset
         var track: AVAssetTrack
         var source: RecordingTranscriptSource?
     }
@@ -471,10 +472,10 @@ nonisolated enum RecordingTranscriptionService {
             if channels > 1, system == nil { system = track }
         }
         if let microphone, let system {
-            return [AudioSource(track: microphone, source: .microphone), AudioSource(track: system, source: .system)]
+            return [AudioSource(asset: asset, track: microphone, source: .microphone), AudioSource(asset: asset, track: system, source: .system)]
         }
-        if let microphone { return [AudioSource(track: microphone, source: .microphone)] }
-        return [AudioSource(track: system ?? fallback, source: system == nil ? nil : .system)]
+        if let microphone { return [AudioSource(asset: asset, track: microphone, source: .microphone)] }
+        return [AudioSource(asset: asset, track: system ?? fallback, source: system == nil ? nil : .system)]
     }
 
     private static func extractAudio(from track: AVAssetTrack) async throws -> (url: URL, sourceTimeOffset: TimeInterval) {
