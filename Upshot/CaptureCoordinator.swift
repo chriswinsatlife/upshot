@@ -190,6 +190,9 @@ final class CaptureCoordinator {
         let text: String
         do {
             text = try await ImageTextRecognizer.recognizeText(in: image)
+        } catch is CancellationError {
+            AppLog.event("capture", "capture_text_recognition_cancelled")
+            return .cancelled
         } catch {
             AppLog.event("capture", "capture_text_recognition_failed", fields: ["error": AppLog.error(error)])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Text recognition failed", displayID: displayID)
@@ -306,6 +309,9 @@ final class CaptureCoordinator {
             let result = finishCapture(url: processedURL, displayID: displayID, source: source, presentsPreview: presentsPreview)
             AppLog.event("capture", "capture_completed", fields: ["operation_id": operationID, "type": metadata.captureType.rawValue, "outcome": "success", "duration": String(describing: started.duration(to: .now))])
             return result
+        } catch is CancellationError {
+            AppLog.event("capture", "capture_completed", fields: ["operation_id": operationID, "type": metadata.captureType.rawValue, "outcome": "cancelled", "duration": String(describing: started.duration(to: .now))])
+            return nil
         } catch {
             AppLog.event("capture", "capture_completed", fields: ["operation_id": operationID, "type": metadata.captureType.rawValue, "outcome": "failed", "error": AppLog.error(error), "duration": String(describing: started.duration(to: .now))])
             CaptureTextFeedbackPresenter.shared.showFailure(title: "Capture failed", displayID: displayID)

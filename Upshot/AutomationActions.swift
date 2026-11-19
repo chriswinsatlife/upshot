@@ -30,9 +30,15 @@ enum AutomationActions {
             AppLog.event("automation", "automation_action_completed", fields: ["action": action.route, "operation_id": operationID, "outcome": "success", "duration": String(describing: started.duration(to: .now))])
             return result
         } catch {
-            AppLog.event("automation", "automation_action_completed", fields: ["action": action.route, "operation_id": operationID, "outcome": error is CancellationError ? "cancelled" : "failed", "error": AppLog.error(error), "duration": String(describing: started.duration(to: .now))])
+            AppLog.event("automation", "automation_action_completed", fields: ["action": action.route, "operation_id": operationID, "outcome": isCancellation(error) ? "cancelled" : "failed", "error": AppLog.error(error), "duration": String(describing: started.duration(to: .now))])
             throw error
         }
+    }
+
+    private static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if case AutomationError.cancelled? = error as? AutomationError { return true }
+        return false
     }
 
     private static func execute(_ action: CaptureHotkeyAction, parameters: [String: String]) async throws -> JSONValue {

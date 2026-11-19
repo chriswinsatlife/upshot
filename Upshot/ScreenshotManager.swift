@@ -246,6 +246,8 @@ final class ScreenshotManager {
 
     private func generateTempPath(extension ext: String) -> String {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "co.chrisyork.upshot", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let initialURL = directory.appendingPathComponent(ScreenshotFileNaming.fileName(extension: ext))
         guard FileManager.default.fileExists(atPath: initialURL.path) else {
             return initialURL.path

@@ -17,8 +17,13 @@ nonisolated enum AppLog {
     }
 
     static func error(_ error: any Error) -> String {
-        let error = error as NSError
-        return "\(error.domain):\(error.code)"
+        var current = error as NSError
+        var codes = ["\(current.domain):\(current.code)"]
+        while codes.count < 5, let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError {
+            codes.append("\(underlying.domain):\(underlying.code)")
+            current = underlying
+        }
+        return codes.joined(separator: ">")
     }
 
     static func identifier(_ value: String) -> String {

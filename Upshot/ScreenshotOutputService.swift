@@ -58,7 +58,7 @@ enum ScreenshotOutputService {
             return destination
         } catch {
             try? FileManager.default.removeItem(at: processingURL)
-            AppLog.event("capture", "screenshot_output_processing_failed", fields: ["error": AppLog.error(error), "type": String(describing: captureType.rawValue)])
+            AppLog.event("capture", error is CancellationError ? "screenshot_output_processing_cancelled" : "screenshot_output_processing_failed", fields: ["error": AppLog.error(error), "type": String(describing: captureType.rawValue)])
             throw error
         }
     }
