@@ -102,7 +102,7 @@ Status: done.
   - URL scheme. Status: done. Implementing file: `Upshot/AutomationURLRouter.swift`.
   - `upshot` capture CLI over the existing socket. Status: done. Implementing file: `Upshot/AutomationCommandLine.swift`.
   - Searchable shortcut catalog. Status: done. Implementing file: `Upshot/SettingsShortcutsPane.swift`.
-  - Configuration file, `~/.config/upshot/config.toml`. Status: done. Implementing file: `Upshot/AutomationConfiguration.swift`.
+  - Configuration file, `~/.config/upshot/config.yaml`. Status: done. Implementing file: `Upshot/AutomationConfiguration.swift`.
 
 ## Phase Two
 

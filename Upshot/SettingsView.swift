@@ -384,7 +384,7 @@ struct SettingsSearchEntry: Identifiable, Equatable {
         SettingsSearchEntry(title: "Allow AI agents", tab: .mcp, keywords: "mcp server agent client"),
         SettingsSearchEntry(title: "Keep capture history", tab: .advanced, keywords: "retention days delete trash"),
         SettingsSearchEntry(title: "Open Capture History", tab: .advanced, keywords: "history"),
-        SettingsSearchEntry(title: "Configuration file", tab: .advanced, keywords: "config toml reveal reload"),
+        SettingsSearchEntry(title: "Configuration file", tab: .advanced, keywords: "config yaml reveal reload"),
         SettingsSearchEntry(title: "Analyze captures", tab: .textRecognition, keywords: "library text analysis search categories"),
         SettingsSearchEntry(title: "Sort existing captures", tab: .textRecognition, keywords: "library categories apple intelligence"),
         SettingsSearchEntry(title: "Updates", tab: .about, keywords: "version sparkle check")

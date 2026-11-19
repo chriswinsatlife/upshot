@@ -1,125 +1,121 @@
 import Foundation
+import Yams
 
 nonisolated struct AutomationConfigurationDocument {
     var preferences: [String: JSONValue] = [:]
     var shortcuts: [String: String] = [:]
 
+    private static let resolver = Resolver.basic.appending(.bool).appending(.int).appending(.float).appending(.null)
+
     init() {}
 
     init(text: String) throws {
-        var section = ""
-        var sections: Set<String> = []
-        var keys: Set<String> = []
-        for (offset, original) in text.components(separatedBy: .newlines).enumerated() {
-            let lineNumber = offset + 1
-            let line = Self.removingComment(original).trimmingCharacters(in: .whitespaces)
-            if line.isEmpty { continue }
-            if line.hasPrefix("[") {
-                guard ["[preferences]", "[shortcuts]"].contains(line), sections.insert(line).inserted else {
-                    throw AutomationError.message("Configuration line \(lineNumber): unknown or repeated table.")
+        let root: Node?
+        do {
+            root = try Yams.compose(yaml: text, Self.resolver)
+        } catch let error as YamlError {
+            throw AutomationError.message("Configuration is not valid YAML: \(error)")
+        }
+        guard let root else { return }
+        guard let mapping = root.mapping else {
+            throw AutomationError.message("Configuration line \(Self.line(of: root)): expected a mapping with preferences and shortcuts.")
+        }
+        for (keyNode, valueNode) in mapping {
+            let section = try Self.key(keyNode)
+            guard section == "preferences" || section == "shortcuts" else {
+                throw AutomationError.message("Configuration line \(Self.line(of: keyNode)): unknown section \(section).")
+            }
+            if valueNode.scalar != nil, Self.tagName(of: valueNode) == .null { continue }
+            guard let entries = valueNode.mapping else {
+                throw AutomationError.message("Configuration line \(Self.line(of: valueNode)): \(section) must be a mapping of keys to values.")
+            }
+            for (entryKeyNode, entryValueNode) in entries {
+                let key = try Self.key(entryKeyNode)
+                let value = try Self.value(entryValueNode)
+                if section == "preferences" {
+                    preferences[key] = value
+                } else {
+                    guard case .string(let binding) = value else {
+                        throw AutomationError.message("Configuration line \(Self.line(of: entryValueNode)): shortcut bindings must be strings.")
+                    }
+                    shortcuts[key] = binding
                 }
-                section = String(line.dropFirst().dropLast())
-                continue
-            }
-            guard !section.isEmpty, let separator = Self.assignmentIndex(in: line) else {
-                throw AutomationError.message("Configuration line \(lineNumber): expected a key and value in a table.")
-            }
-            let rawKey = line[..<separator].trimmingCharacters(in: .whitespaces)
-            let key: String
-            if rawKey.hasPrefix("\"") || rawKey.hasPrefix("'") {
-                guard case .string(let decoded) = try Self.scalar(rawKey, line: lineNumber) else {
-                    throw AutomationError.message("Configuration line \(lineNumber): invalid quoted key.")
-                }
-                key = decoded
-            } else {
-                guard !rawKey.isEmpty, rawKey.utf8.allSatisfy({ byte in
-                    (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte) || byte == 95 || byte == 45
-                }) else { throw AutomationError.message("Configuration line \(lineNumber): quote keys containing punctuation.") }
-                key = rawKey
-            }
-            guard keys.insert("\(section).\(key)").inserted else { throw AutomationError.message("Configuration line \(lineNumber): duplicate key \(key).") }
-            let value = try Self.scalar(line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces), line: lineNumber)
-            if section == "preferences" {
-                preferences[key] = value
-            } else {
-                guard case .string(let binding) = value else { throw AutomationError.message("Configuration line \(lineNumber): shortcut bindings must be strings.") }
-                shortcuts[key] = binding
             }
         }
     }
 
     func encoded() throws -> String {
-        var lines = ["[preferences]"]
-        for key in preferences.keys.sorted() {
-            lines.append("\(try Self.encodedScalar(.string(key))) = \(try Self.encodedScalar(preferences[key]!))")
+        let preferenceNodes = try preferences.keys.sorted().map { key in
+            (Node.scalar(key.represented()), try Self.node(for: preferences[key]!))
         }
-        lines += ["", "[shortcuts]"]
-        for route in shortcuts.keys.sorted() {
-            lines.append("\(try Self.encodedScalar(.string(route))) = \(try Self.encodedScalar(.string(shortcuts[route]!)))")
+        let shortcutNodes = shortcuts.keys.sorted().map { route in
+            (Node.scalar(route.represented()), Node.scalar(shortcuts[route]!.represented()))
         }
-        return lines.joined(separator: "\n") + "\n"
+        let root = Node.mapping(Node.Mapping([
+            (Node("preferences"), Node.mapping(Node.Mapping(preferenceNodes))),
+            (Node("shortcuts"), Node.mapping(Node.Mapping(shortcutNodes)))
+        ]))
+        return try Yams.serialize(node: root, width: -1, allowUnicode: true)
     }
 
-    private static func encodedScalar(_ value: JSONValue) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-        return String(decoding: try encoder.encode(value), as: UTF8.self)
+    private static func node(for value: JSONValue) throws -> Node {
+        switch value {
+        case .bool(let flag):
+            return Node(flag ? "true" : "false", Yams.Tag(.bool))
+        case .number(let number):
+            return Node(try encodedNumber(number), Yams.Tag(number.rounded() == number ? .int : .float))
+        case .string(let string):
+            return .scalar(string.represented())
+        case .array(let values):
+            return .sequence(Node.Sequence(try values.map(node(for:)), Yams.Tag(.seq), .flow))
+        case .null, .object:
+            throw AutomationError.message("Configuration values must be strings, Booleans, numbers, or lists of strings or numbers.")
+        }
     }
 
-    private static func scalar(_ text: String, line: Int) throws -> JSONValue {
-        if text.hasPrefix("'"), text.hasSuffix("'"), text.count >= 2 {
-            let value = String(text.dropFirst().dropLast())
-            guard !value.contains("'") else { throw AutomationError.message("Configuration line \(line): invalid literal string.") }
-            return .string(value)
+    private static func encodedNumber(_ number: Double) throws -> String {
+        guard number.isFinite else { throw AutomationError.message("Configuration numbers must be finite.") }
+        return String(decoding: try JSONEncoder().encode(number), as: UTF8.self)
+    }
+
+    private static func key(_ node: Node) throws -> String {
+        guard case .scalar(let scalar) = node, !scalar.string.isEmpty else {
+            throw AutomationError.message("Configuration line \(line(of: node)): keys must be non-empty strings.")
         }
-        if let value = try? JSONValue.decoder.decode(JSONValue.self, from: Data(text.utf8)) {
-            switch value {
-            case .string, .bool: return value
-            case .number(let number) where number.isFinite: return value
-            case .array(let values) where values.allSatisfy({ value in
-                switch value {
-                case .string: true
-                case .number(let number): number.isFinite
-                default: false
-                }
-            }): return value
-            default: break
+        return scalar.string
+    }
+
+    private static func value(_ node: Node) throws -> JSONValue {
+        switch node {
+        case .scalar(let scalar):
+            switch Self.tagName(of: node) {
+            case .bool:
+                if let flag = node.bool { return .bool(flag) }
+            case .int:
+                if let integer = node.int { return .number(Double(integer)) }
+            case .float:
+                if let number = node.float, number.isFinite { return .number(number) }
+            case .str:
+                return .string(scalar.string)
+            default:
+                break
             }
-        }
-        throw AutomationError.message("Configuration line \(line): expected a quoted string, Boolean, finite decimal number, or one-line array of strings or numbers.")
-    }
-
-    private static func removingComment(_ text: String) -> String {
-        var quote: Character?
-        var escaped = false
-        for index in text.indices {
-            let character = text[index]
-            if escaped { escaped = false; continue }
-            if character == "\\", quote == "\"" { escaped = true; continue }
-            if let current = quote {
-                if character == current { quote = nil }
-            } else if character == "\"" || character == "'" {
-                quote = character
-            } else if character == "#" {
-                return String(text[..<index])
+        case .sequence(let sequence):
+            let values = try sequence.map(value)
+            if values.allSatisfy({ if case .array = $0 { false } else { true } }) {
+                return .array(values)
             }
+        case .mapping, .alias:
+            break
         }
-        return text
+        throw AutomationError.message("Configuration line \(line(of: node)): expected a string, Boolean, finite number, or list of strings or numbers.")
     }
 
-    private static func assignmentIndex(in text: String) -> String.Index? {
-        var quote: Character?
-        var escaped = false
-        for index in text.indices {
-            let character = text[index]
-            if escaped { escaped = false; continue }
-            if character == "\\", quote == "\"" { escaped = true; continue }
-            if let current = quote {
-                if character == current { quote = nil }
-            } else if character == "\"" || character == "'" {
-                quote = character
-            } else if character == "=" { return index }
-        }
-        return nil
+    private static func tagName(of node: Node) -> Yams.Tag.Name {
+        Yams.Tag.Name(rawValue: node.tag.rawValue)
+    }
+
+    private static func line(of node: Node) -> Int {
+        node.mark?.line ?? 0
     }
 }

@@ -5,33 +5,32 @@ approval_status: not_approved
 
 # Configuration File
 
-Upshot creates `~/.config/upshot/config.toml` at app launch when the file is absent. The file synchronizes preferences and shortcut assignments with the running app. A two-second timer checks file changes and saves changes made in Settings. App termination flushes pending Settings changes.
+Upshot creates `~/.config/upshot/config.yaml` at app launch, and Upshot Dev creates `~/.config/upshot/config.dev.yaml`, when the file is absent. The file synchronizes preferences and shortcut assignments with the running app. A two-second timer checks file changes and saves changes made in Settings. App termination flushes pending Settings changes.
 
-The file contains `[preferences]` and `[shortcuts]` tables. Upshot writes all supported preferences and every registered action. Missing entries preserve current values when importing a file. The first launch without a configuration file exports current preferences and shortcut assignments.
+The file is YAML with two top-level mappings, `preferences` and `shortcuts`. Upshot reads and writes it with the Yams package. Upshot writes all supported preferences and every registered action. Missing entries preserve current values when importing a file. The first launch without a configuration file exports current preferences and shortcut assignments.
 
 ## Syntax
 
-The supported TOML subset consists of these two tables, scalar decimal numbers, Boolean values, single-line double-quoted strings with JSON-compatible escapes, single-line literal strings, single-line arrays of strings or decimal numbers, bare keys, quoted keys, blank lines, and `#` comments outside strings. Use quoted keys for preference names containing periods and route names containing slashes. Inline tables, nested arrays, dates, multiline strings, numeric separators, and additional tables are rejected. Selection rectangles use four-number arrays; remembered display layouts use string arrays. Recording export defaults use a quoted JSON string.
+The `preferences` mapping maps each preference name to a string, Boolean, finite number, or list of strings or numbers. The `shortcuts` mapping maps each action route to a binding string. Plain values resolve as YAML 1.1 Booleans (`true`, `false`, `yes`, `no`, `on`, `off`), integers, floats, and null; every other plain value is a string. Quote a string that would otherwise resolve as another type, such as `'off'` or `'3'`. Comments start with `#`. Nested mappings, null values, duplicate keys, and other top-level keys are rejected. Selection rectangles use four-number lists; remembered display layouts use string lists. Recording export defaults use a quoted JSON string.
 
-```toml
-[preferences]
-autoSaveScreenshots = true
-playSounds = false
-captureDelaySeconds = 3
-compressionQuality = 0.8
-exportFormat = "png"
-exportDirectoryPath = "~/Pictures/Upshot"
-"afterCapture.screenshot.showOverlay" = true
-
-[shortcuts]
-"capture/fullscreen" = "option+18"
-"capture/window" = "option+19"
-"capture/area" = "option+20"
-"capture/area-copy" = "control+option+8"
-"capture/area-save" = "control+option+1"
-"capture/area-upload" = "disabled"
-"capture/self-timer" = "disabled"
-"capture/previous-area" = "disabled"
+```yaml
+preferences:
+  autoSaveScreenshots: true
+  playSounds: false
+  captureDelaySeconds: 3
+  compressionQuality: 0.8
+  exportFormat: png
+  exportDirectoryPath: ~/Pictures/Upshot
+  afterCapture.screenshot.showOverlay: true
+shortcuts:
+  capture/fullscreen: option+18
+  capture/window: option+19
+  capture/area: option+20
+  capture/area-copy: control+option+8
+  capture/area-save: control+option+1
+  capture/area-upload: disabled
+  capture/self-timer: disabled
+  capture/previous-area: disabled
 ```
 
 Shortcut bindings contain `control`, `option`, `shift`, or `command`, separated by `+`, followed by the decimal macOS virtual key code. At least one modifier is required. Modifier names cannot repeat. Key codes range from 0 through 127. `disabled` removes the global shortcut. The shortcut recorder in Settings supplies bindings without requiring knowledge of key codes.
@@ -91,11 +90,11 @@ Configuration errors produce `Configuration rejected error=<reason>`. Successful
 
 Settings changes rewrite the file into the canonical format. This rewrite removes comments and preserves supported preference values and shortcut assignments. A file edit detected during the same synchronization cycle takes precedence over pending Settings changes. Invalid files remain untouched until corrected. Synchronization pauses while the shortcut recorder is active.
 
-Upshot and Upshot Dev use the same configuration file. Concurrent instances observe each other's file changes. Each build retains its existing UserDefaults domain and agent socket.
+Upshot uses `config.yaml` and Upshot Dev uses `config.dev.yaml`, so a settings change in one app never rewrites the other app's file. Each build retains its existing UserDefaults domain and agent socket.
 
 ## Verification
 
-In an integration session, launch Upshot Dev and inspect the newly created configuration file. Change `playSounds` in the file and confirm Settings reflects the value after synchronization. Change the self-timer in Settings and confirm the file reflects the value. Assign a shortcut in Settings and confirm its route appears under `[shortcuts]`. Set two routes to the same shortcut and confirm import fails while the previous shortcuts remain available. Correct the conflict and confirm import succeeds. Close the app after changing a preference and verify the change persists in the file.
+In an integration session, launch Upshot Dev and inspect the newly created configuration file. Change `playSounds` in the file and confirm Settings reflects the value after synchronization. Change the self-timer in Settings and confirm the file reflects the value. Assign a shortcut in Settings and confirm its route appears under `shortcuts`. Set two routes to the same shortcut and confirm import fails while the previous shortcuts remain available. Correct the conflict and confirm import succeeds. Close the app after changing a preference and verify the change persists in the file.
 
 Settings → General → Configuration File provides Reveal Configuration, Reload Configuration, and configuration errors.
 
@@ -141,12 +140,10 @@ Shift at capture confirmation skips the automatic annotation background. With a 
 
 ## Annotation Preferences
 
-Quote annotation preference names because they contain periods.
-
-- `"annotationEditor.alwaysOnTop"`: Boolean, default false.
-- `"annotationEditor.objectShadows"`: Boolean, default false; controls new objects and the existing selected-object action.
-- `"annotationEditor.automaticallyExpandCanvas"`: Boolean, default false.
-- `"annotationEditor.drawingSmoothing"`: number from zero through one, default 0.62; preserves the existing freehand stroke pipeline at its default.
+- `annotationEditor.alwaysOnTop`: Boolean, default false.
+- `annotationEditor.objectShadows`: Boolean, default false; controls new objects and the existing selected-object action.
+- `annotationEditor.automaticallyExpandCanvas`: Boolean, default false.
+- `annotationEditor.drawingSmoothing`: number from zero through one, default 0.62; preserves the existing freehand stroke pipeline at its default.
 
 ## Quick Access Preferences
 
@@ -175,9 +172,9 @@ Both swipe keys accept `none`, `tuck`, `copy`, `save`, `annotate`, `pin`, `view`
 
 Default recording delivery JSON:
 
-```toml
-[preferences]
-recordingExtendedExportDefaults = '{"format":"Video","gifFrameRate":15,"gifQuality":"High","optimizesGIF":true,"scalesRetinaToOne":false,"monoAudio":false,"separateAudioTracks":false}'
+```yaml
+preferences:
+  recordingExtendedExportDefaults: '{"format":"Video","gifFrameRate":15,"gifQuality":"High","optimizesGIF":true,"scalesRetinaToOne":false,"monoAudio":false,"separateAudioTracks":false}'
 ```
 
 Recording projects retain their own delivery and appearance files. The configuration key controls remembered delivery defaults rather than overwriting existing project settings.

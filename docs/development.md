@@ -34,7 +34,7 @@ All source is in `Upshot/`, with the drawing engine in `Upshot/Engine/`.
 
 ## Conventions
 
-- Apple frameworks plus two Swift packages: Sparkle for updates and DockProgress for Dock icon progress.
+- Apple frameworks plus three Swift packages: Sparkle for updates, DockProgress for Dock icon progress, and Yams for the YAML configuration file.
 - State uses the Observation framework's `@Observable`.
 - The App Sandbox is off and the hardened runtime is on; do not add sandbox entitlements.
 - `MallocLargeCache=0` is set in `Info.plist` to limit retained heap memory.
