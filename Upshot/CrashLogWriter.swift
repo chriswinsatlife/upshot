@@ -25,6 +25,13 @@ nonisolated final class CrashLogWriter: @unchecked Sendable {
         }
     }
 
+    func removeIfEmpty() {
+        guard prepared.load(ordering: .acquiring) else { return }
+        var status = stat()
+        guard fstat(descriptor, &status) == 0, status.st_size == 0 else { return }
+        unlink(fileURL.path)
+    }
+
     deinit {
         if descriptor >= 0 { Darwin.close(descriptor) }
         if (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) == 0 {

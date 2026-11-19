@@ -6,9 +6,13 @@ import UyuniLiveState
 enum StateRenderLivePresentation {
     static let regionMargin: CGFloat = 40
     private static var signalSources: [DispatchSourceSignal] = []
+    private static let privateBundleSourceEnvironmentKey = "UYUNI_LIVE_STATE_PRIVATE_BUNDLE_SOURCE"
 
     static func run(_ request: LiveStateLaunchRequest) -> Never {
         recordProcessEnd()
+        if ProcessInfo.processInfo.environment[privateBundleSourceEnvironmentKey] == nil, Bundle.main.bundleURL.pathExtension == "app" {
+            AppLog.shared.removeEmptyCrashFile()
+        }
         LiveStateRuntime.run(request) { UpshotLiveStates() }
     }
 
@@ -36,6 +40,7 @@ enum StateRenderLivePresentation {
             let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
             source.setEventHandler {
                 log("process_signal", ["signal": Int(number), "time": timestamp()])
+                AppLog.shared.removeEmptyCrashFile()
                 signal(number, SIG_DFL)
                 raise(number)
             }

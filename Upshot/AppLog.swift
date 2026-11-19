@@ -33,6 +33,9 @@ nonisolated enum AppLog {
 
     static func installExceptionHandler() {
         shared.prepareCrashCapture()
+        atexit {
+            AppLog.shared.removeEmptyCrashFile()
+        }
         NSSetUncaughtExceptionHandler { exception in
             AppLog.captureException(exception, event: "uncaught_exception")
         }
@@ -164,6 +167,10 @@ nonisolated final class AppLogStore: @unchecked Sendable {
 
     func prepareCrashCapture() {
         crashWriter.prepare()
+    }
+
+    func removeEmptyCrashFile() {
+        crashWriter.removeIfEmpty()
     }
 
     @discardableResult
