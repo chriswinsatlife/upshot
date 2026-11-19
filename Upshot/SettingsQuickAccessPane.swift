@@ -9,7 +9,7 @@ struct SettingsQuickAccessPane: View {
     @AppStorage(UpshotPreferences.previewAutoCloseActionKey) private var autoCloseAction = QuickAccessAutoCloseAction.close
     @AppStorage(UpshotPreferences.previewCloseAfterDraggingKey) private var closeAfterDragging = true
     @AppStorage(UpshotPreferences.previewCloseAfterUploadingKey) private var closeAfterUploading = false
-    @AppStorage(UpshotPreferences.saveButtonUsesFolderKey) private var saveButtonUsesFolder = false
+    @AppStorage(UpshotPreferences.saveButtonUsesFolderKey) private var saveButtonUsesFolder = true
     @AppStorage(UpshotPreferences.previewSwipeTowardEdgeActionKey) private var swipeTowardEdgeAction = QuickAccessSwipeAction.tuck
     @AppStorage(UpshotPreferences.previewSwipeAwayFromEdgeActionKey) private var swipeAwayFromEdgeAction = QuickAccessSwipeAction.none
     @AppStorage(UpshotPreferences.pinnedScreenshotRoundedCornersKey) private var pinnedRoundedCorners = true

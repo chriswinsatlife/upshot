@@ -50,7 +50,7 @@ enum UpshotPreferences {
 
     static var saveButtonUsesConfiguredFolder: Bool {
         if UpshotStorage.defaults.object(forKey: saveButtonUsesFolderKey) == nil {
-            return autoSave
+            return true
         }
         return UpshotStorage.defaults.bool(forKey: saveButtonUsesFolderKey)
     }

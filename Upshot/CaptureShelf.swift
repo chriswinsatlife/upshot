@@ -54,6 +54,7 @@ final class CaptureShelf {
     @ObservationIgnored private var flashTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
     @ObservationIgnored private var compressionTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
     @ObservationIgnored private var keepCardAfterDrag = false
+    @ObservationIgnored private var openSavePanel: NSSavePanel?
 
     private init() {}
 
@@ -492,7 +493,15 @@ final class CaptureShelf {
             return
         }
 
+        if let openSavePanel {
+            NSApp.activate(ignoringOtherApps: true)
+            openSavePanel.makeKeyAndOrderFront(nil)
+            recordActionResult("save", id: id, outcome: "save_panel_already_open", destination: "save_panel")
+            return
+        }
+
         let panel = NSSavePanel()
+        panel.directoryURL = UpshotPreferences.exportDirectory
         panel.allowedContentTypes = item.kind == .video
             ? VideoExportContainer.allCases.map(\.contentType)
             : [ScreenshotFileActions.exportContentType]
@@ -502,8 +511,14 @@ final class CaptureShelf {
         panel.canCreateDirectories = true
         panel.title = item.kind == .video ? "Save Recording" : "Save Screenshot"
 
+        openSavePanel = panel
+        AppActivationPolicy.enter()
         recordActionResult("save", id: id, outcome: "save_panel_opened", destination: "save_panel")
         panel.begin { [weak self] response in
+            MainActor.assumeIsolated {
+                self?.openSavePanel = nil
+                AppActivationPolicy.leave()
+            }
             guard response == .OK, let destination = panel.url else {
                 Task { @MainActor in
                     self?.recordActionResult("save", id: id, outcome: "cancelled", destination: "save_panel")

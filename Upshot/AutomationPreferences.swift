@@ -53,7 +53,7 @@ struct AutomationPreferenceDefinition {
         var values: [String: Self] = [:]
         let booleans: [String: Bool] = [
             UpshotPreferences.autoSaveKey: false,
-            UpshotPreferences.saveButtonUsesFolderKey: UpshotPreferences.autoSave,
+            UpshotPreferences.saveButtonUsesFolderKey: true,
             UpshotPreferences.autoCopyKey: false,
             UpshotPreferences.autoCompressKey: false,
             UpshotPreferences.playSoundsKey: true,
