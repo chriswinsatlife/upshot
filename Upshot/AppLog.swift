@@ -57,6 +57,10 @@ nonisolated enum AppLog {
         if reason.contains("index"), reason.contains("beyond bounds") {
             return "Collection index beyond bounds"
         }
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedReason.range(of: #"^[-+\[\]_A-Za-z0-9: ]+: NSUndoManager 0x[0-9A-Fa-f]+ is in invalid state, [A-Za-z ]+$"#, options: .regularExpression) != nil {
+            return trimmedReason
+        }
         if reason == "Upshot logging verification exception" { return reason }
         return "redacted_exception_reason"
     }

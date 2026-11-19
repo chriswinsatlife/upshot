@@ -413,7 +413,12 @@ final class RecordingStudioModel {
     private var isTornDown = false
     private var isLoading = false
     private var wallpaperCacheLease: BoundedCGImageCache.Lease?
-    private let editUndoManager = UndoManager()
+    private let editUndoManager: UndoManager = {
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        return manager
+    }()
+    private var isEditUndoGroupScheduledToClose = false
     private var projectUndoEntries: [RecordingProjectHistory.Entry] = []
     private var projectRedoEntries: [RecordingProjectHistory.Entry] = []
     private var pendingUndoDocument: RecordingEditDocument?
@@ -1328,6 +1333,7 @@ final class RecordingStudioModel {
             pendingUndoActionName = actionName
             projectRedoEntries.removeAll()
         }
+        openEditUndoGroupIfNeeded()
         editUndoManager.registerUndo(withTarget: self) { target in
             operation(target)
         }
@@ -2625,18 +2631,29 @@ final class RecordingStudioModel {
     }
 
     func performAgentEdit(_ edit: () throws -> Void) rethrows {
-        let manager = editUndoManager
         closeOpenUndoGroups()
-        manager.groupsByEvent = false
-        manager.beginUndoGrouping()
-        defer {
-            manager.endUndoGrouping()
-            manager.groupsByEvent = true
-        }
+        editUndoManager.beginUndoGrouping()
+        defer { editUndoManager.endUndoGrouping() }
         try edit()
     }
 
+    private func openEditUndoGroupIfNeeded() {
+        guard editUndoManager.groupingLevel == 0 else { return }
+        editUndoManager.beginUndoGrouping()
+        isEditUndoGroupScheduledToClose = true
+        DispatchQueue.main.async { [weak self] in
+            self?.closeScheduledEditUndoGroup()
+        }
+    }
+
+    private func closeScheduledEditUndoGroup() {
+        guard isEditUndoGroupScheduledToClose else { return }
+        isEditUndoGroupScheduledToClose = false
+        if editUndoManager.groupingLevel > 0 { editUndoManager.endUndoGrouping() }
+    }
+
     func closeOpenUndoGroups() {
+        isEditUndoGroupScheduledToClose = false
         while editUndoManager.groupingLevel > 0 {
             editUndoManager.endUndoGrouping()
         }
