@@ -150,10 +150,10 @@ final class RecordingProjectStore {
             } catch is CancellationError {
                 return nil
             } catch {
+                guard !Task.isCancelled else { return nil }
                 AppLog.event("library", "project_poster_failed", fields: [
                     "item": AppLog.identifier(session.directoryURL.path), "error": AppLog.error(error)
                 ])
-                guard !Task.isCancelled else { return nil }
                 let fallback = session.freshFinalURL(matching: session.effectiveEditDocument()) ?? session.screenURL
                 guard let image = await VideoPreviewImageLoader.thumbnail(at: fallback, maxPixelSize: 640) else { return nil }
                 return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
