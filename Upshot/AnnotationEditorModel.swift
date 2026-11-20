@@ -425,7 +425,11 @@ final class AnnotationEditorModel {
     }
 
     func deleteSelectedAnnotation() {
+        let count = engine.selectedIds.count
         engine.deleteSelected()
+        AppLog.event("annotation", "annotation_delete", fields: count == 0
+            ? ["outcome": "refused", "reason": "nothing_selected"]
+            : ["outcome": "performed", "deleted": String(count), "annotations": String(engine.shapes.count)])
     }
 
     func selectAllAnnotations() {
@@ -445,22 +449,43 @@ final class AnnotationEditorModel {
         engine.updateEditingText(id, to: text)
     }
 
+    var canUndo: Bool { !isCropping && (engine.canUndo || !cropUndoStack.isEmpty) }
+    var canRedo: Bool { !isCropping && (engine.canRedo || !cropRedoStack.isEmpty) }
+
     func undo() {
-        guard !isCropping else { return }
+        guard !isCropping else {
+            AppLog.event("annotation", "annotation_undo", fields: ["outcome": "refused", "reason": "cropping"])
+            return
+        }
         if engine.canUndo {
             engine.undo()
+            AppLog.event("annotation", "annotation_undo", fields: ["outcome": "performed", "stack": "annotations", "annotations": String(engine.shapes.count)])
+            return
+        }
+        guard !cropUndoStack.isEmpty else {
+            AppLog.event("annotation", "annotation_undo", fields: ["outcome": "refused", "reason": "nothing_to_undo"])
             return
         }
         undoCrop()
+        AppLog.event("annotation", "annotation_undo", fields: ["outcome": "performed", "stack": "image"])
     }
 
     func redo() {
-        guard !isCropping else { return }
+        guard !isCropping else {
+            AppLog.event("annotation", "annotation_redo", fields: ["outcome": "refused", "reason": "cropping"])
+            return
+        }
         if engine.canRedo {
             engine.redo()
+            AppLog.event("annotation", "annotation_redo", fields: ["outcome": "performed", "stack": "annotations", "annotations": String(engine.shapes.count)])
+            return
+        }
+        guard !cropRedoStack.isEmpty else {
+            AppLog.event("annotation", "annotation_redo", fields: ["outcome": "refused", "reason": "nothing_to_redo"])
             return
         }
         redoCrop()
+        AppLog.event("annotation", "annotation_redo", fields: ["outcome": "performed", "stack": "image"])
     }
 
     func smartRedact(using tool: AnnotationTool) {

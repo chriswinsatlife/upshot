@@ -195,7 +195,7 @@ final class AnnoCanvasNSView: NSView {
             context.stroke(rect)
         }
 
-        guard editor.editingTextId == nil, editor.tool == .select, !editor.selectedIds.isEmpty else { return }
+        guard editor.editingTextId == nil, !editor.selectedIds.isEmpty else { return }
 
         if editor.selectedIds.count == 1, let shape = editor.selectedShapes.first, shape.isArrow,
            let info = editor.document.arrowInfo(shape.id) {

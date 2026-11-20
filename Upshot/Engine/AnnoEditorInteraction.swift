@@ -8,6 +8,11 @@ extension AnnoEditor {
             stopEditingText()
         }
 
+        if tool != .select, beginExistingAnnotationInteraction(pointer) {
+            notifyChanged()
+            return
+        }
+
         switch tool {
         case .select:
             beginSelectInteraction(pointer)
@@ -29,41 +34,60 @@ extension AnnoEditor {
         notifyChanged()
     }
 
-    private func beginSelectInteraction(_ pointer: PointerInfo) {
-        if let handle = handle(at: pointer.screenPoint), let bounds = selectionBounds {
-            switch handle {
-            case .arrowStart, .arrowMiddle, .arrowEnd:
-                guard let shape = selectedShapes.first else { return }
-                markUndo()
-                setInteraction(.draggingArrowHandle(id: shape.id, handle: handle))
-            case .rotate:
-                markUndo()
-                let center = bounds.pageCenter
-                setInteraction(.rotating(
-                    center: center,
-                    startAngle: Vec.angle(center, pointer.pagePoint),
-                    initial: document.snapshot()
-                ))
-            default:
-                markUndo()
-                setInteraction(.resizing(handle: handle, bounds: bounds, initial: document.snapshot()))
-            }
-            return
+    private func beginExistingAnnotationInteraction(_ pointer: PointerInfo) -> Bool {
+        if beginSelectionHandleInteraction(pointer) {
+            AppLog.event("annotation", "annotation_existing_pressed", fields: ["tool": tool.rawValue, "target": "handle"])
+            return true
         }
+        guard let shape = hitShape(at: pointer.pagePoint) else { return false }
+        if tool == .text, shape.isText { return false }
+        beginShapeInteraction(shape, pointer: pointer)
+        AppLog.event("annotation", "annotation_existing_pressed", fields: ["tool": tool.rawValue, "target": "annotation"])
+        return true
+    }
+
+    private func beginSelectionHandleInteraction(_ pointer: PointerInfo) -> Bool {
+        guard let handle = handle(at: pointer.screenPoint), let bounds = selectionBounds else { return false }
+        switch handle {
+        case .arrowStart, .arrowMiddle, .arrowEnd:
+            guard let shape = selectedShapes.first else { return true }
+            markUndo()
+            setInteraction(.draggingArrowHandle(id: shape.id, handle: handle))
+        case .rotate:
+            markUndo()
+            let center = bounds.pageCenter
+            setInteraction(.rotating(
+                center: center,
+                startAngle: Vec.angle(center, pointer.pagePoint),
+                initial: document.snapshot()
+            ))
+        default:
+            markUndo()
+            setInteraction(.resizing(handle: handle, bounds: bounds, initial: document.snapshot()))
+        }
+        return true
+    }
+
+    private func beginShapeInteraction(_ shape: AnnoShape, pointer: PointerInfo) {
+        if pointer.shift {
+            if selectedIds.contains(shape.id) {
+                selectedIds.remove(shape.id)
+            } else {
+                selectedIds.insert(shape.id)
+            }
+        } else if !selectedIds.contains(shape.id) {
+            selectedIds = [shape.id]
+        }
+        guard !selectedIds.isEmpty else { return }
+        markUndo()
+        setInteraction(.translating(origin: pointer.pagePoint, initial: initialPositions()))
+    }
+
+    private func beginSelectInteraction(_ pointer: PointerInfo) {
+        if beginSelectionHandleInteraction(pointer) { return }
 
         if let shape = hitShape(at: pointer.pagePoint) {
-            if pointer.shift {
-                if selectedIds.contains(shape.id) {
-                    selectedIds.remove(shape.id)
-                } else {
-                    selectedIds.insert(shape.id)
-                }
-            } else if !selectedIds.contains(shape.id) {
-                selectedIds = [shape.id]
-            }
-            guard !selectedIds.isEmpty else { return }
-            markUndo()
-            setInteraction(.translating(origin: pointer.pagePoint, initial: initialPositions()))
+            beginShapeInteraction(shape, pointer: pointer)
             return
         }
 
@@ -276,7 +300,10 @@ extension AnnoEditor {
                 selectedIds = Set(hits)
             }
 
-        default:
+        case .translating, .resizing, .rotating, .draggingArrowHandle:
+            discardLastUndoIfDocumentUnchanged()
+
+        case .idle:
             break
         }
 

@@ -155,7 +155,7 @@ nonisolated final class AnnoDocument {
     }
 
 
-    struct Snapshot: Codable {
+    struct Snapshot: Codable, Equatable {
         var shapes: [AnnoShape]
         var bindings: [ArrowBinding]
     }

@@ -1,7 +1,3 @@
-//
-//  AnnotationKeyboard.swift
-//  Upshot
-//
 
 import AppKit
 import SwiftUI
@@ -12,6 +8,9 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     let onSave: () -> Void
     let onUndo: () -> Void
     let onRedo: () -> Void
+    let canUndo: () -> Bool
+    let canRedo: () -> Bool
+    let canvasFocusRequest: Int
     let onSelectAll: () -> Void
     let onSelectTool: (AnnotationTool) -> Void
     let onZoomIn: () -> Void
@@ -40,6 +39,8 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.onSave = onSave
         view.onUndo = onUndo
         view.onRedo = onRedo
+        view.canUndo = canUndo
+        view.canRedo = canRedo
         view.onSelectAll = onSelectAll
         view.onSelectTool = onSelectTool
         view.onZoomIn = onZoomIn
@@ -51,15 +52,22 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.onCancelCrop = onCancelCrop
         view.onNudgeCrop = onNudgeCrop
         view.isCropping = isCropping
+        if view.canvasFocusRequest != canvasFocusRequest {
+            view.canvasFocusRequest = canvasFocusRequest
+            view.takeKeyboardFocusFromInspector()
+        }
     }
 }
 
-final class AnnotationKeyCommandHandlerView: NSView {
+final class AnnotationKeyCommandHandlerView: NSView, NSMenuItemValidation {
     var isEnabled: (() -> Bool)?
     var onDelete: (() -> Void)?
     var onSave: (() -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
+    var canUndo: (() -> Bool)?
+    var canRedo: (() -> Bool)?
+    var canvasFocusRequest = 0
     var onSelectAll: (() -> Void)?
     var onSelectTool: ((AnnotationTool) -> Void)?
     var onZoomIn: (() -> Void)?
@@ -74,9 +82,42 @@ final class AnnotationKeyCommandHandlerView: NSView {
 
     private var localKeyMonitor: Any?
 
+    override var acceptsFirstResponder: Bool { true }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateLocalKeyMonitor()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window, window.firstResponder === window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    func takeKeyboardFocusFromInspector() {
+        guard let window, window.firstResponder !== self,
+              !(window.firstResponder is AnnoTextEditorOverlay) else { return }
+        let previous = window.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+        let accepted = window.makeFirstResponder(self)
+        AppLog.event("annotation", "annotation_canvas_keyboard_focus", fields: ["previous": previous, "outcome": accepted ? "taken" : "refused"])
+    }
+
+    @objc func undo(_ sender: Any?) {
+        onUndo?()
+    }
+
+    @objc func redo(_ sender: Any?) {
+        onRedo?()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(undo(_:)):
+            return isEnabled?() != false && canUndo?() == true
+        case #selector(redo(_:)):
+            return isEnabled?() != false && canRedo?() == true
+        default:
+            return true
+        }
     }
 
     deinit {
@@ -104,9 +145,6 @@ final class AnnotationKeyCommandHandlerView: NSView {
                 return event
             }
 
-            // Crop mode is modal: Return applies, Escape cancels, arrows nudge
-            // the selection, and all other editing shortcuts are swallowed so
-            // they can't act on the hidden annotation layer.
             if self.isCropping?() == true {
                 if Self.isReturn(event) {
                     self.onApplyCrop?()
@@ -193,7 +231,6 @@ final class AnnotationKeyCommandHandlerView: NSView {
         event.keyCode == 53
     }
 
-    /// An arrow key as a pixel offset: one pixel, ten with Shift.
     static func arrowNudge(_ event: NSEvent) -> CGSize? {
         guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return nil }
         let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
@@ -215,9 +252,6 @@ final class AnnotationKeyCommandHandlerView: NSView {
         window?.firstResponder is NSTextView
     }
 
-    /// Save stays live even while a text field has focus: losing annotations
-    /// because the caret happened to be in the inspector is exactly what this
-    /// shortcut exists to prevent.
     private static func isSave(_ event: NSEvent) -> Bool {
         event.modifierFlags.contains(.command)
             && !event.modifierFlags.contains(.shift)

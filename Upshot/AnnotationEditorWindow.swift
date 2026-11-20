@@ -16,6 +16,7 @@ struct AnnotationEditorWindow: View {
     @State private var didCopyLink = false
     @State private var saveFlash = false
     @State private var isToolbarShareOptionsPresented = false
+    @State private var canvasFocusRequest = 0
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
 
@@ -107,6 +108,9 @@ struct AnnotationEditorWindow: View {
                 onSave: saveEdits,
                 onUndo: model.undo,
                 onRedo: model.redo,
+                canUndo: { model.canUndo },
+                canRedo: { model.canRedo },
+                canvasFocusRequest: canvasFocusRequest,
                 onSelectAll: model.selectAllAnnotations,
                 onSelectTool: model.selectTool,
                 onZoomIn: model.zoomIn,
@@ -243,7 +247,7 @@ struct AnnotationEditorWindow: View {
                 AnnotationCanvas(
                     model: model,
                     image: previewImage,
-                    onEditorInteraction: clearInspectorFocus
+                    onEditorInteraction: focusCanvas
                 )
             } else if let errorMessage = model.errorMessage {
                 AnnotationLoadFailureView(message: errorMessage, onClose: closeAfterLoadFailure)
@@ -531,6 +535,11 @@ struct AnnotationEditorWindow: View {
 
     private func clearInspectorFocus() {
         focusedField = nil
+    }
+
+    private func focusCanvas() {
+        clearInspectorFocus()
+        canvasFocusRequest += 1
     }
 }
 

@@ -135,6 +135,7 @@ final class AnnoEditor {
 
     private var undoStack: [AnnoDocument.Snapshot] = []
     private var redoStack: [AnnoDocument.Snapshot] = []
+    private var redoStackBeforeLastMark: [AnnoDocument.Snapshot] = []
 
     var onChange: (() -> Void)?
 
@@ -184,7 +185,16 @@ final class AnnoEditor {
     func markUndo() {
         undoStack.append(document.snapshot())
         if undoStack.count > 200 { undoStack.removeFirst() }
+        redoStackBeforeLastMark = redoStack
         redoStack.removeAll()
+    }
+
+    @discardableResult
+    func discardLastUndoIfDocumentUnchanged() -> Bool {
+        guard let last = undoStack.last, last == document.snapshot() else { return false }
+        undoStack.removeLast()
+        redoStack = redoStackBeforeLastMark
+        return true
     }
 
     var canUndo: Bool { !undoStack.isEmpty }

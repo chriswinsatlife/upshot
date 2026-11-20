@@ -722,6 +722,8 @@ struct AnnotationCanvas: View {
 
         if hasActiveInteraction {
             setCursor(model.isTransformingExistingAnnotation ? .closedHand : .placement)
+        } else if model.hoveredHandle(at: location, imageFrame: imageFrame) != nil {
+            setCursor(.arrow)
         } else if model.hoveredAnnotation(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) != nil {
             setCursor(.openHand)
         } else if model.selectedTool == .select {
