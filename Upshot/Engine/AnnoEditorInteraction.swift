@@ -39,8 +39,15 @@ extension AnnoEditor {
             AppLog.event("annotation", "annotation_existing_pressed", fields: ["tool": tool.rawValue, "target": "handle"])
             return true
         }
-        guard let shape = hitShape(at: pointer.pagePoint) else { return false }
-        if tool == .text, shape.isText { return false }
+        guard let shape = hitShape(at: pointer.pagePoint) else {
+            guard canDragSelectionBackground,
+                  let bounds = selectionBounds,
+                  pointInPolygon(pointer.pagePoint, bounds.pageCorners) else { return false }
+            markUndo()
+            setInteraction(.translating(origin: pointer.pagePoint, initial: initialPositions()))
+            AppLog.event("annotation", "annotation_existing_pressed", fields: ["tool": tool.rawValue, "target": "selection_bounds"])
+            return true
+        }
         beginShapeInteraction(shape, pointer: pointer)
         AppLog.event("annotation", "annotation_existing_pressed", fields: ["tool": tool.rawValue, "target": "annotation"])
         return true
@@ -69,6 +76,8 @@ extension AnnoEditor {
     }
 
     private func beginShapeInteraction(_ shape: AnnoShape, pointer: PointerInfo) {
+        let wasSelected = selectedIds == [shape.id]
+        textEditCandidateId = shape.isText && !pointer.shift && (tool == .text || wasSelected) ? shape.id : nil
         if pointer.shift {
             if selectedIds.contains(shape.id) {
                 selectedIds.remove(shape.id)
@@ -300,13 +309,23 @@ extension AnnoEditor {
                 selectedIds = Set(hits)
             }
 
-        case .translating, .resizing, .rotating, .draggingArrowHandle:
+        case .translating:
+            let moved = !discardLastUndoIfDocumentUnchanged()
+            if !moved, let id = textEditCandidateId, document.shape(id) != nil {
+                AppLog.event("annotation", "annotation_text_edit_started", fields: ["tool": tool.rawValue, "trigger": "click"])
+                textEditCandidateId = nil
+                setInteraction(.idle)
+                startEditingText(id)
+            }
+
+        case .resizing, .rotating, .draggingArrowHandle:
             discardLastUndoIfDocumentUnchanged()
 
         case .idle:
             break
         }
 
+        textEditCandidateId = nil
         setInteraction(.idle)
         setBrush(nil)
         setHintedBinding(nil)

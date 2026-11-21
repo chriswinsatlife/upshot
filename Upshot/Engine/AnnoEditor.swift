@@ -125,6 +125,7 @@ final class AnnoEditor {
     var currentArrowheadEnd: Arrowhead = .arrow
 
     var editingTextId: AnnoShapeID?
+    var textEditCandidateId: AnnoShapeID?
     var onEditingTextChanged: ((AnnoShapeID?) -> Void)?
 
     var pageLimits: Box?

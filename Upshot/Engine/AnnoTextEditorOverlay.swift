@@ -32,8 +32,10 @@ final class AnnoTextEditorOverlay: NSTextView {
         isRichText = false
         importsGraphics = false
         drawsBackground = false
-        isVerticallyResizable = true
-        isHorizontallyResizable = true
+        isVerticallyResizable = false
+        isHorizontallyResizable = false
+        minSize = .zero
+        maxSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textContainerInset = .zero
         textContainer?.lineFragmentPadding = 0
         textContainer?.widthTracksTextView = false
