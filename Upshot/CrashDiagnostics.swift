@@ -8,6 +8,7 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
     private var importedDiagnostics: Set<String> = []
     private let stateDirectory: URL
     private let logStore: AppLogStore
+    private var terminationSignalSources: [DispatchSourceSignal] = []
 
     init(stateDirectory: URL = AppLog.shared.fileURL.deletingLastPathComponent(), logStore: AppLogStore = AppLog.shared) {
         self.stateDirectory = stateDirectory
@@ -17,6 +18,7 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
 
     func start() {
         AppLog.installExceptionHandler()
+        removeEmptyCrashFileOnTerminationSignal()
         AppLog.event("application", "process_started", fields: [
             "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unavailable",
             "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unavailable",
@@ -27,6 +29,21 @@ nonisolated final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber, @
         MXMetricManager.shared.add(self)
         didReceive(MXMetricManager.shared.pastDiagnosticPayloads)
         AppLog.event("crash", "metrickit_subscribed")
+    }
+
+    func removeEmptyCrashFileOnTerminationSignal() {
+        let queue = DispatchQueue(label: "co.chrisyork.upshot.termination-signals")
+        terminationSignalSources = [SIGTERM, SIGHUP, SIGINT].map { number in
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
+            source.setEventHandler { [logStore] in
+                logStore.removeEmptyCrashFile()
+                signal(number, SIG_DFL)
+                raise(number)
+            }
+            source.resume()
+            return source
+        }
     }
 
     func importCrashReports(from directory: URL, stateDirectory: URL, now: Date = Date()) {
