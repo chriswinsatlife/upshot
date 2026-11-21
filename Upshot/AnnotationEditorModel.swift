@@ -320,7 +320,9 @@ final class AnnotationEditorModel {
     func endInteraction(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
-        engine.pointerUp(pointer(at: drawingLocation(location, in: boundaryFrame)))
+        let releasePointer = pointer(at: drawingLocation(location, in: boundaryFrame))
+        engine.pointerMove(releasePointer)
+        engine.pointerUp(releasePointer)
         selectedTool = engine.tool
         syncStyleFromSelection()
     }
