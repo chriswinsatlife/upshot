@@ -185,6 +185,26 @@ private final class CaptureShelfHostingView<Content: View>: NSHostingView<Conten
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        AppLog.event("quick_access", "quick_access_panel_pointer_entered", fields: ["app_active": String(NSApp.isActive), "tracking_areas": String(trackingAreas.count)])
+    }
+
+    private var lastPointerMovedLogTime: TimeInterval = 0
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard event.timestamp - lastPointerMovedLogTime > 1 else { return }
+        lastPointerMovedLogTime = event.timestamp
+        let point = convert(event.locationInWindow, from: nil)
+        AppLog.event("quick_access", "quick_access_panel_pointer_moved", fields: ["app_active": String(NSApp.isActive), "x": String(Int(point.x)), "y": String(Int(point.y))])
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        AppLog.event("quick_access", "quick_access_panel_pointer_exited", fields: ["app_active": String(NSApp.isActive), "tracking_areas": String(trackingAreas.count)])
+    }
+
     override func scrollWheel(with event: NSEvent) {
         guard event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else { return }
         let shelf = CaptureShelf.shared

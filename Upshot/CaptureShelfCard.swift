@@ -32,6 +32,14 @@ struct CaptureShelfCard: View {
         .onHover { hovering in
             isHovered = hovering
             shelf.setHovered(item.id, hovering)
+            AppLog.event("quick_access", "quick_access_card_hover_changed", fields: [
+                "hovering": String(hovering),
+                "item": item.id.uuidString,
+                "is_moving": String(shelf.isMoving),
+                "is_tucked": String(shelf.isTucked),
+                "is_dragging": String(isDragging),
+                "app_active": String(NSApp.isActive)
+            ])
         }
         .motion(.morphQuick, value: showsActions)
         .motion(.morphQuick, value: item.flash)
